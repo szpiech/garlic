@@ -1,16 +1,12 @@
-This is a (not very rigorous) explanation of how to use rohscan in its current form (15 Aug 2013).  It is adapted from an email sent to colleagues.
+rohscan is a program for calling runs of homozygosity in genotype data.  It implements the ROH calling of Pemberton et al. AJHG (2012).  This software is not fully inplemented.  A more detailed README coming soon.
 
-rohscan will need to be compiled (try just going into src/ and typing make), and even though you'll see lots of references to mutithreading, I've hard coded it to only use one thread.  It ran so fast that partitioning the calculation across a chromosome only slowed it down.  I would like to add support for submitting several chromosomes simultaneously (you currently have to give it 1 chr at a time).
+To compile, move into src/ type make.  rohscan depends on GNU GSL and FIGTree.  The libraries included here were compiled on OSX. You may, therefore, have to download and compile each for your own machine.
 
-I only recommend running this pipeline for individuals who are all of the same population (I would like to add support for giving several populations simultaneously so that it partitions them out automatically).  It isn't fully automated either, so there are some intermediate steps you'll have to do on the command line, which I'll try to explain here.  You might want to also take the time to figure out what I was doing in the kde_and_roh_cutoff_estimation.R script because I hard coded a value that may not work in general.  Some of these things are commented; some are not.  Somewhere in all of this you'll also see a reference to a file called GALAII_case_and_covar_pr_cases_first.txt, although this has far more data in it than I actually use, its purpose is to provide the ordering of individuals. The perl file that reads it only needs the individuals, so you can easily modify that part of the code. I wrote all of this code assuming a data format that I don't particularly like (individual IDs are separate from the associated genetic data, I think it is BEAGLE format).  You'll have to change a bunch of hard coded filenames too.
+GNU GSL: http://www.gnu.org/software/gsl/ 
 
-By calling rohscan you will get a giant file of LOD scores.  This should be the Pemberton et al. (2012) AJHG method with the exception that if the calculation encounters a gap between markers of > 200kb, the LOD scores are reported as NA.
+FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 
-This file is fed to  kde_and_roh_cutoff_estimation.R which will attempt to find the minimum LOD score between what we hope will be two modes.  This script hard codes the first guess at LOD = -4, which should be reasonable in general, but I can't guarantee it.  The output from this R script is a file giving the LOD score cutoffs which defines the threshold for calling a window as part of an ROH.
-
-Next is a perl script called assemble_ROH_windows.pl which will read in the raw LOD scores file, the cutoff file, and a list of individual IDs.  This script will go for each individual and concatenate windows that are above the LOD score threshold, outputting a list of intervals defining the ROH calls.  This script creates one file per individual, and it probably the easiest to understand because it actually has comments.
-
-Finally, there is an R script called size_class_boundaries.R, which will read in a file that consists solely of the sizes of the concatenated windows of all individuals.  You can make this file with a bash script that visits each individual.roh file, and does a quick cat individual.roh | cut -d " " -f4 >> all.sizes.
+./rohscan --hap <haplotypes> --map <mapfile> --ind <individual file> --out <outfile basename>
 
 15OCT2013 -- Major updates to the C++ binary.  In its current form, it does not write any useful information to file, but this is easily modifiable.  The program now supports passing an arbitrary number of chromosomes and populations in a single file.  rohscan will automatically identify populations and chromosomes (from the .ind and .map files, respectively) and partition the LOD score calculations across threads.  These windows are passed to the KDE module, where the density is estimated.  This is where the program currently ends.
 
