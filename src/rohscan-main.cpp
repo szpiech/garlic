@@ -256,6 +256,7 @@ int main(int argc, char *argv[])
   //Prepped for KDE
   vector < DoubleData* >* rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
   
+  //Compute KDE of LOD score distribution
   cerr << "Estimating distribution of raw LOD score windows:\n";
   vector < KDEResult* >* kdeResultByPop = computeKDE(rawWinDataByPop,indDataByPop);
   releaseDoubleData(rawWinDataByPop);
@@ -269,7 +270,8 @@ int main(int argc, char *argv[])
       cerr << "ERROR: Could not open " << boundaryOutfile << " for writing.\n";
       return -1;
     }
-  
+
+  //For each population, find the LOD score cutoff
   double *lodScoreCutoffByPop = new double[numPop];
   for (int pop = 0; pop < numPop; pop++)
     {
@@ -291,6 +293,7 @@ int main(int argc, char *argv[])
   cerr << "Wrote " << boundaryOutfile << "\n";
   fout.close();
   
+  //Output kde points
   try
     {
       writeKDEResult(kdeResultByPop,indDataByPop,outfile);
@@ -301,6 +304,8 @@ int main(int argc, char *argv[])
     }
   releaseKDEResult(kdeResultByPop);
   
+  cerr << "Begin ROH window assembly.\n";
+  //Assemble ROH for each individual in each pop
   vector< ROHLength* >* rohLengthByPop;
   vector< vector< ROHData* >* >* rohDataByPopByInd = assembleROHWindows(winDataByPopByChr,
 									mapDataByChr,
@@ -308,6 +313,10 @@ int main(int argc, char *argv[])
 									lodScoreCutoffByPop,
 									rohLengthByPop);
 
+  cerr << "Complete.\n";
+
+  cerr << rohLengthByPop->size() << endl;
+  
   for(int pop = 0; pop < rohLengthByPop->size();pop++)
     {
       for(int i = 0; i < rohLengthByPop->at(pop)->size; i++)

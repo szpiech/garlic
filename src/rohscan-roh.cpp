@@ -201,6 +201,7 @@ vector< vector< ROHData* >* >* assembleROHWindows(vector< vector< WinData* >* >*
   rohLengthByPop = new vector< ROHLength* >;
   vector< vector< ROHData* >* >* rohDataByPopByInd = initROHData(indDataByPop);
 
+
   for(int pop = 0; pop < indDataByPop->size(); pop++)
     {
       vector<int> lengths;
@@ -213,7 +214,8 @@ vector< vector< ROHData* >* >* assembleROHWindows(vector< vector< WinData* >* >*
 	{
 	  ROHData* rohData = rohDataByInd->at(ind);
 	  rohData->indID = indData->indID[ind];
-	  
+	  //cerr << "Assembling ROH for individual " << rohData->indID << endl;
+
 	  for(int chr = 0; chr < winDataByChr->size(); chr++)
 	    {
 	      WinData* winData = winDataByChr->at(chr);
