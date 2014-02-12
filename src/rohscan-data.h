@@ -6,6 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <ctime>
+#include "gsl/gsl_rng.h"
 
 using namespace std;
 
@@ -65,8 +66,8 @@ string getPost(int num);
 FreqData* initFreqData(int nloci);
 void releaseFreqData(FreqData *data);
 void releaseFreqData(vector< vector< FreqData* >* >* freqDataByPopByChr);
-FreqData* calcFreqData(HapData* data);
-vector< vector< FreqData* >* >* calcFreqData(vector< vector< HapData* >* >* hapDataByPopByChr);
+FreqData* calcFreqData(HapData* data, int nresample, const gsl_rng *r);
+vector< vector< FreqData* >* >* calcFreqData(vector< vector< HapData* >* >* hapDataByPopByChr, int nresample);
 
 MapData* initMapData(int nloci);
 void releaseMapData(MapData *data);

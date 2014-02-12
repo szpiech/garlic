@@ -12,8 +12,8 @@ LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_
 
 all : rohscan
 
-rohscan : rohscan-main.o rohscan-data.o param_t.o rohscan-roh.o rohscan-kde.o
-	g++ -o rohscan rohscan-main.o rohscan-data.o param_t.o rohscan-roh.o rohscan-kde.o -pthread $(LINK_OPTS) -L$(L_PATH)
+rohscan : rohscan-main.o rohscan-data.o param_t.o rohscan-roh.o rohscan-kde.o gmm.o BoundFinder.o
+	g++ -o rohscan rohscan-main.o rohscan-data.o param_t.o rohscan-roh.o rohscan-kde.o gmm.o BoundFinder.o -pthread $(LINK_OPTS) -L$(L_PATH)
 
 rohscan-main.o : rohscan-main.cpp
 	g++ $(G++FLAG) -c rohscan-main.cpp -I$(I_PATH)
@@ -22,13 +22,19 @@ rohscan-data.o : rohscan-data.cpp
 	g++ $(G++FLAG) -c rohscan-data.cpp 
 
 rohscan-roh.o : rohscan-roh.cpp
-	g++ $(G++FLAG) -c rohscan-roh.cpp 
+	g++ $(G++FLAG) -c rohscan-roh.cpp -I$(I_PATH)
 
 rohscan-kde.o : rohscan-kde.cpp
 	g++ $(G++FLAG) -c rohscan-kde.cpp -I$(I_PATH)
 
 param_t.o : param_t.cpp
 	g++ $(G++FLAG) -c param_t.cpp
+
+gmm.o : gmm.cpp
+	g++ $(G++FLAG) -c gmm.cpp -I$(I_PATH)
+
+BoundFinder.o : BoundFinder.cpp
+	g++ $(G++FLAG) -c BoundFinder.cpp -I$(I_PATH)
 
 clean :
 	rm *.o

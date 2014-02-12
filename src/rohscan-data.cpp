@@ -1,29 +1,46 @@
 #include "rohscan-data.h"
 
-FreqData* calcFreqData(HapData* hapData)
+FreqData* calcFreqData(HapData* hapData, int nresample, const gsl_rng *r)
 {
   FreqData* freqData = initFreqData(hapData->nloci);
-  double total, freq;
+  double total, freq, count;
 
   for(int locus = 0; locus < hapData->nloci; locus++)
     {
       total = 0;
-      freq = 0;
+      count = 0;
       for(int hap = 0; hap < hapData->nhaps; hap++)
 	{
 	  if(hapData->data[hap][locus] != -9)
 	    {
-	      freq += hapData->data[hap][locus];
+	      count += hapData->data[hap][locus];
 	      total++;
 	    }
 	}
-      freqData->freq[locus] = freq/total;
+      freq = count/total;
+      if(nresample == 0) freqData->freq[locus] = freq;
+      else
+	{
+	  count = 0;
+	  for(int i = 0; i < nresample; i++)
+	    {
+	      if(gsl_rng_uniform(r) <= freq) count++;
+	    }
+	  freqData->freq[locus] = count/nresample;
+	}
+
     }
   return freqData;
 }
 
-vector< vector< FreqData* >* >* calcFreqData(vector< vector< HapData* >* >* hapDataByPopByChr)
+vector< vector< FreqData* >* >* calcFreqData(vector< vector< HapData* >* >* hapDataByPopByChr, int nresample)
 {
+  const gsl_rng_type * T;
+  gsl_rng * r;
+  T = gsl_rng_default;
+  r = gsl_rng_alloc (T);
+  gsl_rng_set(r,time(NULL));
+
   vector< vector< FreqData* >* >* freqDataByPopByChr = new vector< vector< FreqData* >* >;
   
   for(int pop = 0; pop < hapDataByPopByChr->size(); pop++)
@@ -31,11 +48,14 @@ vector< vector< FreqData* >* >* calcFreqData(vector< vector< HapData* >* >* hapD
       vector< FreqData* >* freqDataByChr = new vector< FreqData* >;
       for (int chr = 0; chr < hapDataByPopByChr->at(pop)->size(); chr++)
 	{
-	  FreqData* data = calcFreqData(hapDataByPopByChr->at(pop)->at(chr));
+	  FreqData* data = calcFreqData(hapDataByPopByChr->at(pop)->at(chr),nresample,r);
 	  freqDataByChr->push_back(data);
 	}
       freqDataByPopByChr->push_back(freqDataByChr);
     }
+
+  gsl_rng_free(r);
+
   return freqDataByPopByChr;
 }
 

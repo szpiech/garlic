@@ -147,8 +147,12 @@ double lod(const short &genotype, const double &freq, const double &error)
 {
   
   double autozygous, nonAutozygous;
-
-  if(genotype == 0)
+  if(freq == 0 || freq == 1)
+    {
+      autozygous = 1;
+      nonAutozygous = 1;
+    }
+  else if(genotype == 0)
     {
       nonAutozygous = (1-freq)*(1-freq);
       autozygous = (1-error)*(1-freq) + error*nonAutozygous; 
@@ -195,10 +199,11 @@ vector< vector< ROHData* >* >* assembleROHWindows(vector< vector< WinData* >* >*
 						  vector< MapData* >* mapDataByChr,
 						  vector< IndData* >* indDataByPop, 
 						  double *lodScoreCutoffByPop,
-						  vector< ROHLength* >* rohLengthByPop)
+						  vector< ROHLength* >** rohLengthByPop,
+						  int winSize)
 {
   
-  rohLengthByPop = new vector< ROHLength* >;
+  //rohLengthByPop = new vector< ROHLength* >;
   vector< vector< ROHData* >* >* rohDataByPopByInd = initROHData(indDataByPop);
 
 
@@ -221,11 +226,20 @@ vector< vector< ROHData* >* >* assembleROHWindows(vector< vector< WinData* >* >*
 	      WinData* winData = winDataByChr->at(chr);
 	      MapData* mapData = mapDataByChr->at(chr);
 	      
-	      //translation of the perl script here
-	      int winStart = -1;
-	      int winStop = -1;
+	      //translation of the perl script here###Updated to match trevor's algorithm
+	      //int winStart = -1;
+	      //int winStop = -1;
+	      bool *inWin = new bool[mapData->nloci];
+	      for(int w = 0; w < mapData->nloci; w++) inWin[w] = false;
 	      for(int w = 0; w < winData->nloci; w++)
-		{
+		{		  
+		  if(winData->data[ind][w] >= lodScoreCutoff)
+		    {
+		      //There is a faster way to do this but I'm lazy right now
+		      //for consecutive w, we obiously don't have to assign true again.
+		      for(int i = 0; i < winSize; i++) inWin[w+i] = true;
+		    }
+		  /*
 		  //No window being extended and the LOD score is NA
 		  //Skip window
 		  if(winStart < 0 && winData->data[ind][w] == MISSING)
@@ -269,7 +283,43 @@ vector< vector< ROHData* >* >* assembleROHWindows(vector< vector< WinData* >* >*
 		      winStart = -1;
 		      winStop = -1;
 		    }
+		  */
 		}
+	      
+
+	      int winStart = -1;
+	      int winStop = -1;
+	      for(int w = 0; w < mapData->nloci; w++)
+		{
+		  //No window being extended and the snp is in ROH
+		  //Start the window
+		  if(winStart < 0 && inWin[w])
+		    {
+		      winStart = mapData->physicalPos[w];
+		    }
+		  //Window being extended and snp is in ROH
+		  //else if(winStart > 0 && inWin[w])
+		  //  {
+		  //    continue;
+		  //  }
+		  //Window being extended and snp is not in ROH
+		  //end the window at w-1
+		  //reset winStart to -1
+		  else if(winStart > 0 && !inWin[w])
+		    {
+		      winStop = mapData->physicalPos[w-1];
+		      int size = winStop - winStart + 1;
+		      lengths.push_back(size);
+		      rohData->chr.push_back(chr);
+		      rohData->start.push_back(winStart);
+		      rohData->stop.push_back(winStop);
+		      winStart = -1;
+		      winStop = -1;
+		    }
+		}
+
+
+	      delete [] inWin;
 	    }
 	}
 
@@ -278,7 +328,7 @@ vector< vector< ROHData* >* >* assembleROHWindows(vector< vector< WinData* >* >*
 	{
 	  rohLength->length[i] = lengths[i];
 	}
-      rohLengthByPop->push_back(rohLength);
+      (*rohLengthByPop)->push_back(rohLength);
 
     }
 
@@ -289,7 +339,7 @@ ROHLength* initROHLength(int size, string pop)
 {
   ROHLength* rohLength = new ROHLength;
   rohLength->pop = pop;
-  rohLength->length = new int[size];
+  rohLength->length = new double[size];
   rohLength->size = size;
   return rohLength;
 }

@@ -40,7 +40,7 @@ struct ROHData
 struct ROHLength
 {
   string pop;
-  int* length;
+  double* length;
   int size;
 };
 
@@ -55,7 +55,8 @@ vector< vector< ROHData* >* >* assembleROHWindows(vector< vector< WinData* >* >*
 						  vector< MapData* >* mapDataByChr,
 						  vector< IndData* >* indDataByPop, 
 						  double *lodScoreCutoffByPop,
-						  vector< ROHLength* >* rohLengthByPop);
+						  vector< ROHLength* >** rohLengthByPop,
+						  int winSize);
 ROHLength* initROHLength(int size, string pop);
 void releaseROHLength(ROHLength *rohLength);
 void releaseROHLength(vector< ROHLength* >* rohLengthByPop);

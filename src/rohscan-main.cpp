@@ -6,6 +6,10 @@
 #include "rohscan-roh.h"
 #include "rohscan-kde.h";
 #include "param_t.h"
+#include "gmm.h"
+#include "gsl/gsl_statistics.h"
+#include "gsl/gsl_sort.h"
+#include "BoundFinder.h"
 
 using namespace std;
 
@@ -49,6 +53,10 @@ const string ARG_MAX_GAP = "--max-gap";
 const int DEFAULT_MAX_GAP = 200000;
 const string HELP_MAX_GAP = "A LOD score window is not calculated if the gap in bps between two loci is greater than this parameter.";
 
+const string ARG_RESAMPLE = "--resample";
+const int DEFAULT_RESAMPLE = 0;
+const string HELP_RESAMPLE = "Number of resamples for estimating allele frequencies.  When set to 0 (default), rohscan will use allele frequencies as calculated from the data.";
+
 int main(int argc, char *argv[])
 {
 
@@ -64,6 +72,7 @@ int main(int argc, char *argv[])
   params.addFlag(ARG_POINTS,DEFAULT_POINTS,"pointsLabel",HELP_POINTS);
   params.addFlag(ARG_BW,DEFAULT_BW,"bwLabel",HELP_BW);
   params.addFlag(ARG_MAX_GAP,DEFAULT_MAX_GAP,"maxGapLabel",HELP_MAX_GAP);
+  params.addFlag(ARG_RESAMPLE,DEFAULT_RESAMPLE,"resampleLabel",HELP_RESAMPLE);
 
   try
     {
@@ -83,6 +92,7 @@ int main(int argc, char *argv[])
   int numThreads = params.getIntFlag(ARG_THREADS);
   double error = params.getDoubleFlag(ARG_ERROR);
   int MAX_GAP = params.getIntFlag(ARG_MAX_GAP);
+  int nresample = params.getIntFlag(ARG_RESAMPLE);
   
   
 
@@ -144,7 +154,7 @@ int main(int argc, char *argv[])
       
       hapDataByPopByChr = readHapData(hapfile,numLoci,numInd,chrCoordList,indCoordList);
       
-      freqDataByPopByChr = calcFreqData(hapDataByPopByChr);
+      freqDataByPopByChr = calcFreqData(hapDataByPopByChr,nresample);
 
       winDataByPopByChr = initWinData(mapDataByChr,indDataByPop);
     }
@@ -306,24 +316,134 @@ int main(int argc, char *argv[])
   
   cerr << "Begin ROH window assembly.\n";
   //Assemble ROH for each individual in each pop
-  vector< ROHLength* >* rohLengthByPop;
+  vector< ROHLength* >* rohLengthByPop = new vector< ROHLength* >;
   vector< vector< ROHData* >* >* rohDataByPopByInd = assembleROHWindows(winDataByPopByChr,
 									mapDataByChr,
 									indDataByPop,
 									lodScoreCutoffByPop,
-									rohLengthByPop);
+									&rohLengthByPop,
+									winsize);
 
   cerr << "Complete.\n";
 
-  cerr << rohLengthByPop->size() << endl;
   
-  for(int pop = 0; pop < rohLengthByPop->size();pop++)
+  /*
+  ofstream out;
+  out.open("test.points.mix");
+
+  int pop = 0;
+  //for(int pop = 0; pop < rohLengthByPop->size();pop++)
     {
       for(int i = 0; i < rohLengthByPop->at(pop)->size; i++)
 	{
-	  cout << rohLengthByPop->at(pop)->length[i] << endl;
+	  out << double(rohLengthByPop->at(pop)->length[i])/1000000.0 << endl;
 	}
     }
+    
+    out.close();
+  */
+
+
+
+    //return 0;
+
+  //GMM set up for size classifications
+  //There might be some benefit in doing this across a range of ngaussians and choosing the classification 
+  //That has highest BIC
+  int ngaussians = 3;
+  size_t maxIter = 1000;
+  double tolerance = 1e-8;
+  double *W = new double[ngaussians];
+  double *Mu = new double[ngaussians];
+  double *Sigma = new double[ngaussians];
+  double *shortMedBound = new double[rohLengthByPop->size()];
+  double *medLongBound = new double[rohLengthByPop->size()];
+  size_t *sortIndex = new size_t[ngaussians];
+
+  for(int pop = 0; pop < rohLengthByPop->size();pop++)
+    {
+      //calculate mean and var for the population size distribution to use for initial guess
+      double var = gsl_stats_variance(rohLengthByPop->at(pop)->length,1,rohLengthByPop->at(pop)->size);
+      double mu = gsl_stats_mean(rohLengthByPop->at(pop)->length,1,rohLengthByPop->at(pop)->size);
+      for(int n = 0; n < ngaussians; n++)
+	{
+	  W[n] = 1.0/double(ngaussians);
+	  Mu[n] = mu*double(n+1)/double(ngaussians+1);
+	  //gsl_stats_quantile_from_sorted_data(rohLengthByPop->at(pop)->length, 1, rohLengthByPop->at(pop)->size, double(n+1)/double(ngaussians+1));
+	  Sigma[n] = var*(n+1)/double(ngaussians);
+	}
+
+      GMM gmm(ngaussians,W,Mu,Sigma,maxIter,tolerance,false);
+
+      gmm.estimate(rohLengthByPop->at(pop)->length,rohLengthByPop->at(pop)->size);
+      
+      for(int n = 0; n < ngaussians; n++)
+	{
+	  W[n] = gmm.getMixCoefficient(n);
+	  Mu[n] = gmm.getMean(n);
+	  Sigma[n] = gmm.getVar(n);
+	  sortIndex[n] = n;
+	}
+      
+      gsl_sort_index(sortIndex,Mu,1,ngaussians);
+
+      cerr << rohLengthByPop->at(pop)->pop << " [" 
+	   << W[sortIndex[0]] << " ," << W[sortIndex[1]] << " ," << W[sortIndex[2]] << "] [" 
+	   << Mu[sortIndex[0]] << " ," << Mu[sortIndex[1]] << " ," << Mu[sortIndex[2]] << "] [" 
+	   << Sigma[sortIndex[0]] << " ," << Sigma[sortIndex[1]] << " ," << Sigma[sortIndex[2]] << "]\n";
+      
+      //Find boundaries, there are ngaussians-1 of them, but for the moment this is defined to be 2
+      //This finds the 'first' root of the difference between two gaussians
+      BoundFinder SM(Mu[sortIndex[0]],Sigma[sortIndex[0]],W[sortIndex[0]],Mu[sortIndex[1]],Sigma[sortIndex[1]],W[sortIndex[1]],1000,1e-4,false);
+      shortMedBound[pop] = SM.findBoundary();
+      BoundFinder ML(Mu[sortIndex[1]],Sigma[sortIndex[1]],W[sortIndex[1]],Mu[sortIndex[2]],Sigma[sortIndex[2]],W[sortIndex[2]],1000,1e-4,false);
+      medLongBound[pop] = ML.findBoundary();
+
+      cerr << "A/B: " << shortMedBound[pop] << " B/C: " << medLongBound[pop] << endl;
+
+      /*
+      cerr << rohLengthByPop->at(pop)->pop << " [" 
+	   << W[0] << " ," << W[1] << " ," << W[2] << "] [" 
+	   << Mu[0] << " ," << Mu[1] << " ," << Mu[2] << "] [" 
+	   << Sigma[0] << " ," << Sigma[1] << " ," << Sigma[2] << "]\n";
+      */
+    }
+
+  //Output ROH calls to file, one for each individual
+  //includes A/B/C size classifications
+  //Could be modified to allow for arbitrary number of size classifications
+  for (int pop = 0; pop < rohDataByPopByInd->size(); pop++)
+    {
+      vector< ROHData* >* rohDataByInd = rohDataByPopByInd->at(pop);
+      for(int ind = 0; ind < rohDataByInd->size(); ind++)
+	{
+	  ROHData* rohData = rohDataByInd->at(ind);
+	  cerr << "Writing ROH tracts for " << rohData->indID << endl;
+	  string rohOutfile = outfile;
+	  rohOutfile += ".";
+	  rohOutfile += rohData->indID;
+	  rohOutfile += ".roh";
+	  ofstream out;
+	  out.open(rohOutfile.c_str());
+	  if(out.fail())
+	    {
+	      cerr << "ERROR: Failed to open " << rohOutfile << " for writing.\n";
+	      return -1;
+	    }
+	  
+	  for (int roh = 0; roh < rohData->chr.size(); roh++)
+	    {
+	      int size = (rohData->stop[roh] - rohData->start[roh]);
+	      char sizeClass = 'C';
+	      if(size < shortMedBound[pop]) sizeClass = 'A';
+	      else if(size < medLongBound[pop]) sizeClass = 'B';
+	      out << rohData->chr[roh] << " " << rohData->start[roh] << " " << rohData->stop[roh] << " " << size << " " << sizeClass << endl;
+	    }
+	  
+	  out.close();
+	}
+    }
+
 
   return 0;
 }
