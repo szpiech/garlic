@@ -9,6 +9,9 @@ L_PATH = ../lib
 #For static linking
 LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
 
+#For static linking on linux boxes
+#LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a -static
+
 
 all : rohscan
 
