@@ -8,6 +8,8 @@ FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 
 ./rohscan --hap <haplotypes> --map <mapfile> --ind <individual file> --out <outfile basename>
 
+FEB2014 -- Pipeline completed.  Binaries available are alpha software.
+
 15OCT2013 -- Major updates to the C++ binary.  In its current form, it does not write any useful information to file, but this is easily modifiable.  The program now supports passing an arbitrary number of chromosomes and populations in a single file.  rohscan will automatically identify populations and chromosomes (from the .ind and .map files, respectively) and partition the LOD score calculations across threads.  These windows are passed to the KDE module, where the density is estimated.  This is where the program currently ends.
 
 DEC2013 -- More Updates to the C++ binary.  KDE is working for the LOD scores; LOD score cutoff discovery is working (although will need a fail-safe in the extremely rare case that it might fail); ROH window assembly is done, although this information is not yet output to any files.
