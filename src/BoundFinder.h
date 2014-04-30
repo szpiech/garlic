@@ -2,7 +2,7 @@
   A class to handle finding the 'boundary' between two gaussians
 
 
-  
+
   Copyright (C) 2013  Zachary A Szpiech (szpiech@gmail.com)
 
   This program is free software: you can redistribute it and/or modify
@@ -14,10 +14,10 @@
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-  
+
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
-  
+
  */
 
 #ifndef __BOUNDFINDER_H__
@@ -27,44 +27,44 @@
 
 class BoundFinder
 {
- public:
+public:
 
-  double findBoundary();
+    double findBoundary();
 
-  BoundFinder(double mu1, double var1, double a1, double mu2, double var2, double a2, int maxIt = 1000, double err = 1e-5, bool v = true);
-  ~BoundFinder();
+    BoundFinder(double mu1, double var1, double a1, double mu2, double var2, double a2, int maxIt = 1000, double err = 1e-5, bool v = true);
+    ~BoundFinder();
 
- private:
+private:
 
-  struct Params
-  {
-    double mu1;
-    double mu2;
-    double var1;
-    double var2;
-    //mixture coefficients
-    double a1; 
-    double a2;
-  };
-  
-  Params params;
+    struct Params
+    {
+        double mu1;
+        double mu2;
+        double var1;
+        double var2;
+        //mixture coefficients
+        double a1;
+        double a2;
+    };
 
-  double x_hi;
-  double x_lo;
+    Params params;
 
-  double boundary;
+    double x_hi;
+    double x_lo;
 
-  int maxIter;
-  double error;
-  bool verbose;
+    double boundary;
 
-  bool found;
+    int maxIter;
+    double error;
+    bool verbose;
 
-  const gsl_root_fsolver_type *T;
-  gsl_root_fsolver *s;
+    bool found;
 
-  gsl_function F;
-  static double f(double x, void *p);
+    const gsl_root_fsolver_type *T;
+    gsl_root_fsolver *s;
+
+    gsl_function F;
+    static double f(double x, void *p);
 
 };
 

@@ -7,18 +7,18 @@
 
   PLATFORM:
     Tested in 2013 on a MacPro running OSX 10.8.2, but it should be platform independent as long as GSL is available.
-  
+
   DEPENDENCIES:
     Requires GNU GSL, which can be found at <http://www.gnu.org/software/gsl/>.
-    When compiling, use the flags 
-      -lgsl -lgslcblas 
-    or 
+    When compiling, use the flags
+      -lgsl -lgslcblas
+    or
       $(LIB_PATH)/libgsl.a $(LIB_PATH)/libgslcblas.a
 
   USAGE:
     The class object contains all the machinery to do a GMM estimation with the EM algorithm.
     Upon instantiation, GMM will require the following:
-    
+
       n : number of Gaussians to use
 
       a : array of initial guesses for the mixture coefficients
@@ -30,15 +30,15 @@
     Optional parameters:
 
       maxIter : maximum number of iterations of the EM algorithm, default 250
-      
+
       p : desired precision stopping condition, default 1e-5
-      
+
       v : if true, will output progress of each step of EM algorithm, default true
 
     To run the EM algorithm, call GMM::estimate(double *data, int dataSize)
 
     Example:
-    
+
       GMM gmm(n,a,mean,var);
       gmm.estimate(data,dataSize);
 
@@ -54,56 +54,56 @@
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-  
+
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
-  
+
  */
 
 
 class GMM
 {
- private:
-  
-  int numGaussians; //How many gaussians do we assume?
-  double *a; //Mixture proportions
-  double *mean;
-  double *var;
+private:
 
-  //for holding intermediate results
-  double *resp; 
-  double *sum_wj;
-  double *sum_wj_xj;
-  double *sum_wj_xj2;
+    int numGaussians; //How many gaussians do we assume?
+    double *a; //Mixture proportions
+    double *mean;
+    double *var;
 
-  int dataSize;
-  double *x; //a pointer to the data of length dataSize
+    //for holding intermediate results
+    double *resp;
+    double *sum_wj;
+    double *sum_wj_xj;
+    double *sum_wj_xj2;
 
-  int maxIterations; //EM will stop after this many iterations if it hasn't converged
-  double precision; //Convergence condition
+    int dataSize;
+    double *x; //a pointer to the data of length dataSize
 
-  bool verbose; //if true, prints information to stderr
+    int maxIterations; //EM will stop after this many iterations if it hasn't converged
+    double precision; //Convergence condition
 
-  double loglikelihood; //of the data given the given model and current parameters
-  double BIC; //Bayseian Information Criteria for the data given the given model and current parameters
+    bool verbose; //if true, prints information to stderr
 
-  void update(); //Update parameters, this folds the E step, M step, loglikelihood, and BIC calculation into a single calculation
-  void printState();
-  
-  double normalLog(double x, double mean, double var);
+    double loglikelihood; //of the data given the given model and current parameters
+    double BIC; //Bayseian Information Criteria for the data given the given model and current parameters
 
- public:
+    void update(); //Update parameters, this folds the E step, M step, loglikelihood, and BIC calculation into a single calculation
+    void printState();
 
-  GMM(int n, double* a_init, double* mean_init, double* var_init, int maxIt, double p, bool v = true);
-  ~GMM();
+    double normalLog(double x, double mean, double var);
 
-  bool estimate(double* data, int size);
+public:
 
-  double getBIC();
-  double getLogLikelihood();
-  double getMixCoefficient(int i);
-  double getMean(int i);
-  double getVar(int i);
+    GMM(int n, double *a_init, double *mean_init, double *var_init, int maxIt, double p, bool v = true);
+    ~GMM();
+
+    bool estimate(double *data, int size);
+
+    double getBIC();
+    double getLogLikelihood();
+    double getMixCoefficient(int i);
+    double getMean(int i);
+    double getVar(int i);
 
 };
 

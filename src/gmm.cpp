@@ -7,18 +7,18 @@
 
   PLATFORM:
     Tested in 2013 on a MacPro running OSX 10.8.2, but it should be platform independent as long as GSL is available.
-  
+
   DEPENDENCIES:
     Requires GNU GSL, which can be found at <http://www.gnu.org/software/gsl/>.
-    When compiling, use the flags 
-      -lgsl -lgslcblas 
-    or 
+    When compiling, use the flags
+      -lgsl -lgslcblas
+    or
       $(LIB_PATH)/libgsl.a $(LIB_PATH)/libgslcblas.a
 
   USAGE:
     The class object contains all the machinery to do a GMM estimation with the EM algorithm.
     Upon instantiation, GMM will require the following:
-    
+
       n : number of Gaussians to use
 
       a : array of initial guesses for the mixture coefficients
@@ -30,15 +30,15 @@
     Optional parameters:
 
       maxIter : maximum number of iterations of the EM algorithm, default 250
-      
+
       p : desired precision stopping condition, default 1e-5
-      
+
       v : if true, will output progress of each step of EM algorithm, default true
 
     To run the EM algorithm, call GMM::estimate(double *data, int dataSize)
 
     Example:
-    
+
       GMM gmm(n,a,mean,var);
       gmm.estimate(data,dataSize);
 
@@ -54,10 +54,10 @@
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-  
+
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
-  
+
  */
 
 #include <iostream>
@@ -74,58 +74,58 @@ using namespace std;
 
 double GMM::getMixCoefficient(int i)
 {
-  if(i >=0 && i <= numGaussians && a != NULL)
+    if (i >= 0 && i <= numGaussians && a != NULL)
     {
-      return a[i];
+        return a[i];
     }
-  else
+    else
     {
-      cerr << "ERROR: out of bounds.\n";
-      throw 1;
+        cerr << "ERROR: out of bounds.\n";
+        throw 1;
     }
 }
 
 double GMM::getMean(int i)
 {
-  if(i >=0 && i <= numGaussians && mean != NULL)
+    if (i >= 0 && i <= numGaussians && mean != NULL)
     {
-      return mean[i];
+        return mean[i];
     }
-  else
+    else
     {
-      cerr << "ERROR: out of bounds.\n";
-      throw 1;
+        cerr << "ERROR: out of bounds.\n";
+        throw 1;
     }
 }
 
 double GMM::getVar(int i)
 {
-  if(i >=0 && i <= numGaussians && var != NULL)
+    if (i >= 0 && i <= numGaussians && var != NULL)
     {
-      return var[i];
+        return var[i];
     }
-  else
+    else
     {
-      cerr << "ERROR: out of bounds.\n";
-      throw 1;
+        cerr << "ERROR: out of bounds.\n";
+        throw 1;
     }
 }
 
 double GMM::getBIC()
 {
-  return BIC;
+    return BIC;
 }
 
 double GMM::getLogLikelihood()
 {
-  return loglikelihood;
+    return loglikelihood;
 }
 
 /*
   Calculates the log likelihood and BIC of the data given the model and current parameters
-  
+
   INPUT:
-  
+
     none, but assumes the model parameters have been initialized and the data pointer is vaild
 
   OUTPUT:
@@ -137,7 +137,7 @@ double GMM::getLogLikelihood()
     Parameters BIC, and loglikelihood are modified.
 
     Log Likelihood function:
-    
+
       l = \sum_{j=1}^N ln( \sum_{k=1}^K a_k p_k(x_j|\theta_k) )
 
     BIC:
@@ -157,74 +157,74 @@ double GMM::getLogLikelihood()
       \Sigma_k : variance of Gaussian k
 
  */
- GMM::GMM(int n, double* a_init, double* mean_init, double* var_init, int maxIt = 250, double p = 1e-5, bool v)
+GMM::GMM(int n, double *a_init, double *mean_init, double *var_init, int maxIt = 250, double p = 1e-5, bool v)
 {
-  if(mean_init == NULL || var_init == NULL || a_init == NULL)
+    if (mean_init == NULL || var_init == NULL || a_init == NULL)
     {
-      cerr << "ERROR: NULL pointer passed as initial value.\n";
-      throw 1;
+        cerr << "ERROR: NULL pointer passed as initial value.\n";
+        throw 1;
     }
 
-  if(n < 1)
+    if (n < 1)
     {
-      cerr << "ERROR: Can not have fewer than 1 Gaussian.\n";
-      throw 1;
+        cerr << "ERROR: Can not have fewer than 1 Gaussian.\n";
+        throw 1;
     }
 
-  numGaussians = n;
+    numGaussians = n;
 
-  a = new double [numGaussians];
-  mean = new double [numGaussians];
-  var = new double [numGaussians];
+    a = new double [numGaussians];
+    mean = new double [numGaussians];
+    var = new double [numGaussians];
 
-  resp = new double[numGaussians];
-  sum_wj = new double[numGaussians];
-  sum_wj_xj = new double[numGaussians];
-  sum_wj_xj2 = new double[numGaussians];
+    resp = new double[numGaussians];
+    sum_wj = new double[numGaussians];
+    sum_wj_xj = new double[numGaussians];
+    sum_wj_xj2 = new double[numGaussians];
 
-  for (int i = 0; i < numGaussians; i++)
+    for (int i = 0; i < numGaussians; i++)
     {
-      a[i] = a_init[i];
-      mean[i] = mean_init[i];
-      var[i] = var_init[i];
-    }  
+        a[i] = a_init[i];
+        mean[i] = mean_init[i];
+        var[i] = var_init[i];
+    }
 
-  x = NULL;
-  maxIterations = maxIt;
-  precision = p;
-  verbose = v;
+    x = NULL;
+    maxIterations = maxIt;
+    precision = p;
+    verbose = v;
 
-  loglikelihood = -numeric_limits<double>::max();
-  BIC = numeric_limits<double>::max();
+    loglikelihood = -numeric_limits<double>::max();
+    BIC = numeric_limits<double>::max();
 
-  return;
+    return;
 }
 
- GMM::~GMM()
+GMM::~GMM()
 {
-  x = NULL;
-  delete [] a;
-  delete [] mean;
-  delete [] var;
-  delete [] resp;
-  delete [] sum_wj;
-  delete [] sum_wj_xj;
-  delete [] sum_wj_xj2;  
-  return;
+    x = NULL;
+    delete [] a;
+    delete [] mean;
+    delete [] var;
+    delete [] resp;
+    delete [] sum_wj;
+    delete [] sum_wj_xj;
+    delete [] sum_wj_xj2;
+    return;
 }
 
 double GMM::normalLog(double x, double mean, double var)
 {
-  const static double C = (-0.5 * gsl_sf_log(2*M_PI));
-  return C - (0.5 * gsl_sf_log(var)) - gsl_pow_2(x - mean)/(2.0 * var);
+    const static double C = (-0.5 * gsl_sf_log(2 * M_PI));
+    return C - (0.5 * gsl_sf_log(var)) - gsl_pow_2(x - mean) / (2.0 * var);
 }
 
 
 /*
   Calculates one step of the EM algorithm
-  
+
   INPUT:
-  
+
     none, but assumes the model parameters have been initialized and the data pointer is vaild
 
   OUTPUT:
@@ -237,11 +237,11 @@ double GMM::normalLog(double x, double mean, double var)
     log likelihood and BIC for the current model and parameters.  The calculation has been
     broken down in such a way as to minimize the number of loops needed (or at least get close
     to the minimum).  I could be very wrong.
-    
+
     Parameters a, mean, var, a_t, mean_t, var_t, BIC, and loglikelohood are modified.
 
     E-step:
-    
+
       w^t_{jk} = a^t_k p_k(x_j|\theta^t_k) / ( \sum_{i=1}^K a^t_i p_i(x_j|\theta^t_i) )
 
     M-step:
@@ -266,95 +266,95 @@ double GMM::normalLog(double x, double mean, double var)
       \theta_k : parameter vector (\mu_k,\Sigma_k)
       \mu_k : mean of Gaussian k
       \Sigma_k : variance of Gaussian k
-      
+
 
  */
 void GMM::update()
 {
-  double den;
-  double l_max, tmp, sum;
-  
-  for(int k = 0; k < numGaussians; k++)
+    double den;
+    double l_max, tmp, sum;
+
+    for (int k = 0; k < numGaussians; k++)
     {
-      sum_wj[k] = 0;
-      sum_wj_xj[k] = 0;
-      sum_wj_xj2[k] = 0;
+        sum_wj[k] = 0;
+        sum_wj_xj[k] = 0;
+        sum_wj_xj2[k] = 0;
     }
 
-  double L = 0;
+    double L = 0;
 
-  for (int j = 0; j < dataSize; j++)
+    for (int j = 0; j < dataSize; j++)
     {
-      l_max = -numeric_limits<double>::max();
-      for (int i = 0; i < numGaussians; i++)
-	{
-	  resp[i] = gsl_sf_log(a[i])+normalLog(x[j],mean[i],var[i]); //calculating log(p_i(x_j|theta_i)
-	  if(resp[i] > l_max) l_max = resp[i];
-	}
+        l_max = -numeric_limits<double>::max();
+        for (int i = 0; i < numGaussians; i++)
+        {
+            resp[i] = gsl_sf_log(a[i]) + normalLog(x[j], mean[i], var[i]); //calculating log(p_i(x_j|theta_i)
+            if (resp[i] > l_max) l_max = resp[i];
+        }
 
-      //logsum to avoid at least 1 underflow
-      sum = 0;
-      for (int i = 0; i < numGaussians; i++) sum += exp(resp[i]-l_max);      
-      tmp = l_max + gsl_sf_log(sum);
+        //logsum to avoid at least 1 underflow
+        sum = 0;
+        for (int i = 0; i < numGaussians; i++) sum += exp(resp[i] - l_max);
+        tmp = l_max + gsl_sf_log(sum);
 
-      L += tmp;//loglikelihood
-      
-      den = 0;
-      for (int i = 0; i < numGaussians; i++)
-	{
-	  resp[i] = exp(resp[i] - tmp);
-	  den += resp[i];
-	}
-      
-      for (int k = 0; k < numGaussians; k++)
-	{
-	  sum_wj[k] += resp[k]/den;
-	  sum_wj_xj[k] += x[j]*resp[k]/den;
-	  sum_wj_xj2[k] += x[j]*x[j]*resp[k]/den;
-	}
+        L += tmp;//loglikelihood
+
+        den = 0;
+        for (int i = 0; i < numGaussians; i++)
+        {
+            resp[i] = exp(resp[i] - tmp);
+            den += resp[i];
+        }
+
+        for (int k = 0; k < numGaussians; k++)
+        {
+            sum_wj[k] += resp[k] / den;
+            sum_wj_xj[k] += x[j] * resp[k] / den;
+            sum_wj_xj2[k] += x[j] * x[j] * resp[k] / den;
+        }
     }
-  //Assign next iteration parameters to current parameters
-  for (int k = 0; k < numGaussians; k++)
+    //Assign next iteration parameters to current parameters
+    for (int k = 0; k < numGaussians; k++)
     {
-      a[k] = sum_wj[k]/double(dataSize);
-      mean[k] = sum_wj_xj[k]/sum_wj[k];
-      var[k] = sum_wj_xj2[k]/sum_wj[k] - mean[k]*mean[k];
+        a[k] = sum_wj[k] / double(dataSize);
+        mean[k] = sum_wj_xj[k] / sum_wj[k];
+        var[k] = sum_wj_xj2[k] / sum_wj[k] - mean[k] * mean[k];
     }
 
-  loglikelihood = L;
-  BIC = -2.0*loglikelihood+double(3.0*numGaussians-1)*gsl_sf_log(dataSize);
-  return;
+    loglikelihood = L;
+    BIC = -2.0 * loglikelihood + double(3.0 * numGaussians - 1) * gsl_sf_log(dataSize);
+    return;
 }
 
 
 /*
   Prints the current values of all parameters, log likelihood, and BIC
  */
- void GMM::printState()
+void GMM::printState()
 {
-  cerr << setprecision(5) << scientific;
+    cerr << setprecision(5) << scientific;
 
-  cerr << "(";
-  for(int k=0;k<numGaussians-1;k++) cerr << a[k] << ",";
-  cerr << a[numGaussians-1] << ")\t";
-  
-  cerr << "(";
-  for(int k=0;k<numGaussians-1;k++) cerr << mean[k] << ",";
-  cerr << mean[numGaussians-1] << ")\t";
-  
-  cerr << "(";
-  for(int k=0;k<numGaussians-1;k++) cerr << var[k] << ",";
-  cerr << var[numGaussians-1] << ")\t";
+    cerr << "(";
+    for (int k = 0; k < numGaussians - 1; k++) cerr << a[k] << ",";
+    cerr << a[numGaussians - 1] << ")\t";
 
-  cerr << loglikelihood << "\t" << BIC << endl;
+    cerr << "(";
+    for (int k = 0; k < numGaussians - 1; k++) cerr << mean[k] << ",";
+    cerr << mean[numGaussians - 1] << ")\t";
+
+    cerr << "(";
+    for (int k = 0; k < numGaussians - 1; k++) cerr << var[k] << ",";
+    cerr << var[numGaussians - 1] << ")\t";
+
+    cerr << loglikelihood << "\t" << BIC << endl;
 }
 
 
 /*
   Starts the GMM EM estimation proceedure
-  
+
   INPUT:
-  
+
     double *data : an array of data point observations to use for GMM
     int size : the length of the array
 
@@ -369,50 +369,50 @@ void GMM::update()
     Parameters a, mean, var, a_t, mean_t, var_t, BIC, and loglikelohood are modified.
 
  */
- bool GMM::estimate(double *data, int size)
+bool GMM::estimate(double *data, int size)
 {
-  bool converged = false;
+    bool converged = false;
 
-  if(data == NULL || size < 1)
+    if (data == NULL || size < 1)
     {
-      cerr << "Invalid dataset.\n";
-      throw 1;
+        cerr << "Invalid dataset.\n";
+        throw 1;
     }
 
-  if(verbose) cerr << "Begin GMM estimation with k = " << numGaussians << " Gaussians...\n";
+    if (verbose) cerr << "Begin GMM estimation with k = " << numGaussians << " Gaussians...\n";
 
-  dataSize = size;
-  x = data;
+    dataSize = size;
+    x = data;
 
-  double lastloglikelihood = loglikelihood;
+    double lastloglikelihood = loglikelihood;
 
-  if(verbose)
+    if (verbose)
     {
-      cerr << "iteration\tmixture\tmean\tvar\tlogL\tBIC\n";
-      cerr << "0\t";
-      printState();
+        cerr << "iteration\tmixture\tmean\tvar\tlogL\tBIC\n";
+        cerr << "0\t";
+        printState();
     }
 
-  for(int i = 1; i <= maxIterations; i++)
+    for (int i = 1; i <= maxIterations; i++)
     {
-      //EM steps are done here, includes recalculation of the likelihood and BIC
-      update(); 
+        //EM steps are done here, includes recalculation of the likelihood and BIC
+        update();
 
-      if(verbose)
-	{
-	  cerr << i << "\t";
-	  printState();
-	}
+        if (verbose)
+        {
+            cerr << i << "\t";
+            printState();
+        }
 
-      if(abs(loglikelihood - lastloglikelihood) <= precision)
-	{
-	  converged = true;
-	  break;
-	}
+        if (abs(loglikelihood - lastloglikelihood) <= precision)
+        {
+            converged = true;
+            break;
+        }
 
-      lastloglikelihood = loglikelihood;
+        lastloglikelihood = loglikelihood;
     }
 
-  return converged;
+    return converged;
 }
 
