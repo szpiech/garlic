@@ -26,7 +26,7 @@ rohscan-main.o : rohscan-main.cpp
 	g++ $(G++FLAG) -c rohscan-main.cpp -I$(I_PATH)
 
 rohscan-data.o : rohscan-data.cpp
-	g++ $(G++FLAG) -c rohscan-data.cpp 
+	g++ $(G++FLAG) -c rohscan-data.cpp  -I$(I_PATH)
 
 rohscan-roh.o : rohscan-roh.cpp
 	g++ $(G++FLAG) -c rohscan-roh.cpp -I$(I_PATH)
