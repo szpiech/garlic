@@ -3,8 +3,12 @@
 #G++FLAG = -g -Wall
 G++FLAG = -O3 -m64 -mmmx -msse -msse2
 I_PATH = ../include
-L_PATH = ../lib
-#L_PATH2 = /usr/local/lib
+
+#osx
+L_PATH = ../lib/osx
+
+#linux
+#L_PATH = ../lib/linux
 
 #For static linking
 LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
