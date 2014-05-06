@@ -246,6 +246,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
             oneAllele = TPED_MISSING;
             string genotypes;
             getline(fin, genotypes);
+            genotypes += " ";
             ss.str(genotypes);
             ss >> junk;
             ss >> junk;
@@ -260,7 +261,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
                 {
                     string alleleStr;
                     ss >> alleleStr;
-                    short allele;
+                    short allele = -1;
 
                     if(alleleStr.compare(TPED_MISSING) == 0)
                     {
