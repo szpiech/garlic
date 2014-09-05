@@ -6,6 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <ctime>
+#include "gzstream.h"
 #include "gsl/gsl_rng.h"
 
 using namespace std;

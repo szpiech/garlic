@@ -180,7 +180,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
         vector< int_pair_t > *indCoordList)
 {
     int expectedHaps = 2 * expectedInd;
-    ifstream fin;
+    igzstream fin;
     cerr << "Checking " << filename << "...\n";
     fin.open(filename.c_str());
 
@@ -190,7 +190,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
         throw 0;
     }
 
-    int fileStart = fin.tellg();
+    //int fileStart = fin.tellg();
     string line;
     int nhaps = -1;
     int nloci = 0;
@@ -213,8 +213,16 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
         throw 0;
     }
 
+    fin.close();
     fin.clear(); // clear error flags
-    fin.seekg(fileStart);
+    //fin.seekg(fileStart);
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        throw 0;
+    }
 
     cerr << "Loading genotypes " << filename << "...\n";
 
@@ -314,7 +322,7 @@ vector< vector< HapData * >* > *readHapData(string filename,
         vector< int_pair_t > *indCoordList)
 {
     int expectedHaps = 2 * expectedInd;
-    ifstream fin;
+    igzstream fin;
     cerr << "Checking " << filename << "...\n";
     fin.open(filename.c_str());
 
@@ -324,7 +332,7 @@ vector< vector< HapData * >* > *readHapData(string filename,
         throw 0;
     }
 
-    int fileStart = fin.tellg();
+    //int fileStart = fin.tellg();
     string line;
     int nhaps = 0;
     int nloci = -1;
@@ -347,8 +355,16 @@ vector< vector< HapData * >* > *readHapData(string filename,
         throw 0;
     }
 
+    fin.close();
     fin.clear(); // clear error flags
-    fin.seekg(fileStart);
+    //fin.seekg(fileStart);
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        throw 0;
+    }
 
     cerr << "Loading genotypes " << filename << "...\n";
 
@@ -520,7 +536,7 @@ void writeWinData(vector< vector< WinData * >* > *winDataByPopByChr,
                   vector< MapData * > *mapDataByChr,
                   string outfile)
 {
-    ofstream fout;
+    ogzstream fout;
     int numPop = indDataByPop->size();
     int numChr = mapDataByChr->size();
     for (int pop = 0; pop < numPop; pop++)
@@ -536,7 +552,7 @@ void writeWinData(vector< vector< WinData * >* > *winDataByPopByChr,
             rawWinOutfile += popName;
             rawWinOutfile += ".chr";
             rawWinOutfile += chrnum;
-            rawWinOutfile += ".raw.lod.windows";
+            rawWinOutfile += ".raw.lod.windows.gz";
 
             fout.open(rawWinOutfile.c_str());
             if (fout.fail())
@@ -637,7 +653,7 @@ int countFields(const string &str)
 
 vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci)
 {
-    ifstream fin;
+    igzstream fin;
     cerr << "Scanning " << filename << "...\n";
     fin.open(filename.c_str());
 
@@ -702,7 +718,7 @@ vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrC
 {
     vector< MapData * > *mapDataByChr = new vector< MapData * >;
 
-    ifstream fin;
+    igzstream fin;
     cerr << "Loading map from " << filename << "...\n";
     fin.open(filename.c_str());
 
@@ -738,7 +754,7 @@ vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrC
 
 vector< int_pair_t > *scanMapData(string filename, int &numLoci)
 {
-    ifstream fin;
+    igzstream fin;
     cerr << "Scanning " << filename << "...\n";
     fin.open(filename.c_str());
 
@@ -801,7 +817,7 @@ vector< MapData * > *readMapData(string filename, vector< int_pair_t > *chrCoord
 {
     vector< MapData * > *mapDataByChr = new vector< MapData * >;
 
-    ifstream fin;
+    igzstream fin;
     cerr << "Loading map " << filename << "...\n";
     fin.open(filename.c_str());
 
@@ -835,7 +851,7 @@ vector< MapData * > *readMapData(string filename, vector< int_pair_t > *chrCoord
 
 vector< int_pair_t > *scanTFAMData(string filename, int &numInd)
 {
-    ifstream fin;
+    igzstream fin;
     cerr << "Scanning " << filename << "...\n";
     fin.open(filename.c_str());
 
@@ -897,7 +913,7 @@ vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoor
 {
     vector< IndData * > *indDataByPop = new vector< IndData * >;
 
-    ifstream fin;
+    igzstream fin;
     cerr << "Loading " << filename << "...\n";
     fin.open(filename.c_str());
 
@@ -929,7 +945,7 @@ vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoor
 
 vector< int_pair_t > *scanIndData(string filename, int &numInd)
 {
-    ifstream fin;
+    igzstream fin;
     cerr << "Scanning " << filename << "...\n";
     fin.open(filename.c_str());
 
@@ -991,7 +1007,7 @@ vector< IndData * > *readIndData(string filename, vector< int_pair_t > *indCoord
 {
     vector< IndData * > *indDataByPop = new vector< IndData * >;
 
-    ifstream fin;
+    igzstream fin;
     cerr << "Loading " << filename << "...\n";
     fin.open(filename.c_str());
 
