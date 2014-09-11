@@ -65,6 +65,10 @@ const string ARG_TFAM = "--tfam";
 const string DEFAULT_TFAM = "__tfamfile";
 const string HELP_TFAM = "A tfam formatted file containing population and individual IDs.";
 
+const string ARG_RAW_LOD = "--raw-lod";
+const bool DEFAULT_RAW_LOD = false;
+const string HELP_RAW_LOD = "If set, raw LOD scores will be output to gzip compressed files.";
+
 int main(int argc, char *argv[])
 {
 
@@ -83,6 +87,7 @@ int main(int argc, char *argv[])
     params.addFlag(ARG_RESAMPLE, DEFAULT_RESAMPLE, "resampleLabel", HELP_RESAMPLE);
     params.addFlag(ARG_TPED, DEFAULT_TPED, "", HELP_TPED);
     params.addFlag(ARG_TFAM, DEFAULT_TFAM, "", HELP_TFAM);
+    params.addFlag(ARG_RAW_LOD, DEFAULT_RAW_LOD, "", HELP_RAW_LOD);
 
     try
     {
@@ -106,6 +111,7 @@ int main(int argc, char *argv[])
     int MAX_GAP = params.getIntFlag(ARG_MAX_GAP);
     int nresample = params.getIntFlag(ARG_RESAMPLE);
     bool TPED = false;
+    bool RAW_LOD = params.getBoolFlag(ARG_RAW_LOD);
 
     if (tpedfile.compare(DEFAULT_TPED) != 0 && tfamfile.compare(DEFAULT_TFAM) != 0) TPED = true;
 
@@ -233,24 +239,26 @@ int main(int argc, char *argv[])
 
     cerr << "There are " << popChrPairs->size() << " pop/chr combinations to compute.\n";
 
+    int numThreadsLODcalc = numThreads;
+
     if (popChrPairs->size() < numThreads)
     {
-        numThreads = popChrPairs->size();
+        numThreadsLODcalc = popChrPairs->size();
         cerr << "WARNING: there are fewer pop/chr pairs than threads requested.  Running with "
              << numThreads << " threads instead.\n";
     }
 
     //Partition pop/chr pairs amongst the specified threads
-    unsigned long int *NUM_PER_THREAD = new unsigned long int[numThreads];
-    unsigned long int div = popChrPairs->size() / numThreads;
-    for (int i = 0; i < numThreads; i++) NUM_PER_THREAD[i] = div;
-    for (int i = 0; i < (popChrPairs->size()) % numThreads; i++) NUM_PER_THREAD[i]++;
+    unsigned long int *NUM_PER_THREAD = new unsigned long int[numThreadsLODcalc];
+    unsigned long int div = popChrPairs->size() / numThreadsLODcalc;
+    for (int i = 0; i < numThreadsLODcalc; i++) NUM_PER_THREAD[i] = div;
+    for (int i = 0; i < (popChrPairs->size()) % numThreadsLODcalc; i++) NUM_PER_THREAD[i]++;
 
 
     work_order_t *order;
-    pthread_t *peer = new pthread_t[numThreads];
+    pthread_t *peer = new pthread_t[numThreadsLODcalc];
     int prev_index = 0;
-    for (int i = 0; i < numThreads; i++)
+    for (int i = 0; i < numThreadsLODcalc; i++)
     {
         order = new work_order_t;
         order->first_index = prev_index;
@@ -276,7 +284,7 @@ int main(int argc, char *argv[])
 
     }
 
-    for (int i = 0; i < numThreads; i++)
+    for (int i = 0; i < numThreadsLODcalc; i++)
     {
         pthread_join(peer[i], NULL);
     }
@@ -287,14 +295,12 @@ int main(int argc, char *argv[])
     //Output raw windows
     try
     {
-        writeWinData(winDataByPopByChr, indDataByPop, mapDataByChr, outfile);
+        if(RAW_LOD) writeWinData(winDataByPopByChr, indDataByPop, mapDataByChr, outfile);
     }
     catch (...)
     {
         return -1;
     }
-
-    ofstream fout;
 
     //Format the LOD window data into a single array per pop with no missing data
     //Prepped for KDE
@@ -302,12 +308,13 @@ int main(int argc, char *argv[])
 
     //Compute KDE of LOD score distribution
     cerr << "Estimating distribution of raw LOD score windows:\n";
-    vector < KDEResult * > *kdeResultByPop = computeKDE(rawWinDataByPop, indDataByPop);
+    vector < KDEResult * > *kdeResultByPop = computeKDE(rawWinDataByPop, indDataByPop, numThreads);
     releaseDoubleData(rawWinDataByPop);
 
     string boundaryOutfile = outfile;
     boundaryOutfile += ".lod.cutoff";
 
+    ofstream fout;
     fout.open(boundaryOutfile.c_str());
     if (fout.fail())
     {

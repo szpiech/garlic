@@ -95,20 +95,58 @@ void releaseKDEResult(KDEResult *data)
     return;
 }
 
-vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vector< IndData * > *indDataByPop)
+vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vector< IndData * > *indDataByPop, int numThreads)
 {
     vector < KDEResult * > *kdeResultByPop = new  vector < KDEResult * >;
+    //Fill the vector with null pointers for each population
+    for (int pop = 0; pop < rawWinDataByPop->size(); pop++) kdeResultByPop->push_back(NULL);
+    //Don't use more threads than populations
+    if(numThreads > rawWinDataByPop->size()) numThreads = rawWinDataByPop->size();
 
-    for (int pop = 0; pop < rawWinDataByPop->size(); pop++)
+    KDEWork *work_order;
+    pthread_t *peer = new pthread_t[numThreads];
+    for (int i = 0; i < numThreads; i++)
     {
-        cerr << "\t" << indDataByPop->at(pop)->pop << "...";
-        KDEResult *result = computeKDE(rawWinDataByPop->at(pop)->data, rawWinDataByPop->at(pop)->size);
-        cerr << "\tdone.\n";
-        kdeResultByPop->push_back(result);
+        work_order = new KDEWork;
+        work_order->id = i;
+        work_order->numThreads = numThreads;
+        work_order->indDataByPop = indDataByPop;
+        work_order->kdeResultByPop = kdeResultByPop;
+        work_order->rawWinDataByPop = rawWinDataByPop;
+        pthread_create(&(peer[i]),
+                       NULL,
+                       (void *(*)(void *))doKDE,
+                       (void *)work_order);
+
+        //cerr << "\t" << indDataByPop->at(pop)->pop << "...";
+        //KDEResult *result = computeKDE(rawWinDataByPop->at(pop)->data, rawWinDataByPop->at(pop)->size);
+        //cerr << "\tdone.\n";
+        //kdeResultByPop->push_back(result);
+    }
+
+    for (int i = 0; i < numThreads; i++)
+    {    
+        pthread_join(peer[i], NULL);
     }
     return kdeResultByPop;
 }
 
+void doKDE(void *kdework)
+{
+    KDEWork *w = (KDEWork *)kdework;
+    int id = w->id;
+    int numThreads = w->numThreads;
+    vector < DoubleData * > *rawWinDataByPop  = w->rawWinDataByPop;
+    vector< IndData * > *indDataByPop = w->indDataByPop;
+    
+    for(int pop = id; pop < rawWinDataByPop->size(); pop += numThreads)
+    {
+        KDEResult *result = computeKDE(rawWinDataByPop->at(pop)->data, rawWinDataByPop->at(pop)->size);
+        w->kdeResultByPop->at(pop) = result;
+    }
+
+    return;
+}
 
 void releaseKDEResult(vector < KDEResult * > *kdeResultByPop)
 {

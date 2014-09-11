@@ -1,7 +1,7 @@
 # Makefile for rohscan
 
 #G++FLAG = -g -Wall
-G++FLAG = -O3 -m64 -mmmx -msse -msse2
+G++FLAG = -fast -m64 -mmmx -msse -msse2
 I_PATH = ../include
 
 #osx

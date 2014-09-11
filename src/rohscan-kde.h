@@ -20,10 +20,19 @@ struct KDEResult
     double *y;
 };
 
+struct KDEWork
+{
+	vector < DoubleData * > *rawWinDataByPop;
+	int id;
+	int numThreads;
+	vector< IndData * > *indDataByPop;
+	vector < KDEResult * > *kdeResultByPop;
+};
+
 double nrd0(double *data, const int n);
 
 KDEResult *computeKDE(double *data, int size);
-vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vector< IndData * > *indDataByPop);
+vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vector< IndData * > *indDataByPop, double numThreads);
 void releaseKDEResult(KDEResult *data);
 void releaseKDEResult(vector < KDEResult * > *kdeResultByPop);
 void writeKDEResult(vector < KDEResult * > *kdeResultByPop, vector< IndData * > *indDataByPop, string outfile);
@@ -32,6 +41,8 @@ int get_arg_max(double *nums, int size);
 int get_arg_min(double *nums, int size);
 double get_min_btw_modes(double *x, double *y, int size);
 double slope(double x0, double y0, double x1, double y1);
+
+void doKDE(void *kdework);
 
 
 #endif
