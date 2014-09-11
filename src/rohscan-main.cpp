@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <fstream>
 #include <cmath>
+#include <pthread.h>
 #include "rohscan-data.h"
 #include "rohscan-roh.h"
 #include "rohscan-kde.h";

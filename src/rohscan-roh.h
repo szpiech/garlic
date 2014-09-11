@@ -2,6 +2,7 @@
 #define __ROHSCAN_ROH_H__
 #include "rohscan-data.h"
 #include "param_t.h"
+#include <pthread.h>
 #include <cmath>
 #include <iostream>
 
