@@ -7,6 +7,7 @@
 #include <string>
 #include <cstring>
 #include <limits>
+#include <pthread.h>
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_sort.h>
 #include <gsl/gsl_math.h>
@@ -32,7 +33,7 @@ struct KDEWork
 double nrd0(double *data, const int n);
 
 KDEResult *computeKDE(double *data, int size);
-vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vector< IndData * > *indDataByPop, double numThreads);
+vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vector< IndData * > *indDataByPop, int numThreads);
 void releaseKDEResult(KDEResult *data);
 void releaseKDEResult(vector < KDEResult * > *kdeResultByPop);
 void writeKDEResult(vector < KDEResult * > *kdeResultByPop, vector< IndData * > *indDataByPop, string outfile);
