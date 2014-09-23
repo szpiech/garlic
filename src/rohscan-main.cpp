@@ -21,7 +21,8 @@ const string HELP_MAPFILE = "A mapfile with one row per variant site.\n\
 
 const string ARG_HAPFILE = "--hap";
 const string DEFAULT_HAPFILE = "__hapfile";
-const string HELP_HAPFILE = "A hapfile with one row per individual, and one column per variant.\n\
+const string HELP_HAPFILE = "A hapfile with one row per individual,\n\
+\tand one column per variant.\n\
 \tVariants should be coded 0/1/-9.";
 
 const string ARG_INDFILE = "--ind";
@@ -56,13 +57,14 @@ const string HELP_BW = "Manually set the bandwidth for the KDE of lod scores.\n\
 
 const string ARG_MAX_GAP = "--max-gap";
 const int DEFAULT_MAX_GAP = 200000;
-const string HELP_MAX_GAP = "A LOD score window is not calculated if the gap in bps between two loci\n\
-\tis greater than this parameter.";
+const string HELP_MAX_GAP = "A LOD score window is not calculated if the gap (in bps)\n\
+\tbetween two loci is greater than this value.";
 
 const string ARG_RESAMPLE = "--resample";
 const int DEFAULT_RESAMPLE = 0;
-const string HELP_RESAMPLE = "Number of resamples for estimating allele frequencies.  When set to 0 (default), rohscan will\n\
-\tuse allele frequencies as calculated from the data.";
+const string HELP_RESAMPLE = "Number of resamples for estimating allele frequencies.\n\
+\tWhen set to 0 (default), rohscan will use allele\n\
+\tfrequencies as calculated from the data.";
 
 const string ARG_TPED = "--tped";
 const string DEFAULT_TPED = "__tpedfile";
@@ -74,16 +76,18 @@ const string HELP_TFAM = "A tfam formatted file containing population and indivi
 
 const string ARG_RAW_LOD = "--raw-lod";
 const bool DEFAULT_RAW_LOD = false;
-const string HELP_RAW_LOD = "If set, raw LOD scores will be output to gzip compressed files.";
+const string HELP_RAW_LOD = "If set, LOD scores will be output to gzip compressed files.";
 
 const string ARG_LOD_CUTOFF = "--lod-cutoff";
 const double DEFAULT_LOD_CUTOFF = -999999;
-const string HELP_LOD_CUTOFF = "For LOD based ROH calling, specify a LOD score cutoff above which ROH are called.\n\
-\tBy default, this is chosen automatically per population with KDE.";
+const string HELP_LOD_CUTOFF = "For LOD based ROH calling, specify a LOD score cutoff\n\
+\tabove which ROH are called.  By default, this is chosen\n\
+\tautomatically per population with KDE.";
 
 const string ARG_BOUND_SIZE = "--size-bounds";
 const double DEFAULT_BOUND_SIZE = -1;
-const string HELP_BOUND_SIZE = "Specify the short/medium and medium/long ROH boundaries.  By default, this is chosen automatically\n\
+const string HELP_BOUND_SIZE = "Specify the short/medium and medium/long\n\
+\tROH boundaries.  By default, this is chosen automatically\n\
 \twith a 3-component GMM.  Must provide 2 numbers.";
 
 int main(int argc, char *argv[])
