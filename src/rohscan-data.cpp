@@ -1131,7 +1131,6 @@ void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, ma
         throw 0;
     }
 
-    stringstream ss;
     string line;
     int nind = 0;
     int min_cols = 2;
@@ -1147,11 +1146,12 @@ void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, ma
                  << ", but expected at least " << min_cols << ".\n";
             throw 0;
         }
+        stringstream ss;
         ss.str(line);
         ss >> pop >> ind;
         if (ind2pop.count(ind) > 0)
         {
-            cerr << "ERROR: Found duplicate individual ID, " << ind << ", in " << filename << endl;
+            cerr << "ERROR: Found duplicate individual ID (" << ind << ") in " << filename << endl;
             throw 0;
         }
         else ind2pop[ind] = pop;
