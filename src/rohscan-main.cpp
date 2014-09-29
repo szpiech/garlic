@@ -272,11 +272,11 @@ int main(int argc, char *argv[])
 
 
     int numChr = chrCoordList->size();
-    int numPop = indCoordList->size();
+    int numPop = pop2size.size();
     chrCoordList->clear();
-    indCoordList->clear();
+    //indCoordList->clear();
     delete chrCoordList;
-    delete indCoordList;
+   // delete indCoordList;
 
     //Create a vector of pop/chr pairs
     //These will be distributed across threads for LOD score calculation

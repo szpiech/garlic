@@ -481,11 +481,14 @@ vector< vector< HapData * >* > *readHapData2(string filename,
 
     cerr << "Loading genotypes " << filename << "...\n";
 
+    //track index for individuals in hapDataByPopByChr->at(pop)->at(chr)->data
+    map<string,int> pop2currind;
     vector< vector< HapData * >* > *hapDataByPopByChr = new vector< vector< HapData * >* >;
 
     //For each population
     for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
     {
+        pop2currind[it->first] = 0; //init
         //number of haplotypes in current population
         int totalHaps = 2 * (it->second);
         vector< HapData * > *hapDataByChr = new vector< HapData * >;
@@ -498,6 +501,17 @@ vector< vector< HapData * >* > *readHapData2(string filename,
         hapDataByPopByChr->push_back(hapDataByChr);
     }
 
+    cerr << "numpops " << hapDataByPopByChr->size() << endl;
+    for (int i = 0; i < hapDataByPopByChr->size(); i++)
+    {
+        cerr << "pop " << i << "\n\tnum chr " << hapDataByPopByChr->at(i)->size() << endl;
+        for (int j = 0; j < hapDataByPopByChr->at(i)->size(); j++)
+        {
+            cerr << "\tchr " << j << " \n\thaps " << hapDataByPopByChr->at(i)->at(j)->nhaps
+                 << "\n\tloci " << hapDataByPopByChr->at(i)->at(j)->nloci << endl;
+        }
+    }
+
     //for each individual
     string hap1, hap2;
     short allele1, allele2;
@@ -508,13 +522,21 @@ vector< vector< HapData * >* > *readHapData2(string filename,
         getline(fin, hap2);
         ss1.str(hap1);
         ss2.str(hap2);
+
+        cerr << ind << " ";
+        cerr << indList[ind] << " ";
+        cerr << ind2pop[indList[ind]] << " ";
+        cerr << pop2index[ind2pop[indList[ind]]] << "\n";
+
         int pop = pop2index[ind2pop[indList[ind]]];
+        int index = pop2currind[ind2pop[indList[ind]]];
         //For each chromosome
         for (int chr = 0; chr < chrCoordList->size(); chr++)
         {
-            int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
+            cerr << chr << " ";
+            //int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
             //For each locus on the chromosome
-            for (int locus = 0; locus < totalLoci; locus++)
+            for (int locus = 0; locus < hapDataByPopByChr->at(pop)->at(chr)->nloci; locus++)
             {
                 ss1 >> allele1;
                 ss2 >> allele2;
@@ -534,11 +556,15 @@ vector< vector< HapData * >* > *readHapData2(string filename,
                     throw 0;
                 }
                 //load into data stru
-                hapDataByPopByChr->at(pop)->at(chr)->data[2 * ind][locus] = allele1;
-                hapDataByPopByChr->at(pop)->at(chr)->data[2 * ind + 1][locus] = allele2;
+                hapDataByPopByChr->at(pop)->at(chr)->data[2 * index][locus] = allele1;
+                hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
             }
         }
+        cerr << "\n";
+        pop2currind[ind2pop[indList[ind]]]++;
     }
+
+    cerr << "SUCCESS loading hap data.\n";
 
     fin.close();
 
@@ -1217,6 +1243,8 @@ vector< IndData * > *readIndData2(string filename, int numInd,
         throw 0;
     }
 
+
+
     //pop2curpos tracks the current index of the IndData underlying array
     //   so we know where to load the next ind ID in the following section
     //   it is initialized here.
@@ -1234,10 +1262,10 @@ vector< IndData * > *readIndData2(string filename, int numInd,
         index++;
     }
 
-    stringstream ss;
     string line, pop, ind;
     for (int i = 0; i < numInd; i++)
     {
+        stringstream ss;
         getline(fin, line);
         ss.str(line);
         ss >> pop >> ind;
