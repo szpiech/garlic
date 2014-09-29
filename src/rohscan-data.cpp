@@ -271,7 +271,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
                     ss >> alleleStr;
                     short allele = -1;
 
-                    if(alleleStr.compare(TPED_MISSING) == 0)
+                    if (alleleStr.compare(TPED_MISSING) == 0)
                     {
                         allele = -9;
                     }
@@ -424,6 +424,127 @@ vector< vector< HapData * >* > *readHapData(string filename,
 
     return hapDataByPopByChr;
 }
+
+vector< vector< HapData * >* > *readHapData2(string filename,
+        int expectedLoci,
+        int expectedInd,
+        vector< int_pair_t > *chrCoordList,
+        string *indList,
+        map<string, string> &ind2pop,
+        map<string, int> &pop2size,
+        map<string, int> &pop2index)
+{
+    int expectedHaps = 2 * expectedInd;
+    igzstream fin;
+    cerr << "Checking " << filename << "...\n";
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        throw 0;
+    }
+
+    //int fileStart = fin.tellg();
+    string line;
+    int nhaps = 0;
+    int nloci = -1;
+    while (getline(fin, line))
+    {
+        nhaps++;
+        nloci = countFields(line);
+        //cout << "nloci: " << current_nloci << endl;
+        if (nloci != expectedLoci)
+        {
+            cerr << "ERROR: line " << nhaps << " of " << filename << " has " << nloci
+                 << ", but expected " << expectedLoci << ".\n";
+            throw 0;
+        }
+    }
+    if (nhaps != expectedHaps)
+    {
+        cerr << "ERROR: " << filename << " has " << nhaps
+             << " haplotypes, but expected " << expectedHaps << ".\n";
+        throw 0;
+    }
+
+    fin.close();
+    fin.clear(); // clear error flags
+    //fin.seekg(fileStart);
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        throw 0;
+    }
+
+    cerr << "Loading genotypes " << filename << "...\n";
+
+    vector< vector< HapData * >* > *hapDataByPopByChr = new vector< vector< HapData * >* >;
+
+    //For each population
+    for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
+    {
+        //number of haplotypes in current population
+        int totalHaps = 2 * (it->second);
+        vector< HapData * > *hapDataByChr = new vector< HapData * >;
+        for (int chr = 0; chr < chrCoordList->size(); chr++)
+        {
+            int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
+            HapData *data = initHapData(totalHaps, totalLoci);
+            hapDataByChr->push_back(data);
+        }
+        hapDataByPopByChr->push_back(hapDataByChr);
+    }
+
+    //for each individual
+    string hap1, hap2;
+    short allele1, allele2;
+    for (int ind = 0; ind < expectedInd; ind++)
+    {
+        stringstream ss1, ss2;
+        getline(fin, hap1);
+        getline(fin, hap2);
+        ss1.str(hap1);
+        ss2.str(hap2);
+        int pop = pop2index[ind2pop[indList[ind]]];
+        //For each chromosome
+        for (int chr = 0; chr < chrCoordList->size(); chr++)
+        {
+            int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
+            //For each locus on the chromosome
+            for (int locus = 0; locus < totalLoci; locus++)
+            {
+                ss1 >> allele1;
+                ss2 >> allele2;
+                //error checking
+                if (allele1 != 0 && allele1 != 1 && allele1 != -9)
+                {
+                    cerr << "ERROR: Individual " << indList[ind] << " has an illegal value ("
+                         << allele1 << ").  Must be 0/1/-9.\n";
+
+                    throw 0;
+                }
+                if (allele2 != 0 && allele2 != 1 && allele2 != -9)
+                {
+                    cerr << "ERROR: Individual " << indList[ind] << " has an illegal value ("
+                         << allele2 << ").  Must be 0/1/-9.\n";
+
+                    throw 0;
+                }
+                //load into data stru
+                hapDataByPopByChr->at(pop)->at(chr)->data[2 * ind][locus] = allele1;
+                hapDataByPopByChr->at(pop)->at(chr)->data[2 * ind + 1][locus] = allele2;
+            }
+        }
+    }
+
+    fin.close();
+
+    return hapDataByPopByChr;
+}
+
 
 void releaseHapData(vector< vector< HapData * >* > *hapDataByPopByChr)
 {
@@ -582,9 +703,6 @@ void writeWinData(vector< vector< WinData * >* > *winDataByPopByChr,
     return;
 }
 
-
-
-
 HapData *initHapData(unsigned int nhaps, unsigned int nloci)
 {
     if (nhaps < 1 || nloci < 1)
@@ -627,7 +745,6 @@ void releaseHapData(HapData *data)
     data = NULL;
     return;
 }
-
 
 int countFields(const string &str)
 {
@@ -848,7 +965,6 @@ vector< MapData * > *readMapData(string filename, vector< int_pair_t > *chrCoord
     return mapDataByChr;
 }
 
-
 vector< int_pair_t > *scanTFAMData(string filename, int &numInd)
 {
     igzstream fin;
@@ -1003,6 +1119,54 @@ vector< int_pair_t > *scanIndData(string filename, int &numInd)
     return indStartStop;
 }
 
+void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, map<string, int> &pop2size)
+{
+    igzstream fin;
+    cerr << "Scanning " << filename << "...\n";
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        throw 0;
+    }
+
+    stringstream ss;
+    string line;
+    int nind = 0;
+    int min_cols = 2;
+    int current_cols = 0;
+    string pop, ind;
+    while (getline(fin, line))
+    {
+        nind++;
+        current_cols = countFields(line);
+        if (current_cols < min_cols)
+        {
+            cerr << "ERROR: line " << nind << " of " << filename << " has " << current_cols
+                 << ", but expected at least " << min_cols << ".\n";
+            throw 0;
+        }
+        ss.str(line);
+        ss >> pop >> ind;
+        if (ind2pop.count(ind) > 0)
+        {
+            cerr << "ERROR: Found duplicate individual ID, " << ind << ", in " << filename << endl;
+            throw 0;
+        }
+        else ind2pop[ind] = pop;
+
+        if (pop2size.count(pop) > 0) pop2size[pop]++;
+        else pop2size[pop] = 1;
+    }
+
+    fin.close();
+
+    numInd = nind;
+
+    return;
+}
+
 vector< IndData * > *readIndData(string filename, vector< int_pair_t > *indCoordList)
 {
     vector< IndData * > *indDataByPop = new vector< IndData * >;
@@ -1029,6 +1193,57 @@ vector< IndData * > *readIndData(string filename, vector< int_pair_t > *indCoord
         }
         cerr << size << " individuals in population " << data->pop << endl;
         indDataByPop->push_back(data);
+    }
+
+    fin.close();
+
+    return indDataByPop;
+}
+
+vector< IndData * > *readIndData2(string filename, int numInd,
+                                  map<string, string> &ind2pop,
+                                  map<string, int> &pop2size,
+                                  string *indList, map<string, int> &pop2index)
+{
+    vector< IndData * > *indDataByPop = new vector< IndData * >;
+
+    igzstream fin;
+    cerr << "Loading " << filename << "...\n";
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        throw 0;
+    }
+
+    //pop2curpos tracks the current index of the IndData underlying array
+    //   so we know where to load the next ind ID in the following section
+    //   it is initialized here.
+    map<string, int> pop2curpos;
+    IndData *data;
+    int index = 0;
+    //Initialize indDataByPop
+    for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
+    {
+        data = initIndData(it->second);
+        data->pop = it->first;
+        indDataByPop->push_back(data);
+        pop2curpos[it->first] = 0;
+        pop2index[it->first] = index;
+        index++;
+    }
+
+    stringstream ss;
+    string line, pop, ind;
+    for (int i = 0; i < numInd; i++)
+    {
+        getline(fin, line);
+        ss.str(line);
+        ss >> pop >> ind;
+        indList[i] = ind;
+        indDataByPop->at(pop2index[pop])->indID[pop2curpos[pop]] = ind;
+        pop2curpos[pop]++;
     }
 
     fin.close();

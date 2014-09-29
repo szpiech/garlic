@@ -224,6 +224,11 @@ int main(int argc, char *argv[])
     vector< MapData * > *mapDataByChr;
 
     vector< int_pair_t > *indCoordList;
+
+    string *indList;
+    map<string, string> ind2pop;
+    map<string, int> pop2size;
+    map<string, int> pop2index;
     vector< IndData * > *indDataByPop;
 
     vector< vector< HapData * >* > *hapDataByPopByChr;
@@ -248,10 +253,12 @@ int main(int argc, char *argv[])
             chrCoordList = scanMapData(mapfile, numLoci);
             mapDataByChr = readMapData(mapfile, chrCoordList);
 
-            indCoordList = scanIndData(indfile, numInd);
-            indDataByPop = readIndData(indfile, indCoordList);
+            scanIndData2(indfile, numInd, ind2pop, pop2size);
+            indList = new string[numInd];
 
-            hapDataByPopByChr = readHapData(hapfile, numLoci, numInd, chrCoordList, indCoordList);
+            indDataByPop = readIndData2(indfile, numInd, ind2pop, pop2size, indList, pop2index);
+
+            hapDataByPopByChr = readHapData2(hapfile, numLoci, numInd, chrCoordList, indList, ind2pop, pop2size, pop2index);
         }
 
         freqDataByPopByChr = calcFreqData(hapDataByPopByChr, nresample);
@@ -340,14 +347,18 @@ int main(int argc, char *argv[])
     releaseHapData(hapDataByPopByChr);
     releaseFreqData(freqDataByPopByChr);
 
-    //Output raw windows
-    try
+
+    if (RAW_LOD)
     {
-        if (RAW_LOD) writeWinData(winDataByPopByChr, indDataByPop, mapDataByChr, outfile);
-    }
-    catch (...)
-    {
-        return -1;
+        //Output raw windows
+        try
+        {
+            writeWinData(winDataByPopByChr, indDataByPop, mapDataByChr, outfile);
+        }
+        catch (...)
+        {
+            return -1;
+        }
     }
 
     double *lodScoreCutoffByPop = new double[numPop];
@@ -406,7 +417,7 @@ int main(int argc, char *argv[])
         cerr << "Wrote " << boundaryOutfile << "\n";
         fout.close();
 
-        
+
         releaseKDEResult(kdeResultByPop);
     }
     else

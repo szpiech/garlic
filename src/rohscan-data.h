@@ -6,6 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <ctime>
+#include <map>
 #include "gzstream.h"
 #include "gsl/gsl_rng.h"
 
@@ -89,7 +90,13 @@ vector< MapData * > *readMapData(string filename, vector< int_pair_t > *chrCoord
 vector< int_pair_t > *scanMapData(string filename, int &numLoci);
 
 vector< int_pair_t > *scanIndData(string filename, int &numInd);
+void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, map<string, int> &pop2size);
 vector< IndData * > *readIndData(string filename, vector< int_pair_t > *indCoordList);
+vector< IndData * > *readIndData2(string filename, int numInd,
+                                  map<string, string> &ind2pop,
+                                  map<string, int> &pop2size,
+                                  string *indList,
+                                  map<string, int> &pop2index);
 IndData *initIndData(int nind);
 void releaseIndData(vector< IndData * > *indDataByPop);
 void releaseIndData(IndData *data);
@@ -102,6 +109,14 @@ vector< vector< HapData * >* > *readHapData(string filename,
         int expectedInd,
         vector< int_pair_t > *chrCoordList,
         vector< int_pair_t > *indCoordList);
+vector< vector< HapData * >* > *readHapData2(string filename,
+        int expectedLoci,
+        int expectedInd,
+        vector< int_pair_t > *chrCoordList,
+        string *indList,
+        map<string, string> &ind2pop,
+        map<string, int> &pop2size,
+        map<string, int> &pop2index);
 
 vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);
 WinData *initWinData(unsigned int nind, unsigned int nloci);
