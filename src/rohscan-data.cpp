@@ -202,7 +202,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
         if (nhaps != expectedHaps + 4)
         {
             cerr << "ERROR: line " << nloci << " of " << filename << " has " << nhaps
-                 << " columns, but expected " << expectedHaps << ".\n";
+                 << " columns, but expected " << expectedHaps + 4 << ".\n";
             throw 0;
         }
     }
@@ -241,7 +241,6 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
         hapDataByPopByChr->push_back(hapDataByChr);
     }
 
-    stringstream ss;
     string junk, oneAllele;
     string TPED_MISSING = "0";
     //For each chromosome
@@ -251,6 +250,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
         //For each locus on the chromosome
         for (int locus = 0; locus < totalLoci; locus++)
         {
+            stringstream ss;
             oneAllele = TPED_MISSING;
             string genotypes;
             getline(fin, genotypes);
@@ -308,10 +308,168 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
                 }
             }
         }
-
     }
     fin.close();
 
+    return hapDataByPopByChr;
+}
+
+vector< vector< HapData * >* > *readTPEDHapData2(string filename,
+        int expectedLoci,
+        int expectedInd,
+        vector< int_pair_t > *chrCoordList,
+        string *indList,
+        map<string, string> &ind2pop,
+        map<string, int> &pop2size,
+        map<string, int> &pop2index)
+{
+    int expectedHaps = 2 * expectedInd;
+    igzstream fin;
+    cerr << "Checking " << filename << "...\n";
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        throw 0;
+    }
+
+    //int fileStart = fin.tellg();
+    string line;
+    int nhaps = -1;
+    int nloci = 0;
+    while (getline(fin, line))
+    {
+        nloci++;
+        nhaps = countFields(line);
+        //cout << "nhaps: " << current_nhaps << endl;
+        if (nhaps != expectedHaps + 4)
+        {
+            cerr << "ERROR: line " << nloci << " of " << filename << " has " << nhaps
+                 << " columns, but expected " << expectedHaps + 4 << ".\n";
+            throw 0;
+        }
+    }
+    if (nloci != expectedLoci)
+    {
+        cerr << "ERROR: " << filename << " has " << nloci
+             << " loci, but expected " << expectedLoci << ".\n";
+        throw 0;
+    }
+
+    fin.close();
+    fin.clear(); // clear error flags
+    //fin.seekg(fileStart);
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        throw 0;
+    }
+
+    cerr << "Loading genotypes " << filename << "...\n";
+
+    vector< vector< HapData * >* > *hapDataByPopByChr = new vector< vector< HapData * >* >;
+    //track index for individuals in hapDataByPopByChr->at(pop)->at(chr)->data
+    map<string, int> pop2currind;
+
+    //For each population
+    for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
+    {
+        pop2currind[it->first] = 0; //init
+        //number of haplotypes in current population
+        int totalHaps = 2 * (it->second);
+        vector< HapData * > *hapDataByChr = new vector< HapData * >;
+        for (int chr = 0; chr < chrCoordList->size(); chr++)
+        {
+            int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
+            HapData *data = initHapData(totalHaps, totalLoci);
+            hapDataByChr->push_back(data);
+        }
+        hapDataByPopByChr->push_back(hapDataByChr);
+    }
+
+    string locus;
+    string alleleStr1, alleleStr2;
+    string junk, oneAllele;
+    string TPED_MISSING = "0";
+
+    //For each chromosome
+    for (int chr = 0; chr < chrCoordList->size(); chr++)
+    {
+        int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
+        //For each locus on the chromosome
+        for (int locus = 0; locus < totalLoci; locus++)
+        {
+            for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
+            {
+                pop2currind[it->first] = 0;
+            }
+            stringstream ss;
+            oneAllele = TPED_MISSING;
+            string genotypes;
+            getline(fin, genotypes);
+            genotypes += " ";
+            ss.str(genotypes);
+            ss >> junk;
+            ss >> junk;
+            ss >> junk;
+            ss >> junk;
+            for (int ind = 0; ind < expectedInd; ind++)
+            {
+                int pop = pop2index[ind2pop[indList[ind]]];
+                int index = pop2currind[ind2pop[indList[ind]]];
+                ss >> alleleStr1 >> alleleStr2;
+                short allele1, allele2;
+                allele1 = -1;
+                allele2 = -1;
+
+                if (alleleStr1.compare(TPED_MISSING) == 0)
+                {
+                    allele1 = -9;
+                }
+                else if (oneAllele.compare(TPED_MISSING) == 0)
+                {
+                    oneAllele = alleleStr1;
+                    allele1 = 1;
+                }
+                else if (alleleStr1.compare(oneAllele) == 0)
+                {
+                    allele1 = 1;
+                }
+                else
+                {
+                    allele1 = 0;
+                }
+
+                if (alleleStr2.compare(TPED_MISSING) == 0)
+                {
+                    allele2 = -9;
+                }
+                else if (oneAllele.compare(TPED_MISSING) == 0)
+                {
+                    oneAllele = alleleStr2;
+                    allele2 = 1;
+                }
+                else if (alleleStr2.compare(oneAllele) == 0)
+                {
+                    allele2 = 1;
+                }
+                else
+                {
+                    allele2 = 0;
+                }
+
+                //load into data stru
+                hapDataByPopByChr->at(pop)->at(chr)->data[2 * index][locus] = allele1;
+                hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
+                pop2currind[ind2pop[indList[ind]]]++;
+            }
+        }
+    }
+    
+    fin.close();
     return hapDataByPopByChr;
 }
 
@@ -482,7 +640,7 @@ vector< vector< HapData * >* > *readHapData2(string filename,
     cerr << "Loading genotypes " << filename << "...\n";
 
     //track index for individuals in hapDataByPopByChr->at(pop)->at(chr)->data
-    map<string,int> pop2currind;
+    map<string, int> pop2currind;
     vector< vector< HapData * >* > *hapDataByPopByChr = new vector< vector< HapData * >* >;
 
     //For each population
@@ -501,17 +659,6 @@ vector< vector< HapData * >* > *readHapData2(string filename,
         hapDataByPopByChr->push_back(hapDataByChr);
     }
 
-    cerr << "numpops " << hapDataByPopByChr->size() << endl;
-    for (int i = 0; i < hapDataByPopByChr->size(); i++)
-    {
-        cerr << "pop " << i << "\n\tnum chr " << hapDataByPopByChr->at(i)->size() << endl;
-        for (int j = 0; j < hapDataByPopByChr->at(i)->size(); j++)
-        {
-            cerr << "\tchr " << j << " \n\thaps " << hapDataByPopByChr->at(i)->at(j)->nhaps
-                 << "\n\tloci " << hapDataByPopByChr->at(i)->at(j)->nloci << endl;
-        }
-    }
-
     //for each individual
     string hap1, hap2;
     short allele1, allele2;
@@ -523,17 +670,11 @@ vector< vector< HapData * >* > *readHapData2(string filename,
         ss1.str(hap1);
         ss2.str(hap2);
 
-        cerr << ind << " ";
-        cerr << indList[ind] << " ";
-        cerr << ind2pop[indList[ind]] << " ";
-        cerr << pop2index[ind2pop[indList[ind]]] << "\n";
-
         int pop = pop2index[ind2pop[indList[ind]]];
         int index = pop2currind[ind2pop[indList[ind]]];
         //For each chromosome
         for (int chr = 0; chr < chrCoordList->size(); chr++)
         {
-            cerr << chr << " ";
             //int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
             //For each locus on the chromosome
             for (int locus = 0; locus < hapDataByPopByChr->at(pop)->at(chr)->nloci; locus++)
@@ -560,11 +701,8 @@ vector< vector< HapData * >* > *readHapData2(string filename,
                 hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
             }
         }
-        cerr << "\n";
         pop2currind[ind2pop[indList[ind]]]++;
     }
-
-    cerr << "SUCCESS loading hap data.\n";
 
     fin.close();
 
@@ -1243,8 +1381,6 @@ vector< IndData * > *readIndData2(string filename, int numInd,
         throw 0;
     }
 
-
-
     //pop2curpos tracks the current index of the IndData underlying array
     //   so we know where to load the next ind ID in the following section
     //   it is initialized here.
@@ -1254,6 +1390,7 @@ vector< IndData * > *readIndData2(string filename, int numInd,
     //Initialize indDataByPop
     for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
     {
+        cerr << it->first << " individuals in population " << it->second << endl;
         data = initIndData(it->second);
         data->pop = it->first;
         indDataByPop->push_back(data);

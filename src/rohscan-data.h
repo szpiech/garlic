@@ -82,6 +82,14 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
         int expectedInd,
         vector< int_pair_t > *chrCoordList,
         vector< int_pair_t > *indCoordList);
+vector< vector< HapData * >* > *readTPEDHapData2(string filename,
+        int expectedLoci,
+        int expectedInd,
+        vector< int_pair_t > *chrCoordList,
+        string *indList,
+        map<string, string> &ind2pop,
+        map<string, int> &pop2size,
+        map<string, int> &pop2index);
 
 MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);

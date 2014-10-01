@@ -242,11 +242,13 @@ int main(int argc, char *argv[])
         {
             chrCoordList = scanTPEDMapData(tpedfile, numLoci);
             mapDataByChr = readTPEDMapData(tpedfile, chrCoordList);
-
-            indCoordList = scanTFAMData(tfamfile, numInd);
-            indDataByPop = readTFAMData(tfamfile, indCoordList);
-
-            hapDataByPopByChr = readTPEDHapData(tpedfile, numLoci, numInd, chrCoordList, indCoordList);
+            
+            scanIndData2(tfamfile, numInd, ind2pop, pop2size);
+            indList = new string[numInd];
+            indDataByPop = readIndData2(tfamfile, numInd, ind2pop, pop2size, indList, pop2index);
+            
+            //hapDataByPopByChr = readTPEDHapData(tpedfile, numLoci, numInd, chrCoordList, indCoordList);
+            hapDataByPopByChr = readTPEDHapData2(tpedfile, numLoci, numInd, chrCoordList, indList, ind2pop, pop2size, pop2index);
         }
         else
         {
@@ -255,7 +257,6 @@ int main(int argc, char *argv[])
 
             scanIndData2(indfile, numInd, ind2pop, pop2size);
             indList = new string[numInd];
-
             indDataByPop = readIndData2(indfile, numInd, ind2pop, pop2size, indList, pop2index);
 
             hapDataByPopByChr = readHapData2(hapfile, numLoci, numInd, chrCoordList, indList, ind2pop, pop2size, pop2index);
@@ -276,7 +277,7 @@ int main(int argc, char *argv[])
     chrCoordList->clear();
     //indCoordList->clear();
     delete chrCoordList;
-   // delete indCoordList;
+    // delete indCoordList;
 
     //Create a vector of pop/chr pairs
     //These will be distributed across threads for LOD score calculation
