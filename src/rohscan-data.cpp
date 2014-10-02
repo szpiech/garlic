@@ -1,5 +1,188 @@
 #include "rohscan-data.h"
 
+bool goodDouble(string str)
+{
+    string::iterator it;
+    //int dashCount = 0;
+    int decimalCount = 0;
+    for (it = str.begin(); it != str.end(); it++)
+    {
+        if (!isdigit(*it) && *it != '.' && *it != '-') return 0;
+        if (*it == '.') decimalCount++;
+        if (*it == '-' && it != str.begin()) return 0;
+        if (/*dashCount > 1 || */decimalCount > 1) return 0;
+    }
+    return 1;
+}
+
+
+map<string, double> readLODCutoff(string lodCutoffFile, map<string, int> &pop2size)
+{
+    igzstream fin;
+    fin.open(lodCutoffFile.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << lodCutoffFile << "\n";
+        throw 0;
+    }
+
+    map<string, double> pop2lodcutoff;
+    string line, popID, cutoffStr;
+    double cutoff;
+    while (getline(fin, line))
+    {
+        stringstream ss;
+        ss.str(line);
+        int fields = countFields(line);
+        if (fields != 2)
+        {
+            cerr << "ERROR: Found " << fields << " fields but expected 2 in " << lodCutoffFile << endl;
+            cerr << "\tFormat is <popID> <LOD cutoff>.\n";
+            throw 0;
+        }
+
+        ss >> popID >> cutoffStr;
+
+        if (pop2lodcutoff.count(popID) > 0)
+        {
+            cerr << "ERROR: Duplicate population ID (" << popID << ") found in " << lodCutoffFile << endl;
+            throw 0;
+        }
+
+        if (!goodDouble(cutoffStr))
+        {
+            cerr << "ERROR: " << cutoffStr << " is not a valid double.\n";
+            throw 0;
+        }
+
+        cutoff = atof(cutoffStr.c_str());
+
+        if (pop2size.count(popID) > 0)
+        {
+            pop2lodcutoff[popID] = cutoff;
+        }
+    }
+
+    if (pop2lodcutoff.size() != pop2size.size())
+    {
+        cerr << "ERROR: " << lodCutoffFile << " must provide one LOD score cutoff per population.\n";
+        cerr << "\tExpected cutoffs for\n";
+
+        for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
+        {
+            cerr << "\t" << it->first << endl;
+        }
+        cerr << "\tbut found only\n";
+        for (map<string, double>::iterator it = pop2lodcutoff.begin(); it != pop2lodcutoff.end(); it++)
+        {
+            cerr << "\t" << it->first << endl;
+        }
+        throw 0;
+    }
+
+    fin.close();
+
+    return pop2lodcutoff;
+}
+
+void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<string, double> &pop2MLbound, map<string, int> &pop2size)
+{
+    igzstream fin;
+    fin.open(boundSizeFile.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << boundSizeFile << "\n";
+        throw 0;
+    }
+
+    string line, popID, SMboundStr, MLboundStr;
+    double SMbound, MLbound;
+    while (getline(fin, line))
+    {
+        stringstream ss;
+        ss.str(line);
+        int fields = countFields(line);
+        if (fields != 3)
+        {
+            cerr << "ERROR: Found " << fields << " fields but expected 3 in " << boundSizeFile << endl;
+            cerr << "\tFormat is <popID> <small/medium size bound> <medium/long size bound>.\n";
+            throw 0;
+        }
+
+        ss >> popID >> SMboundStr >> MLboundStr;
+
+        if (pop2SMbound.count(popID) > 0)
+        {
+            cerr << "ERROR: Duplicate population ID (" << popID << ") found in " << boundSizeFile << endl;
+            throw 0;
+        }
+
+        if (!goodDouble(SMboundStr))
+        {
+            cerr << "ERROR: " << SMboundStr << " is not a valid double.\n";
+            throw 0;
+        }
+
+        SMbound = atof(SMboundStr.c_str());
+
+        if (!goodDouble(MLboundStr))
+        {
+            cerr << "ERROR: " << MLboundStr << " is not a valid double.\n";
+            throw 0;
+        }
+
+        MLbound = atof(MLboundStr.c_str());
+
+        if (pop2size.count(popID) > 0)
+        {
+            double tmp;
+            if (SMbound <= 0 || MLbound <= 0)
+            {
+                cerr << "ERROR: User provided size boundaries must be positive.\n";
+                cerr << "\t" << popID << " " << SMbound << " " << MLbound << endl;
+                throw 0;
+            }
+            else if (SMbound == MLbound)
+            {
+                cerr << "ERROR: Size boundaries must be different.\n";
+                cerr << "\t" << popID << " " << SMbound << " " << MLbound << endl;
+                throw 0;
+            }
+            else if (SMbound > MLbound)
+            {
+                tmp = MLbound;
+                MLbound = SMbound;
+                SMbound = tmp;
+            }
+
+            pop2SMbound[popID] = SMbound;
+            pop2MLbound[popID] = MLbound;
+        }
+    }
+
+    if (pop2SMbound.size() != pop2size.size())
+    {
+        cerr << "ERROR: " << boundSizeFile << " must provide size boundaries for each population.\n";
+        cerr << "\tExpected cutoffs for\n";
+        for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
+        {
+            cerr << "\t" << it->first << endl;
+        }
+        cerr << "\tbut found only\n";
+        for (map<string, double>::iterator it = pop2SMbound.begin(); it != pop2SMbound.end(); it++)
+        {
+            cerr << "\t" << it->first << endl;
+        }
+        throw 0;
+    }
+
+    fin.close();
+
+    return;
+}
+
 FreqData *calcFreqData(HapData *hapData, int nresample, const gsl_rng *r)
 {
     FreqData *freqData = initFreqData(hapData->nloci);
@@ -321,7 +504,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
         string *indList,
         map<string, string> &ind2pop,
         map<string, int> &pop2size,
-        map<string, int> &pop2index)
+        map<string, int> &pop2index, string TPED_MISSING)
 {
     int expectedHaps = 2 * expectedInd;
     igzstream fin;
@@ -393,7 +576,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
     string locus;
     string alleleStr1, alleleStr2;
     string junk, oneAllele;
-    string TPED_MISSING = "0";
+    //string TPED_MISSING = "0";
 
     //For each chromosome
     for (int chr = 0; chr < chrCoordList->size(); chr++)
@@ -468,7 +651,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
             }
         }
     }
-    
+
     fin.close();
     return hapDataByPopByChr;
 }
@@ -1390,7 +1573,7 @@ vector< IndData * > *readIndData2(string filename, int numInd,
     //Initialize indDataByPop
     for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
     {
-        cerr << it->first << " individuals in population " << it->second << endl;
+        cerr << it->second << " individuals in population " << it->first << endl;
         data = initIndData(it->second);
         data->pop = it->first;
         indDataByPop->push_back(data);

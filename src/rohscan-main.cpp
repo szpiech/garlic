@@ -80,15 +80,34 @@ const string HELP_RAW_LOD = "If set, LOD scores will be output to gzip compresse
 
 const string ARG_LOD_CUTOFF = "--lod-cutoff";
 const double DEFAULT_LOD_CUTOFF = -999999;
-const string HELP_LOD_CUTOFF = "For LOD based ROH calling, specify a LOD score cutoff\n\
-\tabove which ROH are called.  By default, this is chosen\n\
+const string HELP_LOD_CUTOFF = "For LOD based ROH calling, specify a single LOD score cutoff\n\
+\tabove which ROH are called in all populations.  By default, this is chosen\n\
 \tautomatically per population with KDE.";
+
+const string ARG_LOD_CUTOFF_FILE = "--lod-cutoff-file";
+const string DEFAULT_LOD_CUTOFF_FILE = "_none";
+const string HELP_LOD_CUTOFF_FILE = "For LOD based ROH calling, specify a file with LOD score cutoffs\n\
+\tabove which ROH are called for each population.\n\
+\tFile format is <pop ID> <cutoff>.\n\
+\tBy default, these cutoffs are chosen automatically per population with KDE.";
 
 const string ARG_BOUND_SIZE = "--size-bounds";
 const double DEFAULT_BOUND_SIZE = -1;
 const string HELP_BOUND_SIZE = "Specify the short/medium and medium/long\n\
 \tROH boundaries.  By default, this is chosen automatically\n\
 \twith a 3-component GMM.  Must provide 2 numbers.";
+
+const string ARG_BOUND_SIZE_FILE = "--size-bounds-file";
+const string DEFAULT_BOUND_SIZE_FILE = "_none";
+const string HELP_BOUND_SIZE_FILE = "A file speficying the short/medium and medium/long\n\
+\tROH boundaries per population.\n\
+\tFile format <pop ID> <short/medium boundary> <medium/long boundary>\n\
+\tBy default, this is chosen automatically\n\
+\twith a 3-component GMM.  Must provide 2 numbers.";
+
+const string ARG_TPED_MISSING = "--tped-missing";
+const string DEFAULT_TPED_MISSING = "0";
+const string HELP_TPED_MISSING = "Missing data code for TPED files.";
 
 int main(int argc, char *argv[])
 {
@@ -111,6 +130,9 @@ int main(int argc, char *argv[])
     params.addFlag(ARG_RAW_LOD, DEFAULT_RAW_LOD, "", HELP_RAW_LOD);
     params.addListFlag(ARG_BOUND_SIZE, DEFAULT_BOUND_SIZE, "", HELP_BOUND_SIZE);
     params.addFlag(ARG_LOD_CUTOFF, DEFAULT_LOD_CUTOFF, "", HELP_LOD_CUTOFF);
+    params.addFlag(ARG_LOD_CUTOFF_FILE, DEFAULT_LOD_CUTOFF_FILE, "", HELP_LOD_CUTOFF_FILE);
+    params.addFlag(ARG_BOUND_SIZE_FILE, DEFAULT_BOUND_SIZE_FILE, "", HELP_BOUND_SIZE_FILE);
+    params.addFlag(ARG_TPED_MISSING, DEFAULT_TPED_MISSING, "", HELP_TPED_MISSING);
 
     try
     {
@@ -136,13 +158,33 @@ int main(int argc, char *argv[])
     bool TPED = false;
     bool RAW_LOD = params.getBoolFlag(ARG_RAW_LOD);
     vector<double> boundSizes = params.getDoubleListFlag(ARG_BOUND_SIZE);
-    bool AUTO_BOUNDS = true;
     double LOD_CUTOFF = params.getDoubleFlag(ARG_LOD_CUTOFF);
+    string lodCutoffFile = params.getStringFlag(ARG_LOD_CUTOFF_FILE);
+    string boundSizeFile = params.getStringFlag(ARG_BOUND_SIZE_FILE);
+    bool AUTO_BOUNDS = true;
     bool AUTO_CUTOFF = true;
+    string TPED_MISSING = params.getStringFlag(ARG_TPED_MISSING);
 
-    if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF)
+    //Check if both LOD_CUTOFF and LOD_CUTOFF_FILE defined
+    //and error if so
+    if (lodCutoffFile.compare(DEFAULT_LOD_CUTOFF_FILE) != 0 && LOD_CUTOFF != DEFAULT_LOD_CUTOFF)
+    {
+        cerr << "ERROR: At most, only one of " << ARG_LOD_CUTOFF << " and " << ARG_LOD_CUTOFF_FILE << " should be specified.\n";
+        return -1;
+    }
+    else if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF || lodCutoffFile.compare(DEFAULT_LOD_CUTOFF_FILE) != 0)
     {
         AUTO_CUTOFF = false;
+    }
+
+    if (boundSizes[0] != DEFAULT_BOUND_SIZE && boundSizeFile.compare(DEFAULT_BOUND_SIZE_FILE) != 0)
+    {
+        cerr << "ERROR: At most, only one of " << ARG_BOUND_SIZE << " and " << ARG_BOUND_SIZE_FILE << " should be specified.\n";
+        return -1;
+    }
+    else if (boundSizes[0] != DEFAULT_BOUND_SIZE || boundSizeFile.compare(DEFAULT_BOUND_SIZE_FILE) != 0)
+    {
+        AUTO_BOUNDS = false;
     }
 
     if (boundSizes.size() == 2)
@@ -223,7 +265,7 @@ int main(int argc, char *argv[])
     vector< int_pair_t > *chrCoordList;
     vector< MapData * > *mapDataByChr;
 
-    vector< int_pair_t > *indCoordList;
+    //vector< int_pair_t > *indCoordList;
 
     string *indList;
     map<string, string> ind2pop;
@@ -236,19 +278,21 @@ int main(int argc, char *argv[])
 
     vector< vector< WinData * >* > *winDataByPopByChr;
 
+    map<string, double> pop2lodcutoff;
+    map<string, double> pop2SMbound;
+    map<string, double> pop2MLbound;
     try
     {
         if (TPED)
         {
             chrCoordList = scanTPEDMapData(tpedfile, numLoci);
             mapDataByChr = readTPEDMapData(tpedfile, chrCoordList);
-            
+
             scanIndData2(tfamfile, numInd, ind2pop, pop2size);
             indList = new string[numInd];
             indDataByPop = readIndData2(tfamfile, numInd, ind2pop, pop2size, indList, pop2index);
-            
-            //hapDataByPopByChr = readTPEDHapData(tpedfile, numLoci, numInd, chrCoordList, indCoordList);
-            hapDataByPopByChr = readTPEDHapData2(tpedfile, numLoci, numInd, chrCoordList, indList, ind2pop, pop2size, pop2index);
+
+            hapDataByPopByChr = readTPEDHapData2(tpedfile, numLoci, numInd, chrCoordList, indList, ind2pop, pop2size, pop2index, TPED_MISSING);
         }
         else
         {
@@ -260,6 +304,59 @@ int main(int argc, char *argv[])
             indDataByPop = readIndData2(indfile, numInd, ind2pop, pop2size, indList, pop2index);
 
             hapDataByPopByChr = readHapData2(hapfile, numLoci, numInd, chrCoordList, indList, ind2pop, pop2size, pop2index);
+        }
+
+        //load LOD score cutoff if specified
+        if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF)
+        {
+            for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
+            {
+                pop2lodcutoff[it->first] = LOD_CUTOFF;
+            }
+        }
+        else if (lodCutoffFile.compare(DEFAULT_LOD_CUTOFF_FILE) != 0)
+        {
+            pop2lodcutoff = readLODCutoff(lodCutoffFile, pop2size);
+        }
+
+        //load size bounds if specified
+        if (boundSizes[0] != DEFAULT_BOUND_SIZE)
+        {
+            if (boundSizes.size() == 2)
+            {
+                double tmp;
+                if (boundSizes[0] <= 0 || boundSizes[1] <= 0)
+                {
+                    cerr << "ERROR: User provided size boundaries must be positive.\n";
+                    return -1;
+                }
+                else if (boundSizes[0] > boundSizes[1])
+                {
+                    tmp = boundSizes[0];
+                    boundSizes[0] = boundSizes[1];
+                    boundSizes[1] = tmp;
+                }
+                else if (boundSizes[0] == boundSizes[1])
+                {
+                    cerr << "ERROR: Size boundaries must be different.\n";
+                    return -1;
+                }
+
+                for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
+                {
+                    pop2SMbound[it->first] = boundSizes[0];
+                    pop2MLbound[it->first] = boundSizes[1];
+                }
+            }
+            else if (boundSizes.size() > 2)
+            {
+                cerr << "ERROR: Must provide exactly two boundaries.\n";
+                return -1;
+            }
+        }
+        else if (boundSizeFile.compare(DEFAULT_BOUND_SIZE_FILE) != 0)
+        {
+            readBoundSizes(boundSizeFile, pop2SMbound, pop2MLbound, pop2size);
         }
 
         freqDataByPopByChr = calcFreqData(hapDataByPopByChr, nresample);
@@ -384,16 +481,18 @@ int main(int argc, char *argv[])
             return -1;
         }
 
-        string boundaryOutfile = outfile;
-        boundaryOutfile += ".lod.cutoff";
+        string lodCutoffOutfile = outfile;
+        lodCutoffOutfile += ".lod.cutoff";
 
         ofstream fout;
-        fout.open(boundaryOutfile.c_str());
+        fout.open(lodCutoffOutfile.c_str());
         if (fout.fail())
         {
-            cerr << "ERROR: Could not open " << boundaryOutfile << " for writing.\n";
+            cerr << "ERROR: Could not open " << lodCutoffOutfile << " for writing.\n";
             return -1;
         }
+
+        fout << fixed;
 
         //For each population, find the LOD score cutoff
         for (int pop = 0; pop < numPop; pop++)
@@ -406,7 +505,8 @@ int main(int argc, char *argv[])
             {
                 cerr << "ERROR: Failed to find the minimum between modes in the LOD score density.\n";
                 cerr << "\tResults from density estimation have been written to file for inspection.\n";
-                cerr << "\tA cutoff can be manually specified on the command line with " << ARG_LOD_CUTOFF << ".\n";
+                cerr << "\tA cutoff can be manually specified on the command line with " << ARG_LOD_CUTOFF << endl;
+                cerr << "\tor " << ARG_LOD_CUTOFF_FILE << endl;
                 return -1;
             }
 
@@ -415,7 +515,7 @@ int main(int argc, char *argv[])
             fout << popName << " " << lodScoreCutoffByPop[pop] << "\n";
             cerr << popName << " LOD score cutoff: " << lodScoreCutoffByPop[pop] << "\n";
         }
-        cerr << "Wrote " << boundaryOutfile << "\n";
+        cerr << "Wrote " << lodCutoffOutfile << "\n";
         fout.close();
 
 
@@ -423,11 +523,10 @@ int main(int argc, char *argv[])
     }
     else
     {
-        for (int pop = 0; pop < numPop; pop++)
+        for (map<string, double>::iterator it = pop2lodcutoff.begin(); it != pop2lodcutoff.end(); it++)
         {
-            string popName = indDataByPop->at(pop)->pop;
-            lodScoreCutoffByPop[pop] = LOD_CUTOFF;
-            cerr << popName << " user provided LOD score cutoff: " << lodScoreCutoffByPop[pop] << "\n";
+            lodScoreCutoffByPop[pop2index[it->first]] = it->second;
+            cerr << "User provided LOD score cutoff: " << it->first << " " << lodScoreCutoffByPop[pop2index[it->first]] << "\n";
         }
     }
 
@@ -458,6 +557,20 @@ int main(int argc, char *argv[])
 
     if (AUTO_BOUNDS)
     {
+        cerr << "Fitting 3-component GMM for size classification.\n";
+        string sizeBoundaryOutfile = outfile;
+        sizeBoundaryOutfile += ".size.bounds";
+
+        ofstream fout;
+        fout.open(sizeBoundaryOutfile.c_str());
+        if (fout.fail())
+        {
+            cerr << "ERROR: Could not open " << sizeBoundaryOutfile << " for writing.\n";
+            return -1;
+        }
+
+        fout << fixed;
+
         W = new double[ngaussians];
         Mu = new double[ngaussians];
         Sigma = new double[ngaussians];
@@ -502,18 +615,24 @@ int main(int argc, char *argv[])
             BoundFinder ML(Mu[sortIndex[1]], Sigma[sortIndex[1]], W[sortIndex[1]], Mu[sortIndex[2]], Sigma[sortIndex[2]], W[sortIndex[2]], 1000, 1e-4, false);
             medLongBound[pop] = ML.findBoundary();
 
-            cerr << "A/B: " << shortMedBound[pop] << " B/C: " << medLongBound[pop] << endl;
+            cerr << rohLengthByPop->at(pop)->pop << " A/B: " << shortMedBound[pop] << " B/C: " << medLongBound[pop] << endl;
+            fout << rohLengthByPop->at(pop)->pop << " " << shortMedBound[pop] << " " << medLongBound[pop] << endl;
         }
+        cerr << "Wrote " << sizeBoundaryOutfile << endl;
+        fout.close();
     }
     else
     {
-        for (int i = 0; i < rohLengthByPop->size(); i++)
+        for (map<string, double>::iterator it = pop2SMbound.begin(); it != pop2SMbound.end(); it++)
         {
-            shortMedBound[i] = boundSizes[0];
-            medLongBound[i] = boundSizes[1];
-            cerr << "User provided size boundaries. A/B: " << shortMedBound[i] << " B/C: " << medLongBound[i] << endl;
+            shortMedBound[pop2index[it->first]] = pop2SMbound[it->first];
+            medLongBound[pop2index[it->first]] = pop2MLbound[it->first];
+            cerr << "User provided size boundaries. " << it->first
+                 << " A/B: " << shortMedBound[pop2index[it->first]]
+                 << " B/C: " << medLongBound[pop2index[it->first]] << endl;
         }
     }
+
     //Output ROH calls to file, one for each individual
     //includes A/B/C size classifications
     //Could be modified to allow for arbitrary number of size classifications

@@ -6,6 +6,8 @@
 #include <vector>
 #include <sstream>
 #include <ctime>
+#include <cstdlib>
+#include <cctype>
 #include <map>
 #include "gzstream.h"
 #include "gsl/gsl_rng.h"
@@ -64,6 +66,10 @@ struct DoubleData
 };
 
 string getPost(int num);
+bool goodDouble(string str);
+
+map<string,double> readLODCutoff(string lodCutoffFile, map<string,int> &pop2size);
+void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<string,double> &pop2MLbound, map<string,int> &pop2size);
 
 FreqData *initFreqData(int nloci);
 void releaseFreqData(FreqData *data);
@@ -89,7 +95,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
         string *indList,
         map<string, string> &ind2pop,
         map<string, int> &pop2size,
-        map<string, int> &pop2index);
+        map<string, int> &pop2index, string TPED_MISSING);
 
 MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);
