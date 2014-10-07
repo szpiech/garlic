@@ -34,6 +34,7 @@ struct MapData
     int *physicalPos;
     double *geneticPos;
     string *locusName;
+    string *allele;
     int nloci;
     int chr;
 };
@@ -68,26 +69,35 @@ struct DoubleData
 string getPost(int num);
 bool goodDouble(string str);
 
-map<string,double> readLODCutoff(string lodCutoffFile, map<string,int> &pop2size);
-void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<string,double> &pop2MLbound, map<string,int> &pop2size);
+map<string, double> readLODCutoff(string lodCutoffFile, map<string, int> &pop2size);
+void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<string, double> &pop2MLbound, map<string, int> &pop2size);
 
 FreqData *initFreqData(int nloci);
 void releaseFreqData(FreqData *data);
 void releaseFreqData(vector< vector< FreqData * >* > *freqDataByPopByChr);
 FreqData *calcFreqData(HapData *data, int nresample, const gsl_rng *r);
 vector< vector< FreqData * >* > *calcFreqData(vector< vector< HapData * >* > *hapDataByPopByChr, int nresample);
+void writeFreqData(string freqOutfile,
+                   vector< vector< FreqData * >* > *freqDataByPopByChr,
+                   vector< MapData * > *mapDataByChr,
+                   vector< IndData * > *indDataByPop);
+vector< vector< FreqData * >* > *readFreqData(string freqfile,
+        vector< int_pair_t > *chrCoordList,
+        vector< MapData * > *mapDataByChr,
+        map<string, int> &pop2index);
 
 vector< int_pair_t > *scanTFAMData(string filename, int &numInd);
 vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoordList);
 
 vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci);
-vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrCoordList);
-
+vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrCoordList, string TPED_MISSING);
+/*
 vector< vector< HapData * >* > *readTPEDHapData(string filename,
         int expectedLoci,
         int expectedInd,
         vector< int_pair_t > *chrCoordList,
         vector< int_pair_t > *indCoordList);
+*/
 vector< vector< HapData * >* > *readTPEDHapData2(string filename,
         int expectedLoci,
         int expectedInd,
@@ -95,17 +105,19 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
         string *indList,
         map<string, string> &ind2pop,
         map<string, int> &pop2size,
-        map<string, int> &pop2index, string TPED_MISSING);
+        map<string, int> &pop2index,
+        string TPED_MISSING,
+        vector< MapData * > *mapDataByChr);
 
 MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);
 void releaseMapData(vector< MapData * > *mapDataByChr);
-vector< MapData * > *readMapData(string filename, vector< int_pair_t > *chrCoordList);
-vector< int_pair_t > *scanMapData(string filename, int &numLoci);
+//vector< MapData * > *readMapData(string filename, vector< int_pair_t > *chrCoordList);
+//vector< int_pair_t > *scanMapData(string filename, int &numLoci);
 
-vector< int_pair_t > *scanIndData(string filename, int &numInd);
+//vector< int_pair_t > *scanIndData(string filename, int &numInd);
 void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, map<string, int> &pop2size);
-vector< IndData * > *readIndData(string filename, vector< int_pair_t > *indCoordList);
+//vector< IndData * > *readIndData(string filename, vector< int_pair_t > *indCoordList);
 vector< IndData * > *readIndData2(string filename, int numInd,
                                   map<string, string> &ind2pop,
                                   map<string, int> &pop2size,
@@ -118,11 +130,14 @@ void releaseIndData(IndData *data);
 HapData *initHapData(unsigned int nhaps, unsigned int nloci);
 void releaseHapData(HapData *data);
 void releaseHapData(vector< vector< HapData * >* > *hapDataByPopByChr);
+/*
 vector< vector< HapData * >* > *readHapData(string filename,
         int expectedLoci,
         int expectedInd,
         vector< int_pair_t > *chrCoordList,
         vector< int_pair_t > *indCoordList);
+*/
+/*
 vector< vector< HapData * >* > *readHapData2(string filename,
         int expectedLoci,
         int expectedInd,
@@ -130,8 +145,9 @@ vector< vector< HapData * >* > *readHapData2(string filename,
         string *indList,
         map<string, string> &ind2pop,
         map<string, int> &pop2size,
-        map<string, int> &pop2index);
-
+        map<string, int> &pop2index,
+        vector< MapData * > *mapDataByChr);
+*/
 vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);
 WinData *initWinData(unsigned int nind, unsigned int nloci);
 void releaseWinData(WinData *data);

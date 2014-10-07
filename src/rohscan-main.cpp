@@ -14,6 +14,7 @@
 
 using namespace std;
 
+/*
 const string ARG_MAPFILE = "--map";
 const string DEFAULT_MAPFILE = "__mapfile";
 const string HELP_MAPFILE = "A mapfile with one row per variant site.\n\
@@ -29,6 +30,11 @@ const string ARG_INDFILE = "--ind";
 const string DEFAULT_INDFILE = "__indfile";
 const string HELP_INDFILE = "An indfile containing population and individual IDs.\n\
 \tOne row per individual, formatted <popID> <indID>";
+*/
+
+
+
+
 
 const string ARG_OUTFILE = "--out";
 const string DEFAULT_OUTFILE = "outfile";
@@ -99,7 +105,7 @@ const string HELP_BOUND_SIZE = "Specify the short/medium and medium/long\n\
 
 const string ARG_BOUND_SIZE_FILE = "--size-bounds-file";
 const string DEFAULT_BOUND_SIZE_FILE = "_none";
-const string HELP_BOUND_SIZE_FILE = "A file speficying the short/medium and medium/long\n\
+const string HELP_BOUND_SIZE_FILE = "A file specifying the short/medium and medium/long\n\
 \tROH boundaries per population.\n\
 \tFile format <pop ID> <short/medium boundary> <medium/long boundary>\n\
 \tBy default, this is chosen automatically\n\
@@ -109,14 +115,28 @@ const string ARG_TPED_MISSING = "--tped-missing";
 const string DEFAULT_TPED_MISSING = "0";
 const string HELP_TPED_MISSING = "Missing data code for TPED files.";
 
+const string ARG_FREQ_FILE = "--freq-file";
+const string DEFAULT_FREQ_FILE = "_none";
+const string HELP_FREQ_FILE = "A file specifying allele frequencies for\n\
+\teach population for all variants. File format:\n\
+\tSNP\tALLELE\t<pop1 ID> <pop2 ID> ...\n\
+\t<locus ID> <allele> <pop1 freq> <pop2 freq> ...\n\
+\tBy default, this is calculated automatically\n\
+\tfrom the provided data.";
+
+const string ARG_FREQ_ONLY = "--freq-only";
+const bool DEFAULT_FREQ_ONLY = false;
+const string HELP_FREQ_ONLY = "If set, calculates a freq file from provided data and then exits.";
+
+
 int main(int argc, char *argv[])
 {
 
     param_t params;
 
-    params.addFlag(ARG_MAPFILE, DEFAULT_MAPFILE, "", HELP_MAPFILE);
-    params.addFlag(ARG_HAPFILE, DEFAULT_HAPFILE, "", HELP_HAPFILE);
-    params.addFlag(ARG_INDFILE, DEFAULT_INDFILE, "", HELP_INDFILE);
+    //params.addFlag(ARG_MAPFILE, DEFAULT_MAPFILE, "", HELP_MAPFILE);
+    //params.addFlag(ARG_HAPFILE, DEFAULT_HAPFILE, "", HELP_HAPFILE);
+    //params.addFlag(ARG_INDFILE, DEFAULT_INDFILE, "", HELP_INDFILE);
     params.addFlag(ARG_OUTFILE, DEFAULT_OUTFILE, "", HELP_OUTFILE);
     params.addFlag(ARG_THREADS, DEFAULT_THREADS, "", HELP_THREADS);
     params.addFlag(ARG_ERROR, DEFAULT_ERROR, "", HELP_ERROR);
@@ -133,6 +153,8 @@ int main(int argc, char *argv[])
     params.addFlag(ARG_LOD_CUTOFF_FILE, DEFAULT_LOD_CUTOFF_FILE, "", HELP_LOD_CUTOFF_FILE);
     params.addFlag(ARG_BOUND_SIZE_FILE, DEFAULT_BOUND_SIZE_FILE, "", HELP_BOUND_SIZE_FILE);
     params.addFlag(ARG_TPED_MISSING, DEFAULT_TPED_MISSING, "", HELP_TPED_MISSING);
+    params.addFlag(ARG_FREQ_FILE, DEFAULT_FREQ_FILE, "", HELP_FREQ_FILE);
+    params.addFlag(ARG_FREQ_ONLY, DEFAULT_FREQ_ONLY, "", HELP_FREQ_ONLY);
 
     try
     {
@@ -145,9 +167,9 @@ int main(int argc, char *argv[])
 
 
     int winsize = params.getIntFlag(ARG_WINSIZE);
-    string mapfile = params.getStringFlag(ARG_MAPFILE);
-    string hapfile = params.getStringFlag(ARG_HAPFILE);
-    string indfile = params.getStringFlag(ARG_INDFILE);
+    //string mapfile = params.getStringFlag(ARG_MAPFILE);
+    //string hapfile = params.getStringFlag(ARG_HAPFILE);
+    //string indfile = params.getStringFlag(ARG_INDFILE);
     string outfile = params.getStringFlag(ARG_OUTFILE);
     string tpedfile = params.getStringFlag(ARG_TPED);
     string tfamfile = params.getStringFlag(ARG_TFAM);
@@ -164,6 +186,19 @@ int main(int argc, char *argv[])
     bool AUTO_BOUNDS = true;
     bool AUTO_CUTOFF = true;
     string TPED_MISSING = params.getStringFlag(ARG_TPED_MISSING);
+    string freqfile = params.getStringFlag(ARG_FREQ_FILE);
+    bool AUTO_FREQ = true;
+    bool FREQ_ONLY = params.getBoolFlag(ARG_FREQ_ONLY);
+
+    if (freqfile.compare(DEFAULT_FREQ_FILE) != 0)
+    {
+        AUTO_FREQ = false;
+        if (FREQ_ONLY)
+        {
+            cerr << "ERROR: Specifying both " << ARG_FREQ_ONLY << " and " << ARG_FREQ_FILE << " accomplishes nothing.\n";
+            return -1;
+        }
+    }
 
     //Check if both LOD_CUTOFF and LOD_CUTOFF_FILE defined
     //and error if so
@@ -216,7 +251,13 @@ int main(int argc, char *argv[])
 
 
     if (tpedfile.compare(DEFAULT_TPED) != 0 && tfamfile.compare(DEFAULT_TFAM) != 0) TPED = true;
+    else
+    {
+        cerr << "ERROR: Must provide both a tped and tfam file.\n";
+        return -1;
+    }
 
+    /*
     if (TPED == false)
     {
         if (mapfile.compare(DEFAULT_MAPFILE) == 0 ||
@@ -242,7 +283,7 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
-
+    */
     if (numThreads <= 0)
     {
         cerr << "ERROR: Number of threads must be > 0.\n";
@@ -281,19 +322,29 @@ int main(int argc, char *argv[])
     map<string, double> pop2lodcutoff;
     map<string, double> pop2SMbound;
     map<string, double> pop2MLbound;
+    string *oneAllele;
     try
     {
         if (TPED)
         {
             chrCoordList = scanTPEDMapData(tpedfile, numLoci);
-            mapDataByChr = readTPEDMapData(tpedfile, chrCoordList);
+            mapDataByChr = readTPEDMapData(tpedfile, chrCoordList, TPED_MISSING);
 
             scanIndData2(tfamfile, numInd, ind2pop, pop2size);
             indList = new string[numInd];
             indDataByPop = readIndData2(tfamfile, numInd, ind2pop, pop2size, indList, pop2index);
 
-            hapDataByPopByChr = readTPEDHapData2(tpedfile, numLoci, numInd, chrCoordList, indList, ind2pop, pop2size, pop2index, TPED_MISSING);
+            //Read user pprovided freq data here
+            if (!AUTO_FREQ)
+            {
+                cerr << "Loading user provided allele frequencies from " << freqfile << "...\n";
+                freqDataByPopByChr = readFreqData(freqfile, chrCoordList, mapDataByChr, pop2index);
+            }
+
+            hapDataByPopByChr = readTPEDHapData2(tpedfile, numLoci, numInd, chrCoordList, indList,
+                                                 ind2pop, pop2size, pop2index, TPED_MISSING, mapDataByChr);
         }
+        /*
         else
         {
             chrCoordList = scanMapData(mapfile, numLoci);
@@ -303,9 +354,10 @@ int main(int argc, char *argv[])
             indList = new string[numInd];
             indDataByPop = readIndData2(indfile, numInd, ind2pop, pop2size, indList, pop2index);
 
-            hapDataByPopByChr = readHapData2(hapfile, numLoci, numInd, chrCoordList, indList, ind2pop, pop2size, pop2index);
+            hapDataByPopByChr = readHapData2(hapfile, numLoci, numInd, chrCoordList,
+                                             indList, ind2pop, pop2size, pop2index, mapDataByChr);
         }
-
+        */
         //load LOD score cutoff if specified
         if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF)
         {
@@ -359,7 +411,17 @@ int main(int argc, char *argv[])
             readBoundSizes(boundSizeFile, pop2SMbound, pop2MLbound, pop2size);
         }
 
-        freqDataByPopByChr = calcFreqData(hapDataByPopByChr, nresample);
+        if (AUTO_FREQ)
+        {
+            cerr << "Calculating allele frequencies...\n";
+            freqDataByPopByChr = calcFreqData(hapDataByPopByChr, nresample);
+
+            string freqOutfile = outfile;
+            freqOutfile += ".freq";
+            writeFreqData(freqOutfile, freqDataByPopByChr, mapDataByChr, indDataByPop);
+        }
+
+        if (FREQ_ONLY) return 0;
 
         winDataByPopByChr = initWinData(mapDataByChr, indDataByPop);
     }
