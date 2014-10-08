@@ -35,8 +35,9 @@ KDEResult *computeKDE(double *data, int size)
     max += CUT * h;
     min -= CUT * h;
 
-    cerr << "\n\tMin LOD: " << min << "\n\tMax LOD: " << max
-         << "\n\th: " << h << "\n";
+
+    //cerr << "\n\tMin LOD: " << min << "\n\tMax LOD: " << max
+    //     << "\n\th: " << h << "\n";
 
     //Results
     double *kde_points = new double[M];

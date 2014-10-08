@@ -36,7 +36,7 @@ struct MapData
     string *locusName;
     string *allele;
     int nloci;
-    int chr;
+    string chr;
 };
 
 struct IndData

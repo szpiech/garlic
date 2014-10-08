@@ -503,13 +503,14 @@ MapData *initMapData(int nloci)
     data->physicalPos = new int[nloci];
     data->geneticPos = new double[nloci];
     data->allele = new string[nloci];
+    data->chr = "--";
 
     for (int locus = 0; locus < nloci; locus++)
     {
         data->locusName[locus] = "--";
         data->physicalPos[locus] = MISSING;
         data->geneticPos[locus] = MISSING;
-        data->allele[locus] = " ";
+        data->allele[locus] = "--";
     }
 
     return data;
@@ -1219,13 +1220,13 @@ void writeWinData(vector< vector< WinData * >* > *winDataByPopByChr,
 
         for (int chr = 0; chr < numChr; chr++)
         {
-            char chrnum[5];
-            sprintf(chrnum, "%d", mapDataByChr->at(chr)->chr);
+            //char chrnum[5];
+            //sprintf(chrnum, "%d", mapDataByChr->at(chr)->chr);
             string rawWinOutfile = outfile;
             rawWinOutfile += ".";
             rawWinOutfile += popName;
             rawWinOutfile += ".chr";
-            rawWinOutfile += chrnum;
+            rawWinOutfile += mapDataByChr->at(chr)->chr;
             rawWinOutfile += ".raw.lod.windows.gz";
 
             fout.open(rawWinOutfile.c_str());
@@ -1340,8 +1341,9 @@ vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci)
     int index;
     //int num_cols = 4;
     //int current_cols = 0;
-    int prevChr = -1;
-    int currChr = prevChr;
+    string emptyChr = "_nochr";
+    string prevChr = emptyChr;
+    string currChr = prevChr;
     int_pair_t currChrCoordinates;
     while (getline(fin, line))
     {
@@ -1358,13 +1360,13 @@ vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci)
         */
         ss.str(line);
         ss >> currChr;
-        if (prevChr == -1 && index == 0)
+        if (prevChr.compare(emptyChr) == 0 && index == 0)
         {
             prevChr = currChr;
             currChrCoordinates.first = index;
         }
 
-        if (currChr != prevChr)
+        if (currChr.compare(prevChr) != 0)
         {
             currChrCoordinates.second = index - 1;
             chrStartStop->push_back(currChrCoordinates);
@@ -1423,6 +1425,7 @@ vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrC
     return mapDataByChr;
 }
 
+/*
 vector< int_pair_t > *scanMapData(string filename, int &numLoci)
 {
     igzstream fin;
@@ -1483,7 +1486,7 @@ vector< int_pair_t > *scanMapData(string filename, int &numLoci)
 
     return chrStartStop;
 }
-
+*/
 /*
 vector< MapData * > *readMapData(string filename, vector< int_pair_t > *chrCoordList)
 {

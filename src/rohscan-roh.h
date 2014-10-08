@@ -51,6 +51,12 @@ void calcLOD(IndData *indData, MapData *mapData,
              WinData *winData, int winsize, double error, int MAX_GAP);
 double lod(const short &genotype, const double &freq, const double &error);
 
+vector< vector< WinData * >* > *calcLODWindows(vector< vector< HapData * >* > *hapDataByPopByChr,
+        vector< vector< FreqData * >* > *freqDataByPopByChr,
+        vector< MapData * > *mapDataByChr,
+        vector< IndData * > *indDataByPop,
+        int winsize, double error, int MAX_GAP, int numThreads);
+
 vector< vector< ROHData * >* > *initROHData(vector< IndData * > *indDataByPop);
 vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* > *winDataByPopByChr,
         vector< MapData * > *mapDataByChr,
@@ -61,6 +67,13 @@ vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* 
 ROHLength *initROHLength(int size, string pop);
 void releaseROHLength(ROHLength *rohLength);
 void releaseROHLength(vector< ROHLength * > *rohLengthByPop);
+
+void writeROHData(string outfile,
+                  vector< vector< ROHData * >* > *rohDataByPopByInd,
+                  vector< MapData * > *mapDataByChr,
+                  double *shortMedBound,
+                  double *medLongBound,
+                  map<string, string> &ind2pop);
 
 extern pthread_mutex_t cerr_mutex;
 

@@ -5,7 +5,7 @@
 #include <pthread.h>
 #include "rohscan-data.h"
 #include "rohscan-roh.h"
-#include "rohscan-kde.h";
+#include "rohscan-kde.h"
 #include "param_t.h"
 #include "gmm.h"
 #include "gsl/gsl_statistics.h"
@@ -51,6 +51,11 @@ const string HELP_ERROR = "The assumed genotyping error rate.";
 const string ARG_WINSIZE = "--winsize";
 const int DEFAULT_WINSIZE = 60;
 const string HELP_WINSIZE = "The window size in # of SNPs in which to calculate LOD scores.";
+
+const string ARG_WINSIZE_MULTI = "--winsize-multi";
+const int DEFAULT_WINSIZE_MULTI = -1;
+const string HELP_WINSIZE_MULTI = "Provide several window sizes (in # of SNPs) to calculate LOD scores.\n\
+\trohscan will compute KDEs for each window size and output the results for inspection.";
 
 const string ARG_POINTS = "--kde-points";
 const int DEFAULT_POINTS = 512;
@@ -155,6 +160,7 @@ int main(int argc, char *argv[])
     params.addFlag(ARG_TPED_MISSING, DEFAULT_TPED_MISSING, "", HELP_TPED_MISSING);
     params.addFlag(ARG_FREQ_FILE, DEFAULT_FREQ_FILE, "", HELP_FREQ_FILE);
     params.addFlag(ARG_FREQ_ONLY, DEFAULT_FREQ_ONLY, "", HELP_FREQ_ONLY);
+    params.addListFlag(ARG_WINSIZE_MULTI, DEFAULT_WINSIZE_MULTI, "", HELP_WINSIZE_MULTI);
 
     try
     {
@@ -189,6 +195,21 @@ int main(int argc, char *argv[])
     string freqfile = params.getStringFlag(ARG_FREQ_FILE);
     bool AUTO_FREQ = true;
     bool FREQ_ONLY = params.getBoolFlag(ARG_FREQ_ONLY);
+    vector<int> multiWinsizes = params.getIntListFlag(ARG_WINSIZE_MULTI);
+    bool WINSIZE_EXPLORE = false;
+
+    if (multiWinsizes[0] != DEFAULT_WINSIZE_MULTI)
+    {
+        for (int i = 0; i < multiWinsizes.size(); i++)
+        {
+            if (multiWinsizes[i] <= 0)
+            {
+                cerr << "ERROR: SNP window sizes must be > 1.\n";
+                return -1;
+            }
+        }
+        WINSIZE_EXPLORE = true;
+    }
 
     if (freqfile.compare(DEFAULT_FREQ_FILE) != 0)
     {
@@ -344,20 +365,6 @@ int main(int argc, char *argv[])
             hapDataByPopByChr = readTPEDHapData2(tpedfile, numLoci, numInd, chrCoordList, indList,
                                                  ind2pop, pop2size, pop2index, TPED_MISSING, mapDataByChr);
         }
-        /*
-        else
-        {
-            chrCoordList = scanMapData(mapfile, numLoci);
-            mapDataByChr = readMapData(mapfile, chrCoordList);
-
-            scanIndData2(indfile, numInd, ind2pop, pop2size);
-            indList = new string[numInd];
-            indDataByPop = readIndData2(indfile, numInd, ind2pop, pop2size, indList, pop2index);
-
-            hapDataByPopByChr = readHapData2(hapfile, numLoci, numInd, chrCoordList,
-                                             indList, ind2pop, pop2size, pop2index, mapDataByChr);
-        }
-        */
         //load LOD score cutoff if specified
         if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF)
         {
@@ -422,8 +429,6 @@ int main(int argc, char *argv[])
         }
 
         if (FREQ_ONLY) return 0;
-
-        winDataByPopByChr = initWinData(mapDataByChr, indDataByPop);
     }
     catch (...)
     {
@@ -431,78 +436,65 @@ int main(int argc, char *argv[])
     }
 
 
-    int numChr = chrCoordList->size();
+    //int numChr = chrCoordList->size();
     int numPop = pop2size.size();
     chrCoordList->clear();
     //indCoordList->clear();
     delete chrCoordList;
     // delete indCoordList;
 
-    //Create a vector of pop/chr pairs
-    //These will be distributed across threads for LOD score calculation
-    vector<int_pair_t> *popChrPairs = new vector<int_pair_t>;
-    int_pair_t pair;
-    for (int pop = 0; pop < numPop; pop++)
+    if (WINSIZE_EXPLORE)
     {
-        for (int chr = 0; chr < numChr; chr++)
+        for (int i = 0; i < multiWinsizes.size(); i++)
         {
-            pair.first = pop;
-            pair.second = chr;
-            popChrPairs->push_back(pair);
+            char winStr[10];
+            sprintf(winStr, "%d", multiWinsizes[i]);
+            string kdeoutfile = outfile;
+            kdeoutfile += ".";
+            kdeoutfile += winStr;
+
+            winDataByPopByChr = calcLODWindows(hapDataByPopByChr,
+                                               freqDataByPopByChr,
+                                               mapDataByChr,
+                                               indDataByPop,
+                                               multiWinsizes[i],
+                                               error,
+                                               MAX_GAP,
+                                               numThreads);
+
+            //Format the LOD window data into a single array per pop with no missing data
+            //Prepped for KDE
+            vector < DoubleData * > *rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
+
+            //Compute KDE of LOD score distribution
+            cerr << "Estimating distribution of raw LOD score windows:\n";
+            vector < KDEResult * > *kdeResultByPop = computeKDE(rawWinDataByPop, indDataByPop, numThreads);
+            releaseDoubleData(rawWinDataByPop);
+
+            //Output kde points
+            try
+            {
+                writeKDEResult(kdeResultByPop, indDataByPop, kdeoutfile);
+            }
+            catch (...)
+            {
+                return -1;
+            }
+            releaseWinData(winDataByPopByChr);
         }
+
+        return 0;
     }
 
-    cerr << "There are " << popChrPairs->size() << " pop/chr combinations to compute.\n";
+    winDataByPopByChr = calcLODWindows(hapDataByPopByChr,
+                                       freqDataByPopByChr,
+                                       mapDataByChr,
+                                       indDataByPop,
+                                       winsize,
+                                       error,
+                                       MAX_GAP,
+                                       numThreads);
 
-    int numThreadsLODcalc = numThreads;
-
-    if (popChrPairs->size() < numThreads)
-    {
-        numThreadsLODcalc = popChrPairs->size();
-        cerr << "WARNING: there are fewer pop/chr pairs than threads requested.  Running with "
-             << numThreads << " threads instead.\n";
-    }
-
-    //Partition pop/chr pairs amongst the specified threads
-    unsigned long int *NUM_PER_THREAD = new unsigned long int[numThreadsLODcalc];
-    unsigned long int div = popChrPairs->size() / numThreadsLODcalc;
-    for (int i = 0; i < numThreadsLODcalc; i++) NUM_PER_THREAD[i] = div;
-    for (int i = 0; i < (popChrPairs->size()) % numThreadsLODcalc; i++) NUM_PER_THREAD[i]++;
-
-
-    work_order_t *order;
-    pthread_t *peer = new pthread_t[numThreadsLODcalc];
-    int prev_index = 0;
-    for (int i = 0; i < numThreadsLODcalc; i++)
-    {
-        order = new work_order_t;
-        order->first_index = prev_index;
-        order->last_index = prev_index + NUM_PER_THREAD[i];
-        prev_index += NUM_PER_THREAD[i];
-
-        order->winsize = winsize;
-        order->error = error;
-        order->MAX_GAP = MAX_GAP;
-
-        order->popChrPairs = popChrPairs;
-        order->indDataByPop = indDataByPop;
-        order->mapDataByChr = mapDataByChr;
-        order->hapDataByPopByChr = hapDataByPopByChr;
-        order->freqDataByPopByChr = freqDataByPopByChr;
-        order->winDataByPopByChr = winDataByPopByChr;
-
-        order->id = i;
-        pthread_create(&(peer[i]),
-                       NULL,
-                       (void *(*)(void *))scan,
-                       (void *)order);
-
-    }
-
-    for (int i = 0; i < numThreadsLODcalc; i++)
-    {
-        pthread_join(peer[i], NULL);
-    }
 
     releaseHapData(hapDataByPopByChr);
     releaseFreqData(freqDataByPopByChr);
@@ -524,6 +516,11 @@ int main(int argc, char *argv[])
     double *lodScoreCutoffByPop = new double[numPop];
     if (AUTO_CUTOFF)
     {
+        char winStr[10];
+        sprintf(winStr, "%d", winsize);
+        string kdeoutfile = outfile;
+        kdeoutfile += ".";
+        kdeoutfile += winStr;
         //Format the LOD window data into a single array per pop with no missing data
         //Prepped for KDE
         vector < DoubleData * > *rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
@@ -536,7 +533,7 @@ int main(int argc, char *argv[])
         //Output kde points
         try
         {
-            writeKDEResult(kdeResultByPop, indDataByPop, outfile);
+            writeKDEResult(kdeResultByPop, indDataByPop, kdeoutfile);
         }
         catch (...)
         {
@@ -592,7 +589,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    cerr << "Begin ROH window assembly.\n";
+    cerr << "Assembling ROH windows...\n";
     //Assemble ROH for each individual in each pop
     vector< ROHLength * > *rohLengthByPop = new vector< ROHLength * >;
     vector< vector< ROHData * >* > *rohDataByPopByInd = assembleROHWindows(winDataByPopByChr,
@@ -601,8 +598,6 @@ int main(int argc, char *argv[])
             lodScoreCutoffByPop,
             &rohLengthByPop,
             winsize);
-
-    cerr << "Complete.\n";
 
     //GMM set up for size classifications
     //There might be some benefit in doing this across a range of ngaussians and choosing the classification
@@ -697,40 +692,10 @@ int main(int argc, char *argv[])
 
     //Output ROH calls to file, one for each individual
     //includes A/B/C size classifications
-    //Could be modified to allow for arbitrary number of size classifications
-    for (int pop = 0; pop < rohDataByPopByInd->size(); pop++)
-    {
-        vector< ROHData * > *rohDataByInd = rohDataByPopByInd->at(pop);
-        for (int ind = 0; ind < rohDataByInd->size(); ind++)
-        {
-            ROHData *rohData = rohDataByInd->at(ind);
-            cerr << "Writing ROH tracts for " << rohData->indID << endl;
-            string rohOutfile = outfile;
-            rohOutfile += ".";
-            rohOutfile += rohData->indID;
-            rohOutfile += ".roh";
-            ofstream out;
-            out.open(rohOutfile.c_str());
-            if (out.fail())
-            {
-                cerr << "ERROR: Failed to open " << rohOutfile << " for writing.\n";
-                return -1;
-            }
-
-            for (int roh = 0; roh < rohData->chr.size(); roh++)
-            {
-                int size = (rohData->stop[roh] - rohData->start[roh]);
-                char sizeClass = 'C';
-                if (size < shortMedBound[pop]) sizeClass = 'A';
-                else if (size < medLongBound[pop]) sizeClass = 'B';
-                out << rohData->chr[roh] << " " << rohData->start[roh] << " " << rohData->stop[roh] << " " << size << " " << sizeClass << endl;
-            }
-
-            out.close();
-        }
-    }
-
+    cerr << "Writing ROH tracts...\n";
+    writeROHData(outfile, rohDataByPopByInd, mapDataByChr, shortMedBound, medLongBound, ind2pop);
 
     return 0;
+
 }
 

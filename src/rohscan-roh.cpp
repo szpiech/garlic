@@ -37,7 +37,7 @@ void scan(void *order)
         calcLOD(indData, mapData, hapData, freqData, winData, winsize, error, MAX_GAP);
 
         pthread_mutex_lock(&cerr_mutex);
-        cerr << indDataByPop->at(pop)->pop << " chromosome " << mapDataByChr->at(chr)->chr << " LOD  windows finished.\n";
+        cerr << indDataByPop->at(pop)->pop << " chromosome " << mapDataByChr->at(chr)->chr << " LOD windows finished.\n";
         pthread_mutex_unlock(&cerr_mutex);
     }
 
@@ -138,6 +138,85 @@ void calcLOD(IndData *indData, MapData *mapData,
     return;
 }
 
+vector< vector< WinData * >* > *calcLODWindows(vector< vector< HapData * >* > *hapDataByPopByChr,
+        vector< vector< FreqData * >* > *freqDataByPopByChr,
+        vector< MapData * > *mapDataByChr,
+        vector< IndData * > *indDataByPop,
+        int winsize, double error, int MAX_GAP, int numThreads)
+{
+
+    int numChr = mapDataByChr->size();
+    int numPop = indDataByPop->size();
+
+    vector< vector< WinData * >* > *winDataByPopByChr = initWinData(mapDataByChr, indDataByPop);
+
+    //Create a vector of pop/chr pairs
+    //These will be distributed across threads for LOD score calculation
+    vector<int_pair_t> *popChrPairs = new vector<int_pair_t>;
+    int_pair_t pair;
+    for (int pop = 0; pop < numPop; pop++)
+    {
+        for (int chr = 0; chr < numChr; chr++)
+        {
+            pair.first = pop;
+            pair.second = chr;
+            popChrPairs->push_back(pair);
+        }
+    }
+
+    cerr << "There are " << popChrPairs->size() << " pop/chr combinations to compute.\n";
+
+    int numThreadsLODcalc = numThreads;
+
+    if (popChrPairs->size() < numThreads)
+    {
+        numThreadsLODcalc = popChrPairs->size();
+        cerr << "WARNING: there are fewer pop/chr pairs than threads requested.  Running with "
+             << numThreads << " threads instead.\n";
+    }
+
+    //Partition pop/chr pairs amongst the specified threads
+    unsigned long int *NUM_PER_THREAD = new unsigned long int[numThreadsLODcalc];
+    unsigned long int div = popChrPairs->size() / numThreadsLODcalc;
+    for (int i = 0; i < numThreadsLODcalc; i++) NUM_PER_THREAD[i] = div;
+    for (int i = 0; i < (popChrPairs->size()) % numThreadsLODcalc; i++) NUM_PER_THREAD[i]++;
+
+
+    work_order_t *order;
+    pthread_t *peer = new pthread_t[numThreadsLODcalc];
+    int prev_index = 0;
+    for (int i = 0; i < numThreadsLODcalc; i++)
+    {
+        order = new work_order_t;
+        order->first_index = prev_index;
+        order->last_index = prev_index + NUM_PER_THREAD[i];
+        prev_index += NUM_PER_THREAD[i];
+
+        order->winsize = winsize;
+        order->error = error;
+        order->MAX_GAP = MAX_GAP;
+
+        order->popChrPairs = popChrPairs;
+        order->indDataByPop = indDataByPop;
+        order->mapDataByChr = mapDataByChr;
+        order->hapDataByPopByChr = hapDataByPopByChr;
+        order->freqDataByPopByChr = freqDataByPopByChr;
+        order->winDataByPopByChr = winDataByPopByChr;
+
+        order->id = i;
+        pthread_create(&(peer[i]),
+                       NULL,
+                       (void *(*)(void *))scan,
+                       (void *)order);
+
+    }
+
+    for (int i = 0; i < numThreadsLODcalc; i++)
+    {
+        pthread_join(peer[i], NULL);
+    }
+    return winDataByPopByChr;
+}
 
 /*
  * Genotype is 0/1/2 counting the number of alternate alleles
@@ -206,7 +285,6 @@ vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* 
     //rohLengthByPop = new vector< ROHLength* >;
     vector< vector< ROHData * >* > *rohDataByPopByInd = initROHData(indDataByPop);
 
-
     for (int pop = 0; pop < indDataByPop->size(); pop++)
     {
         vector<int> lengths;
@@ -239,51 +317,6 @@ vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* 
                         //for consecutive w, we obiously don't have to assign true again.
                         for (int i = 0; i < winSize; i++) inWin[w + i] = true;
                     }
-                    /*
-                    //No window being extended and the LOD score is NA
-                    //Skip window
-                    if(winStart < 0 && winData->data[ind][w] == MISSING)
-                      {
-                        continue;
-                      }
-                    //A window is being extended and the LOD score is NA
-                    //End window, print the interval
-                    //Set winStart to -1
-                    else if(winStart > 0 && winData->data[ind][w] == MISSING)
-                      {
-                        winStop = mapData->physicalPos[w];
-                        int size = winStop - winStart + 1;
-                        lengths.push_back(size);
-                        rohData->chr.push_back(chr);
-                        rohData->start.push_back(winStart);
-                        rohData->stop.push_back(winStop);
-                        //cerr << indData->pop << " " << rohData->indID << " " << chr << " " << winStart << " " << winStop << endl;
-                        winStart = -1;
-                        winStop = -1;
-                      }
-                    //No window currently being extended
-                    //But found a LOD score above cutoff
-                    //Start the window here
-                    else if(winStart < 0 && winData->data[ind][w] >= lodScoreCutoff)
-                      {
-                        winStart = mapData->physicalPos[w];
-                      }
-                    //A window is being extended but the next window is below
-                    //the cutoff.  End the window, and print the interval to file
-                    //Set winStart to -1
-                    else if(winStart > 0 && winData->data[ind][w] < lodScoreCutoff)
-                      {
-                        winStop = mapData->physicalPos[w];
-                        int size = winStop - winStart + 1;
-                        lengths.push_back(size);
-                        rohData->chr.push_back(chr);
-                        rohData->start.push_back(winStart);
-                        rohData->stop.push_back(winStop);
-                        //cerr << indData->pop << " " << rohData->indID << " " << chr << " " << winStart << " " << winStop << endl;
-                        winStart = -1;
-                        winStop = -1;
-                      }
-                    */
                 }
 
 
@@ -358,5 +391,47 @@ void releaseROHLength(vector< ROHLength * > *rohLengthByPop)
         releaseROHLength(rohLengthByPop->at(pop));
     }
     delete rohLengthByPop;
+    return;
+}
+
+void writeROHData(string outfile,
+                  vector< vector< ROHData * >* > *rohDataByPopByInd,
+                  vector< MapData * > *mapDataByChr,
+                  double *shortMedBound,
+                  double *medLongBound,
+                  map<string, string> &ind2pop)
+{
+    for (int pop = 0; pop < rohDataByPopByInd->size(); pop++)
+    {
+        vector< ROHData * > *rohDataByInd = rohDataByPopByInd->at(pop);
+        for (int ind = 0; ind < rohDataByInd->size(); ind++)
+        {
+            ROHData *rohData = rohDataByInd->at(ind);
+            string rohOutfile = outfile;
+            rohOutfile += ".";
+            rohOutfile += ind2pop[rohData->indID];
+            rohOutfile += ".";
+            rohOutfile += rohData->indID;
+            rohOutfile += ".roh";
+            ofstream out;
+            out.open(rohOutfile.c_str());
+            if (out.fail())
+            {
+                cerr << "ERROR: Failed to open " << rohOutfile << " for writing.\n";
+                throw 0;
+            }
+
+            for (int roh = 0; roh < rohData->chr.size(); roh++)
+            {
+                int size = (rohData->stop[roh] - rohData->start[roh]);
+                char sizeClass = 'C';
+                if (size < shortMedBound[pop]) sizeClass = 'A';
+                else if (size < medLongBound[pop]) sizeClass = 'B';
+                out << mapDataByChr->at(rohData->chr[roh])->chr << " " << rohData->start[roh] << " " << rohData->stop[roh] << " " << size << " " << sizeClass << endl;
+            }
+
+            out.close();
+        }
+    }
     return;
 }
