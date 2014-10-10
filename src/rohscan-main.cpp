@@ -445,6 +445,11 @@ int main(int argc, char *argv[])
 
     if (WINSIZE_EXPLORE)
     {
+        map<string, double *> kurtosis;
+        for (map<string, int>::iterator it = pop2index.begin(); it != pop2index.end(); it++)
+        {
+            kurtosis[it->first] = new double[multiWinsizes.size()];
+        }
         for (int i = 0; i < multiWinsizes.size(); i++)
         {
             char winStr[10];
@@ -466,6 +471,13 @@ int main(int argc, char *argv[])
             //Prepped for KDE
             vector < DoubleData * > *rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
 
+            //calculate kurtosis of LOD score distribution for each population
+            //for current window size
+            for (map<string, int>::iterator it = pop2index.begin(); it != pop2index.end(); it++)
+            {
+                kurtosis[it->first][i] = gsl_stats_kurtosis(rawWinDataByPop->at(it->second)->data, 1, rawWinDataByPop->at(it->second)->size);
+            }
+
             //Compute KDE of LOD score distribution
             cerr << "Estimating distribution of raw LOD score windows:\n";
             vector < KDEResult * > *kdeResultByPop = computeKDE(rawWinDataByPop, indDataByPop, numThreads);
@@ -480,8 +492,37 @@ int main(int argc, char *argv[])
             {
                 return -1;
             }
+
             releaseWinData(winDataByPopByChr);
         }
+
+
+        string kurtosisOutfile = outfile;
+        kurtosisOutfile += ".kurtosis";
+        ofstream fout;
+        fout.open(kurtosisOutfile.c_str());
+        if (fout.fail())
+        {
+            cerr << "ERROR: Could not open " << kurtosisOutfile << " for reading.\n";
+            return -1;
+        }
+
+        for (map<string, int>::iterator it = pop2index.begin(); it != pop2index.end(); it++)
+        {
+            fout << it->first << " ";
+        }
+        fout << "\n";
+        for (int i = 0; i < multiWinsizes.size(); i++)
+        {
+            fout << multiWinsizes[i] << " ";
+            for (map<string, int>::iterator it = pop2index.begin(); it != pop2index.end(); it++)
+            {
+                fout << kurtosis[it->first][i] << " ";
+            }
+            fout << endl;
+        }
+
+        fout.close();
 
         return 0;
     }
