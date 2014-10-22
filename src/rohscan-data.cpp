@@ -507,6 +507,7 @@ MapData *initMapData(int nloci)
     data->physicalPos = new int[nloci];
     data->geneticPos = new double[nloci];
     data->allele = new char[nloci];
+    data->allele0 = new char[nloci];
     data->chr = "--";
 
     for (int locus = 0; locus < nloci; locus++)
@@ -515,6 +516,7 @@ MapData *initMapData(int nloci)
         data->physicalPos[locus] = MISSING;
         data->geneticPos[locus] = MISSING;
         data->allele[locus] = '-';
+        data->allele0[locus] = '-';
     }
 
     return data;
@@ -528,6 +530,7 @@ void releaseMapData(MapData *data)
     delete [] data->physicalPos;
     delete [] data->geneticPos;
     delete [] data->allele;
+    delete [] data->allele0;
     delete data;
     data = NULL;
     return;
@@ -786,7 +789,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
     //string alleleStr1, alleleStr2;
     char alleleStr1, alleleStr2;
     string junk;//, oneAllele;
-    char oneAllele;
+    char oneAllele, zeroAllele;
     //stringstream ss;
     //For each chromosome
     for (int chr = 0; chr < chrCoordList->size(); chr++)
@@ -801,6 +804,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
             }
             //stringstream ss;
             oneAllele = mapDataByChr->at(chr)->allele[locus];
+            zeroAllele = mapDataByChr->at(chr)->allele0[locus];
             //string genotypes;
             //getline(fin, genotypes);
             //ss.str(genotypes);
@@ -843,6 +847,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
                 }
                 else
                 {
+                    zeroAllele = alleleStr1;
                     allele1 = 0;
                 }
 
@@ -864,6 +869,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
                 }
                 else
                 {
+                    zeroAllele = alleleStr2;
                     allele2 = 0;
                 }
 
@@ -882,13 +888,14 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
             }
 
             mapDataByChr->at(chr)->allele[locus] = oneAllele;
+            mapDataByChr->at(chr)->allele0[locus] = zeroAllele;
         }
     }
 
     fin.close();
     return hapDataByPopByChr;
 }
-/*
+
 void writeTPEDDataByPop(string outfile, vector< vector< HapData * >* > *hapDataByPopByChr, vector< MapData * > *mapDataByChr, map<string, int> &pop2index)
 {
     ogzstream fout;
@@ -914,15 +921,19 @@ void writeTPEDDataByPop(string outfile, vector< vector< HapData * >* > *hapDataB
                 fout << mapDataByChr->at(chr)->locusName[locus] << "\t";
                 fout << mapDataByChr->at(chr)->geneticPos[locus] << "\t";
                 fout << mapDataByChr->at(chr)->physicalPos[locus] << "\t";
-                for (int hap = 0; hap < hapDataByPopByChr->at(pop)->at(chr)->nhaps; hap++)
+                for (int ind = 0; ind < hapDataByPopByChr->at(pop)->at(chr)->nind; ind++)
                 {
-                    if(hapDataByPopByChr->at(pop)->at(chr)->data[hap][locus])
+                    if(hapDataByPopByChr->at(pop)->at(chr)->data[locus][ind] == 2)
                     {
-                        fout << mapDataByChr->at(chr)->allele[locus] << "\t";
+                        fout << mapDataByChr->at(chr)->allele[locus] << "\t" << mapDataByChr->at(chr)->allele[locus] << "\t";
+                    }
+                    else if (hapDataByPopByChr->at(pop)->at(chr)->data[locus][ind] == 1)
+                    {
+                        fout << mapDataByChr->at(chr)->allele0[locus] << "\t" << mapDataByChr->at(chr)->allele[locus] << "\t";
                     }
                     else
                     {
-                        fout << 0 << "\t";
+                        fout << mapDataByChr->at(chr)->allele0[locus] << "\t" << mapDataByChr->at(chr)->allele0[locus] << "\t";
                     }
                 }
                 fout << endl;
@@ -961,7 +972,7 @@ void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<s
     }
     return;
 }
-*/
+
 /*
 vector< vector< HapData * >* > *readHapData(string filename,
         int expectedLoci,
@@ -1516,6 +1527,7 @@ vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrC
             fin >> data->geneticPos[locus];
             fin >> data->physicalPos[locus];
             data->allele[locus] = TPED_MISSING;
+            data->allele0[locus] = TPED_MISSING;
             getline(fin, junk);
         }
         cerr << size << " loci on chromosome " << data->chr << endl;

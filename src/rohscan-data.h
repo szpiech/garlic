@@ -35,6 +35,7 @@ struct MapData
     double *geneticPos;
     string *locusName;
     char *allele;
+    char *allele0;
     int nloci;
     string chr;
 };
