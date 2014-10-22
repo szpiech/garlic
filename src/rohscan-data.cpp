@@ -30,9 +30,9 @@ map<string, double> readLODCutoff(string lodCutoffFile, map<string, int> &pop2si
     map<string, double> pop2lodcutoff;
     string line, popID, cutoffStr;
     double cutoff;
+    stringstream ss;
     while (getline(fin, line))
     {
-        stringstream ss;
         ss.str(line);
         int fields = countFields(line);
         if (fields != 2)
@@ -62,6 +62,7 @@ map<string, double> readLODCutoff(string lodCutoffFile, map<string, int> &pop2si
         {
             pop2lodcutoff[popID] = cutoff;
         }
+        ss.clear();
     }
 
     if (pop2lodcutoff.size() != pop2size.size())
@@ -99,9 +100,10 @@ void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<
 
     string line, popID, SMboundStr, MLboundStr;
     double SMbound, MLbound;
+    stringstream ss;
     while (getline(fin, line))
     {
-        stringstream ss;
+        //stringstream ss;
         ss.str(line);
         int fields = countFields(line);
         if (fields != 3)
@@ -160,6 +162,7 @@ void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<
             pop2SMbound[popID] = SMbound;
             pop2MLbound[popID] = MLbound;
         }
+        ss.clear();
     }
 
     if (pop2SMbound.size() != pop2size.size())
@@ -417,14 +420,14 @@ vector< vector< FreqData * >* > *readFreqData(string freqfile,
     int popsFound = 0;
     getline(fin, header);
     int headerSize = countFields(header) - 2;
-    if(headerSize <= 0)
+    if (headerSize <= 0)
     {
         cerr << "ERROR: " << freqfile << " header line has too few columns.\n";
         throw 0;
     }
     stringstream ss;
     ss.str(header);
-    ss>> junk >> junk;
+    ss >> junk >> junk;
     string *popList = new string[headerSize];
     for (int i = 0; i < headerSize; i++)
     {
@@ -453,7 +456,8 @@ vector< vector< FreqData * >* > *readFreqData(string freqfile,
     }
 
 
-    string locusID, allele;
+    string locusID;//, allele;
+    char allele;
     double freq;
     for (int chr = 0; chr < mapDataByChr->size(); chr++)
     {
@@ -502,7 +506,7 @@ MapData *initMapData(int nloci)
     data->locusName = new string[nloci];
     data->physicalPos = new int[nloci];
     data->geneticPos = new double[nloci];
-    data->allele = new string[nloci];
+    data->allele = new char[nloci];
     data->chr = "--";
 
     for (int locus = 0; locus < nloci; locus++)
@@ -510,7 +514,7 @@ MapData *initMapData(int nloci)
         data->locusName[locus] = "--";
         data->physicalPos[locus] = MISSING;
         data->geneticPos[locus] = MISSING;
-        data->allele[locus] = "--";
+        data->allele[locus] = '-';
     }
 
     return data;
@@ -709,7 +713,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
         map<string, string> &ind2pop,
         map<string, int> &pop2size,
         map<string, int> &pop2index,
-        string TPED_MISSING,
+        char TPED_MISSING,
         vector< MapData * > *mapDataByChr)
 {
     int expectedHaps = 2 * expectedInd;
@@ -779,9 +783,11 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
         hapDataByPopByChr->push_back(hapDataByChr);
     }
 
-    string alleleStr1, alleleStr2;
-    string junk, oneAllele;
-
+    //string alleleStr1, alleleStr2;
+    char alleleStr1, alleleStr2;
+    string junk;//, oneAllele;
+    char oneAllele;
+    //stringstream ss;
     //For each chromosome
     for (int chr = 0; chr < chrCoordList->size(); chr++)
     {
@@ -793,35 +799,45 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
             {
                 pop2currind[it->first] = 0;
             }
-            stringstream ss;
+            //stringstream ss;
             oneAllele = mapDataByChr->at(chr)->allele[locus];
-            string genotypes;
-            getline(fin, genotypes);
-            genotypes += " ";
-            ss.str(genotypes);
+            //string genotypes;
+            //getline(fin, genotypes);
+            //ss.str(genotypes);
+            /*
             ss >> junk;
             ss >> junk;
             ss >> junk;
             ss >> junk;
+            */
+            fin >> junk;
+            fin >> junk;
+            fin >> junk;
+            fin >> junk;
             for (int ind = 0; ind < expectedInd; ind++)
             {
-                int pop = pop2index[ind2pop[indList[ind]]];
-                int index = pop2currind[ind2pop[indList[ind]]];
-                ss >> alleleStr1 >> alleleStr2;
+                string popStr = ind2pop[indList[ind]];
+                int pop = pop2index[popStr];
+                int index = pop2currind[popStr];
+                //ss >> alleleStr1 >> alleleStr2;
+                fin >> alleleStr1 >> alleleStr2;
                 short allele1, allele2;
                 allele1 = -1;
                 allele2 = -1;
 
-                if (alleleStr1.compare(TPED_MISSING) == 0)
+                //if (alleleStr1.compare(TPED_MISSING) == 0)
+                if (alleleStr1 == TPED_MISSING)
                 {
                     allele1 = -9;
                 }
-                else if (oneAllele.compare(TPED_MISSING) == 0)
+                //else if (oneAllele.compare(TPED_MISSING) == 0)
+                else if (oneAllele == TPED_MISSING)
                 {
                     oneAllele = alleleStr1;
                     allele1 = 1;
                 }
-                else if (alleleStr1.compare(oneAllele) == 0)
+                //else if (alleleStr1.compare(oneAllele) == 0)
+                else if (alleleStr1 == oneAllele)
                 {
                     allele1 = 1;
                 }
@@ -830,16 +846,19 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
                     allele1 = 0;
                 }
 
-                if (alleleStr2.compare(TPED_MISSING) == 0)
+                //if (alleleStr2.compare(TPED_MISSING) == 0)
+                if (alleleStr2 == TPED_MISSING)
                 {
                     allele2 = -9;
                 }
-                else if (oneAllele.compare(TPED_MISSING) == 0)
+                //else if (oneAllele.compare(TPED_MISSING) == 0)
+                else if (oneAllele == TPED_MISSING)
                 {
                     oneAllele = alleleStr2;
                     allele2 = 1;
                 }
-                else if (alleleStr2.compare(oneAllele) == 0)
+                //else if (alleleStr2.compare(oneAllele) == 0)
+                else if (alleleStr2 == oneAllele)
                 {
                     allele2 = 1;
                 }
@@ -852,6 +871,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
                 hapDataByPopByChr->at(pop)->at(chr)->data[2 * index][locus] = allele1;
                 hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
                 pop2currind[ind2pop[indList[ind]]]++;
+                //ss.clear();
             }
 
             mapDataByChr->at(chr)->allele[locus] = oneAllele;
@@ -860,6 +880,79 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
 
     fin.close();
     return hapDataByPopByChr;
+}
+
+void writeTPEDDataByPop(string outfile, vector< vector< HapData * >* > *hapDataByPopByChr, vector< MapData * > *mapDataByChr, map<string, int> &pop2index)
+{
+    ogzstream fout;
+    string tpedFile = outfile;
+    //Each population
+    for (map<string, int>::iterator it = pop2index.begin(); it != pop2index.end(); it++)
+    {
+        int pop = it->second;
+        tpedFile = outfile + "." + it->first + ".tped.gz";
+        fout.open(tpedFile.c_str());
+        if (fout.fail())
+        {
+            cerr << "ERROR: Failed to open " << tpedFile << " for writing.\n";
+            throw 0;
+        }
+        cerr << "Writing to " << tpedFile << endl;
+        //each chromosome
+        for (int chr = 0; chr < mapDataByChr->size(); chr++)
+        {
+            for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
+            {
+                fout << mapDataByChr->at(chr)->chr << "\t";
+                fout << mapDataByChr->at(chr)->locusName[locus] << "\t";
+                fout << mapDataByChr->at(chr)->geneticPos[locus] << "\t";
+                fout << mapDataByChr->at(chr)->physicalPos[locus] << "\t";
+                for (int hap = 0; hap < hapDataByPopByChr->at(pop)->at(chr)->nhaps; hap++)
+                {
+                    if(hapDataByPopByChr->at(pop)->at(chr)->data[hap][locus])
+                    {
+                        fout << mapDataByChr->at(chr)->allele[locus] << "\t";
+                    }
+                    else
+                    {
+                        fout << 0 << "\t";
+                    }
+                }
+                fout << endl;
+            }
+        }
+
+        fout.close();
+    }
+    return;
+}
+void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<string, int> &pop2index)
+{
+    ogzstream fout;
+    string tfamFile = outfile;
+    //Each population
+    for (map<string, int>::iterator it = pop2index.begin(); it != pop2index.end(); it++)
+    {
+        int pop = it->second;
+        tfamFile = outfile + "." + it->first + ".tfam.gz";
+        fout.open(tfamFile.c_str());
+        if (fout.fail())
+        {
+            cerr << "ERROR: Failed to open " << tfamFile << " for writing.\n";
+            throw 0;
+        }
+        cerr << "Writing to " << tfamFile << endl;
+        //each chromosome
+        for (int ind = 0; ind < indDataByPop->at(pop)->nind; ind++)
+        {
+            fout << indDataByPop->at(pop)->pop << "\t";
+            fout << indDataByPop->at(pop)->indID[ind] << "\t0\t0\t0\t0";
+            fout << endl;
+        }
+
+        fout.close();
+    }
+    return;
 }
 /*
 vector< vector< HapData * >* > *readHapData(string filename,
@@ -1373,6 +1466,7 @@ vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci)
             currChrCoordinates.first = index;
             prevChr = currChr;
         }
+        ss.clear();
     }
 
     fin.close();
@@ -1386,7 +1480,7 @@ vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci)
     return chrStartStop;
 }
 
-vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrCoordList, string TPED_MISSING)
+vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrCoordList, char TPED_MISSING)
 {
     vector< MapData * > *mapDataByChr = new vector< MapData * >;
 
@@ -1523,6 +1617,7 @@ vector< MapData * > *readMapData(string filename, vector< int_pair_t > *chrCoord
     return mapDataByChr;
 }
 */
+/*
 vector< int_pair_t > *scanTFAMData(string filename, int &numInd)
 {
     igzstream fin;
@@ -1582,7 +1677,8 @@ vector< int_pair_t > *scanTFAMData(string filename, int &numInd)
 
     return indStartStop;
 }
-
+*/
+/*
 vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoordList)
 {
     vector< IndData * > *indDataByPop = new vector< IndData * >;
@@ -1616,7 +1712,7 @@ vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoor
 
     return indDataByPop;
 }
-
+*/
 /*
 vector< int_pair_t > *scanIndData(string filename, int &numInd)
 {
@@ -1695,6 +1791,7 @@ void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, ma
     int min_cols = 2;
     int current_cols = 0;
     string pop, ind;
+    stringstream ss;
     while (getline(fin, line))
     {
         nind++;
@@ -1705,7 +1802,7 @@ void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, ma
                  << ", but expected at least " << min_cols << ".\n";
             throw 0;
         }
-        stringstream ss;
+        //stringstream ss;
         ss.str(line);
         ss >> pop >> ind;
         if (ind2pop.count(ind) > 0)
@@ -1717,6 +1814,7 @@ void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, ma
 
         if (pop2size.count(pop) > 0) pop2size[pop]++;
         else pop2size[pop] = 1;
+        ss.clear();
     }
 
     fin.close();
@@ -1796,15 +1894,17 @@ vector< IndData * > *readIndData2(string filename, int numInd,
     }
 
     string line, pop, ind;
+    stringstream ss;
     for (int i = 0; i < numInd; i++)
     {
-        stringstream ss;
+        //stringstream ss;
         getline(fin, line);
         ss.str(line);
         ss >> pop >> ind;
         indList[i] = ind;
         indDataByPop->at(pop2index[pop])->indID[pop2curpos[pop]] = ind;
         pop2curpos[pop]++;
+        ss.clear();
     }
 
     fin.close();

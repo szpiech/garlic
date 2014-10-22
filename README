@@ -1,6 +1,15 @@
-rohscan is a program for calling runs of homozygosity in genotype data.  It implements the ROH calling of Pemberton et al. AJHG (2012).  This software is not fully inplemented.  A more detailed README coming soon.
+rohscan is a program for calling runs of homozygosity in genotype data.  It implements the ROH calling method of Pemberton et al. AJHG (2012).
 
-To compile, move into src/ type make.  rohscan depends on GNU GSL and FIGTree.  The libraries included here were compiled on OSX. You may, therefore, have to download and compile each for your own machine.
+This ROH calling pipeline has four phases.
+
+I.		Window-based LOD score calculation
+
+	For each individual in a population in a sliding window of M SNPs, we sum the log-of-odds of autozygosity for each genotype.
+II.		Kernel Density Estimation of LOD score distribution
+III.	Assembly of ROH
+IV.		Gaussian Mixture Modeling of ROH size distribution
+
+
 
 GNU GSL: http://www.gnu.org/software/gsl/ 
 

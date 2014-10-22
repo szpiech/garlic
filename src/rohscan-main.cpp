@@ -33,8 +33,10 @@ const string HELP_INDFILE = "An indfile containing population and individual IDs
 */
 
 
-
-
+const string ARG_POP_SPLIT = "--split-pops";
+const bool DEFAULT_POP_SPLIT = false;
+const string HELP_POP_SPLIT = "Read in data, calculate allele frequencies, and output\n\
+data in multiple files (one for each population).";
 
 const string ARG_OUTFILE = "--out";
 const string DEFAULT_OUTFILE = "outfile";
@@ -117,7 +119,7 @@ const string HELP_BOUND_SIZE_FILE = "A file specifying the short/medium and medi
 \twith a 3-component GMM.  Must provide 2 numbers.";
 
 const string ARG_TPED_MISSING = "--tped-missing";
-const string DEFAULT_TPED_MISSING = "0";
+const char DEFAULT_TPED_MISSING = '0';
 const string HELP_TPED_MISSING = "Missing data code for TPED files.";
 
 const string ARG_FREQ_FILE = "--freq-file";
@@ -161,6 +163,7 @@ int main(int argc, char *argv[])
     params.addFlag(ARG_FREQ_FILE, DEFAULT_FREQ_FILE, "", HELP_FREQ_FILE);
     params.addFlag(ARG_FREQ_ONLY, DEFAULT_FREQ_ONLY, "", HELP_FREQ_ONLY);
     params.addListFlag(ARG_WINSIZE_MULTI, DEFAULT_WINSIZE_MULTI, "", HELP_WINSIZE_MULTI);
+    params.addFlag(ARG_POP_SPLIT, DEFAULT_POP_SPLIT , "", HELP_POP_SPLIT);
 
     try
     {
@@ -171,7 +174,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-
+    int POP_SPLIT = params.getBoolFlag(ARG_POP_SPLIT);
     int winsize = params.getIntFlag(ARG_WINSIZE);
     //string mapfile = params.getStringFlag(ARG_MAPFILE);
     //string hapfile = params.getStringFlag(ARG_HAPFILE);
@@ -191,7 +194,7 @@ int main(int argc, char *argv[])
     string boundSizeFile = params.getStringFlag(ARG_BOUND_SIZE_FILE);
     bool AUTO_BOUNDS = true;
     bool AUTO_CUTOFF = true;
-    string TPED_MISSING = params.getStringFlag(ARG_TPED_MISSING);
+    char TPED_MISSING = params.getCharFlag(ARG_TPED_MISSING);
     string freqfile = params.getStringFlag(ARG_FREQ_FILE);
     bool AUTO_FREQ = true;
     bool FREQ_ONLY = params.getBoolFlag(ARG_FREQ_ONLY);
@@ -428,7 +431,13 @@ int main(int argc, char *argv[])
             writeFreqData(freqOutfile, freqDataByPopByChr, mapDataByChr, indDataByPop);
         }
 
-        if (FREQ_ONLY) return 0;
+
+        if (POP_SPLIT)
+        {
+            writeTFAMDataByPop(outfile, indDataByPop, pop2index);
+            writeTPEDDataByPop(outfile, hapDataByPopByChr, mapDataByChr, pop2index);
+        }
+        if (FREQ_ONLY || POP_SPLIT) return 0;
     }
     catch (...)
     {

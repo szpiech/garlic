@@ -34,7 +34,7 @@ struct MapData
     int *physicalPos;
     double *geneticPos;
     string *locusName;
-    string *allele;
+    char *allele;
     int nloci;
     string chr;
 };
@@ -90,7 +90,13 @@ vector< int_pair_t > *scanTFAMData(string filename, int &numInd);
 vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoordList);
 
 vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci);
-vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrCoordList, string TPED_MISSING);
+vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrCoordList, char TPED_MISSING);
+void writeTPEDDataByPop(string outfile,
+                        vector< vector< HapData * >* > *hapDataByPopByChr,
+                        vector< MapData * > *mapDataByChr,
+                        map<string, int> &pop2index);
+void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<string, int> &pop2index);
+
 /*
 vector< vector< HapData * >* > *readTPEDHapData(string filename,
         int expectedLoci,
@@ -106,7 +112,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
         map<string, string> &ind2pop,
         map<string, int> &pop2size,
         map<string, int> &pop2index,
-        string TPED_MISSING,
+        char TPED_MISSING,
         vector< MapData * > *mapDataByChr);
 
 MapData *initMapData(int nloci);
