@@ -51,7 +51,7 @@ void calcLOD(IndData *indData, MapData *mapData,
 {
     short **data = hapData->data;
     int nloci = hapData->nloci;
-    int nhaps = hapData->nhaps;
+    int nind = hapData->nind;
     int *physicalPos = mapData->physicalPos;
     double *geneticPos = mapData->geneticPos;
     string *locusName = mapData->locusName;
@@ -65,7 +65,7 @@ void calcLOD(IndData *indData, MapData *mapData,
     if (nloci - stop < winsize) stop = nloci - winsize + 1;
 
     //For each individual
-    for (int ind = 0; ind < nhaps / 2; ind++)
+    for (int ind = 0; ind < nind; ind++)
     {
         //starting locus of the window
         for (int locus = start; locus < stop; locus++)
@@ -85,7 +85,7 @@ void calcLOD(IndData *indData, MapData *mapData,
                         locus = prevI;
                         break;
                     }
-                    win[ind][locus] += lod(data[2 * ind][i] + data[2 * ind + 1][i], freq[i], error);
+                    win[ind][locus] += lod(data[i][ind], freq[i], error);
                     prevI = i;
                 }
 
@@ -107,8 +107,8 @@ void calcLOD(IndData *indData, MapData *mapData,
                     else
                     {
                         win[ind][locus] = win[ind][locus - 1] -
-                                          lod(data[2 * ind][locus - 1] + data[2 * ind + 1][locus - 1], freq[locus - 1], error) +
-                                          lod(data[2 * ind][locus + winsize - 1] + data[2 * ind + 1][locus + winsize - 1], freq[locus + winsize - 1], error);
+                                          lod(data[locus - 1][ind], freq[locus - 1], error) +
+                                          lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], error);
                     }
                 }
                 else
@@ -123,7 +123,7 @@ void calcLOD(IndData *indData, MapData *mapData,
                             locus = prevI;
                             break;
                         }
-                        win[ind][locus] += lod(data[2 * ind][i] + data[2 * ind + 1][i], freq[i], error);
+                        win[ind][locus] += lod(data[i][ind], freq[i], error);
                         prevI = i;
                     }
 

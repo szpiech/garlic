@@ -25,7 +25,7 @@ struct int_pair_t
 struct HapData
 {
     short **data;
-    int nhaps;
+    int nind;
     int nloci;
 };
 
@@ -133,7 +133,7 @@ IndData *initIndData(int nind);
 void releaseIndData(vector< IndData * > *indDataByPop);
 void releaseIndData(IndData *data);
 
-HapData *initHapData(unsigned int nhaps, unsigned int nloci);
+HapData *initHapData(unsigned int nind, unsigned int nloci);
 void releaseHapData(HapData *data);
 void releaseHapData(vector< vector< HapData * >* > *hapDataByPopByChr);
 /*

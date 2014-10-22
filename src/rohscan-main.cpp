@@ -434,8 +434,8 @@ int main(int argc, char *argv[])
 
         if (POP_SPLIT)
         {
-            writeTFAMDataByPop(outfile, indDataByPop, pop2index);
-            writeTPEDDataByPop(outfile, hapDataByPopByChr, mapDataByChr, pop2index);
+            //writeTFAMDataByPop(outfile, indDataByPop, pop2index);
+            //writeTPEDDataByPop(outfile, hapDataByPopByChr, mapDataByChr, pop2index);
         }
         if (FREQ_ONLY || POP_SPLIT) return 0;
     }

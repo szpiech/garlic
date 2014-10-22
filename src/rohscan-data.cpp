@@ -195,12 +195,12 @@ FreqData *calcFreqData(HapData *hapData, int nresample, const gsl_rng *r)
     {
         total = 0;
         count = 0;
-        for (int hap = 0; hap < hapData->nhaps; hap++)
+        for (int ind = 0; ind < hapData->nind; ind++)
         {
-            if (hapData->data[hap][locus] != -9)
+            if (hapData->data[locus][ind] != -9)
             {
-                count += hapData->data[hap][locus];
-                total++;
+                count += hapData->data[locus][ind];
+                total += 2;
             }
         }
         freq = count / total;
@@ -772,12 +772,12 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
     {
         pop2currind[it->first] = 0; //init
         //number of haplotypes in current population
-        int totalHaps = 2 * (it->second);
+        int totalInd = it->second;
         vector< HapData * > *hapDataByChr = new vector< HapData * >;
         for (int chr = 0; chr < chrCoordList->size(); chr++)
         {
             int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
-            HapData *data = initHapData(totalHaps, totalLoci);
+            HapData *data = initHapData(totalInd, totalLoci);
             hapDataByChr->push_back(data);
         }
         hapDataByPopByChr->push_back(hapDataByChr);
@@ -868,8 +868,15 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
                 }
 
                 //load into data stru
-                hapDataByPopByChr->at(pop)->at(chr)->data[2 * index][locus] = allele1;
-                hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
+                if (allele1 + allele2 < 0)
+                {
+                    hapDataByPopByChr->at(pop)->at(chr)->data[locus][index] = -9;
+                }
+                else
+                {
+                    hapDataByPopByChr->at(pop)->at(chr)->data[locus][index] = allele1 + allele2;
+                }
+                //hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
                 pop2currind[ind2pop[indList[ind]]]++;
                 //ss.clear();
             }
@@ -881,7 +888,7 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
     fin.close();
     return hapDataByPopByChr;
 }
-
+/*
 void writeTPEDDataByPop(string outfile, vector< vector< HapData * >* > *hapDataByPopByChr, vector< MapData * > *mapDataByChr, map<string, int> &pop2index)
 {
     ogzstream fout;
@@ -954,6 +961,7 @@ void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<s
     }
     return;
 }
+*/
 /*
 vector< vector< HapData * >* > *readHapData(string filename,
         int expectedLoci,
@@ -1350,23 +1358,23 @@ void writeWinData(vector< vector< WinData * >* > *winDataByPopByChr,
     return;
 }
 
-HapData *initHapData(unsigned int nhaps, unsigned int nloci)
+HapData *initHapData(unsigned int nind, unsigned int nloci)
 {
-    if (nhaps < 1 || nloci < 1)
+    if (nind < 1 || nloci < 1)
     {
-        cerr << "ERROR: Can't allocate WinData object.  Number of haplotypes (" << nhaps << ") and number of loci (" << nloci << ") must be positive.\n";
+        cerr << "ERROR: Can't allocate HapData object.  Number of haplotypes (" << nind << ") and number of loci (" << nloci << ") must be positive.\n";
         throw 0;
     }
 
     HapData *data = new HapData;
-    data->nhaps = nhaps;
+    data->nind = nind;
     data->nloci = nloci;
 
-    data->data = new short*[nhaps];
-    for (unsigned int i = 0; i < nhaps; i++)
+    data->data = new short*[nloci];
+    for (unsigned int i = 0; i < nloci; i++)
     {
-        data->data[i] = new short[nloci];
-        for (unsigned int j = 0; j < nloci; j++)
+        data->data[i] = new short[nind];
+        for (unsigned int j = 0; j < nind; j++)
         {
             data->data[i][j] = MISSING;
         }
@@ -1378,7 +1386,7 @@ HapData *initHapData(unsigned int nhaps, unsigned int nloci)
 void releaseHapData(HapData *data)
 {
     if (data == NULL) return;
-    for (int i = 0; i < data->nhaps; i++)
+    for (int i = 0; i < data->nloci; i++)
     {
         delete [] data->data[i];
     }
@@ -1386,7 +1394,7 @@ void releaseHapData(HapData *data)
     delete [] data->data;
 
     data->data = NULL;
-    data->nhaps = -9;
+    data->nind = -9;
     data->nloci = -9;
     delete data;
     data = NULL;
