@@ -135,6 +135,12 @@ const string ARG_FREQ_ONLY = "--freq-only";
 const bool DEFAULT_FREQ_ONLY = false;
 const string HELP_FREQ_ONLY = "If set, calculates a freq file from provided data and then exits.";
 
+const string ARG_KDE_SUBSAMPLE = "--kde-subsample";
+const int DEFAULT_KDE_SUBSAMPLE = 10;
+const string HELP_KDE_SUBSAMPLE = "The number of individuals so randomly sample for LOD score KDE. If there\n\
+\tare fewer individuals in the population all are used.\n\
+Set <= 0 to use all individuals (may use large amounts of RAM).";
+
 
 int main(int argc, char *argv[])
 {
@@ -164,6 +170,8 @@ int main(int argc, char *argv[])
     params.addFlag(ARG_FREQ_ONLY, DEFAULT_FREQ_ONLY, "", HELP_FREQ_ONLY);
     params.addListFlag(ARG_WINSIZE_MULTI, DEFAULT_WINSIZE_MULTI, "", HELP_WINSIZE_MULTI);
     params.addFlag(ARG_POP_SPLIT, DEFAULT_POP_SPLIT , "", HELP_POP_SPLIT);
+    params.addFlag(ARG_KDE_SUBSAMPLE, DEFAULT_KDE_SUBSAMPLE , "", HELP_KDE_SUBSAMPLE);
+
 
     try
     {
@@ -174,6 +182,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    int KDE_SUBSAMPLE = params.getIntFlag(ARG_KDE_SUBSAMPLE);
     int POP_SPLIT = params.getBoolFlag(ARG_POP_SPLIT);
     int winsize = params.getIntFlag(ARG_WINSIZE);
     //string mapfile = params.getStringFlag(ARG_MAPFILE);
