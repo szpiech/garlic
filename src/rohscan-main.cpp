@@ -487,8 +487,15 @@ int main(int argc, char *argv[])
 
             //Format the LOD window data into a single array per pop with no missing data
             //Prepped for KDE
-            vector < DoubleData * > *rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
-
+            vector < DoubleData * > *rawWinDataByPop;
+            if(KDE_SUBSAMPLE <= 0)
+            {
+                rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
+            }
+            else
+            {
+                rawWinDataByPop = convertSubsetWinData2DoubleData(winDataByPopByChr,KDE_SUBSAMPLE);
+            }
             //calculate kurtosis of LOD score distribution for each population
             //for current window size
             for (map<string, int>::iterator it = pop2index.begin(); it != pop2index.end(); it++)
@@ -582,7 +589,16 @@ int main(int argc, char *argv[])
         kdeoutfile += winStr;
         //Format the LOD window data into a single array per pop with no missing data
         //Prepped for KDE
-        vector < DoubleData * > *rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
+        vector < DoubleData * > *rawWinDataByPop;
+
+        if(KDE_SUBSAMPLE <= 0)
+        {
+            rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
+        }
+        else
+        {
+            rawWinDataByPop = convertSubsetWinData2DoubleData(winDataByPopByChr,KDE_SUBSAMPLE);
+        }
 
         //Compute KDE of LOD score distribution
         cerr << "Estimating distribution of raw LOD score windows:\n";

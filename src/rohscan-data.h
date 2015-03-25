@@ -11,6 +11,7 @@
 #include <map>
 #include "gzstream.h"
 #include "gsl/gsl_rng.h"
+#include "gsl/gsl_randist.h"
 
 using namespace std;
 
@@ -166,6 +167,7 @@ void writeWinData(vector< vector< WinData * >* > *winDataByPopByChr,
 
 DoubleData *initDoubleData(int n);
 vector < DoubleData * > *convertWinData2DoubleData(vector< vector< WinData * >* > *winDataByPopByChr);
+vector < DoubleData * > *convertSubsetWinData2DoubleData(vector< vector< WinData * >* > *winDataByPopByChr, int subsample);
 void releaseDoubleData(DoubleData *data);
 void releaseDoubleData(vector < DoubleData * > *rawWinDataByPop);
 void writeDoubleData(vector < DoubleData * > *rawWinDataByPop, vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);

@@ -2016,6 +2016,102 @@ vector < DoubleData * > *convertWinData2DoubleData(vector< vector< WinData * >* 
     return rawWinDataByPop;
 }
 
+vector < DoubleData * > *convertSubsetWinData2DoubleData(vector< vector< WinData * >* > *winDataByPopByChr, int subsample)
+{
+    const gsl_rng_type *T;
+    gsl_rng *r;
+    T = gsl_rng_default;
+    r = gsl_rng_alloc (T);
+    gsl_rng_set(r, time(NULL));
+
+    //to hold the indicies of the randomly selected individuals
+    int** randInd = new int* [winDataByPopByChr->size()];
+    int* nind = new int [winDataByPopByChr->size()];
+    for(int i = 0; i < winDataByPopByChr->size(); i++)
+    {
+        nind[i] = winDataByPopByChr->at(i)->at(0)->nind;
+        randInd[i] = NULL;
+    }
+
+
+    vector < DoubleData * > *rawWinDataByPop = new vector < DoubleData * >;
+    double val;
+    for (int pop = 0; pop < winDataByPopByChr->size(); pop++)
+    {
+        int nmiss = 0;
+        int ncols = 0;
+        int nrows = 0;
+        DoubleData *data;
+
+        if(subsample >= nind[pop])
+        {
+            randInd[pop] = new int[winDataByPopByChr->at(pop)->at(0)->nind];
+            for(int i =0; i < winDataByPopByChr->at(pop)->at(0)->nind; i++) randInd[pop][i] = i;
+        }
+        else
+        {
+            nind[pop] = subsample;
+            int* indIndex = new int[winDataByPopByChr->at(pop)->at(0)->nind];
+            for(int i =0; i < winDataByPopByChr->at(pop)->at(0)->nind; i++) indIndex[i] = i;
+            randInd[pop] = new int[subsample];
+            gsl_ran_choose(r,randInd[pop],subsample,indIndex,winDataByPopByChr->at(pop)->at(0)->nind,sizeof(int));
+        }
+
+        for (int chr = 0; chr < winDataByPopByChr->at(pop)->size(); chr++)
+        {
+            for (int ind = 0; ind < nind[pop]; ind++)
+            {
+                for (int locus = 0; locus < winDataByPopByChr->at(pop)->at(chr)->nloci; locus++)
+                {
+                    val = winDataByPopByChr->at(pop)->at(chr)->data[randInd[pop][ind]][locus];
+                    if (val == MISSING) nmiss++;
+                }
+            }
+
+            ncols += winDataByPopByChr->at(pop)->at(chr)->nloci;
+            nrows = nind[pop];
+        }
+        data = initDoubleData(ncols * nrows - nmiss);
+        rawWinDataByPop->push_back(data);
+
+        //cerr << "missing: " << nmiss << endl;
+    }
+
+    int i;
+    for (int pop = 0; pop < winDataByPopByChr->size(); pop++)
+    {
+        i = 0;
+        for (int chr = 0; chr < winDataByPopByChr->at(pop)->size(); chr++)
+        {
+            for (int ind = 0; ind < nind[pop]; ind++)
+            {
+                for (int locus = 0; locus < winDataByPopByChr->at(pop)->at(chr)->nloci; locus++)
+                {
+                    val = winDataByPopByChr->at(pop)->at(chr)->data[randInd[pop][ind]][locus];
+                    if (val != MISSING)
+                    {
+                        rawWinDataByPop->at(pop)->data[i] = val;
+                        i++;
+                    }
+                }
+            }
+        }
+    }
+
+    gsl_rng_free(r);
+
+    for(int i = 0; i < winDataByPopByChr->size(); i++)
+    {
+        for (int j = 0; j < nind[i]; j++) cerr << randInd[i][j] << " ";
+        cerr << endl;
+        delete [] randInd[i];
+    }
+    delete [] randInd;
+    delete [] nind;
+
+    return rawWinDataByPop;
+}
+
 void releaseDoubleData(DoubleData *data)
 {
     delete [] data->data;
