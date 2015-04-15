@@ -2130,3 +2130,36 @@ void releaseDoubleData(vector < DoubleData * > *rawWinDataByPop)
     rawWinDataByPop = NULL;
     return;
 }
+
+void subsetData(vector< vector< HapData * >* > *hapDataByPopByChr,
+                vector< IndData * > *indDataByPop,
+                vector< vector< HapData * >* > **subsetHapDataByPopByChr,
+                vector< IndData * > **subsetIndDataByPop, int subsample)
+{
+    const gsl_rng_type *T;
+    gsl_rng *r;
+    T = gsl_rng_default;
+    r = gsl_rng_alloc (T);
+    gsl_rng_set(r, time(NULL));
+
+    //to hold the indicies of the randomly selected individuals
+    int** randInd = new int* [indDataByPop->size()];
+    int* nind = new int [indDataByPop->size()];
+    for(int i = 0; i < winDataByPopByChr->size(); i++)
+    {
+        nind[i] = indDataByPop->at(i)->nind;
+        randInd[i] = NULL;
+    }
+
+    vector< vector< HapData * >* > *newHapDataByPopByChr;
+    vector< IndData * > *newIndDataByPop;
+
+
+    gsl_rng_free(r);
+    return;
+}
+
+
+
+
+

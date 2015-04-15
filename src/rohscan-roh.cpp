@@ -14,7 +14,7 @@ void scan(void *order)
     vector< vector< HapData * >* > *hapDataByPopByChr = w->hapDataByPopByChr;
     vector< vector< FreqData * >* > *freqDataByPopByChr = w->freqDataByPopByChr;
     vector< vector< WinData * >* > *winDataByPopByChr = w->winDataByPopByChr;
-    int winsize = w->winsize;
+    int* winsize = w->winsize;
     double error = w->error;
     int MAX_GAP = w->MAX_GAP;
 
@@ -34,7 +34,7 @@ void scan(void *order)
         FreqData *freqData = freqDataByPopByChr->at(pop)->at(chr);
         WinData *winData = winDataByPopByChr->at(pop)->at(chr);
 
-        calcLOD(indData, mapData, hapData, freqData, winData, winsize, error, MAX_GAP);
+        calcLOD(indData, mapData, hapData, freqData, winData, winsize[pop], error, MAX_GAP);
 
         pthread_mutex_lock(&cerr_mutex);
         cerr << indDataByPop->at(pop)->pop << " chromosome " << mapDataByChr->at(chr)->chr << " LOD windows finished.\n";
@@ -142,7 +142,7 @@ vector< vector< WinData * >* > *calcLODWindows(vector< vector< HapData * >* > *h
         vector< vector< FreqData * >* > *freqDataByPopByChr,
         vector< MapData * > *mapDataByChr,
         vector< IndData * > *indDataByPop,
-        int winsize, double error, int MAX_GAP, int numThreads)
+        int* winsize, double error, int MAX_GAP, int numThreads)
 {
 
     int numChr = mapDataByChr->size();
@@ -217,6 +217,85 @@ vector< vector< WinData * >* > *calcLODWindows(vector< vector< HapData * >* > *h
     }
     return winDataByPopByChr;
 }
+
+vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,
+        vector< vector< FreqData * >* > *freqDataByPopByChr,
+        vector< MapData * > *mapDataByChr,
+        vector< IndData * > *indDataByPop,
+        int* winsize, double error, int MAX_GAP, int numThreads, int pop)
+{
+
+    int numChr = mapDataByChr->size();
+    int numPop = 1;
+
+    vector< vector< WinData * >* > *winDataByPopByChr = initWinData(mapDataByChr, indDataByPop);
+
+    //Create a vector of pop/chr pairs
+    //These will be distributed across threads for LOD score calculation
+    vector<int_pair_t> *popChrPairs = new vector<int_pair_t>;
+    int_pair_t pair;
+    
+    for (int chr = 0; chr < numChr; chr++)
+    {
+        pair.first = pop;
+        pair.second = chr;
+        popChrPairs->push_back(pair);
+    }
+    
+    //cerr << "There are " << popChrPairs->size() << " pop/chr combinations to compute.\n";
+
+    int numThreadsLODcalc = numThreads;
+
+    if (popChrPairs->size() < numThreads)
+    {
+        numThreadsLODcalc = popChrPairs->size();
+        //cerr << "WARNING: there are fewer pop/chr pairs than threads requested.  Running with "
+        //     << numThreads << " threads instead.\n";
+    }
+
+    //Partition pop/chr pairs amongst the specified threads
+    unsigned long int *NUM_PER_THREAD = new unsigned long int[numThreadsLODcalc];
+    unsigned long int div = popChrPairs->size() / numThreadsLODcalc;
+    for (int i = 0; i < numThreadsLODcalc; i++) NUM_PER_THREAD[i] = div;
+    for (int i = 0; i < (popChrPairs->size()) % numThreadsLODcalc; i++) NUM_PER_THREAD[i]++;
+
+
+    work_order_t *order;
+    pthread_t *peer = new pthread_t[numThreadsLODcalc];
+    int prev_index = 0;
+    for (int i = 0; i < numThreadsLODcalc; i++)
+    {
+        order = new work_order_t;
+        order->first_index = prev_index;
+        order->last_index = prev_index + NUM_PER_THREAD[i];
+        prev_index += NUM_PER_THREAD[i];
+
+        order->winsize = winsize;
+        order->error = error;
+        order->MAX_GAP = MAX_GAP;
+
+        order->popChrPairs = popChrPairs;
+        order->indDataByPop = indDataByPop;
+        order->mapDataByChr = mapDataByChr;
+        order->hapDataByPopByChr = hapDataByPopByChr;
+        order->freqDataByPopByChr = freqDataByPopByChr;
+        order->winDataByPopByChr = winDataByPopByChr;
+
+        order->id = i;
+        pthread_create(&(peer[i]),
+                       NULL,
+                       (void *(*)(void *))scan,
+                       (void *)order);
+
+    }
+
+    for (int i = 0; i < numThreadsLODcalc; i++)
+    {
+        pthread_join(peer[i], NULL);
+    }
+    return winDataByPopByChr;
+}
+
 
 /*
  * Genotype is 0/1/2 counting the number of alternate alleles

@@ -14,7 +14,7 @@ struct work_order_t
     int first_index;
     int last_index;
 
-    int winsize;
+    int* winsize;
     double error;
     int MAX_GAP;
 
@@ -55,7 +55,12 @@ vector< vector< WinData * >* > *calcLODWindows(vector< vector< HapData * >* > *h
         vector< vector< FreqData * >* > *freqDataByPopByChr,
         vector< MapData * > *mapDataByChr,
         vector< IndData * > *indDataByPop,
-        int winsize, double error, int MAX_GAP, int numThreads);
+        int* winsize, double error, int MAX_GAP, int numThreads);
+vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,
+        vector< vector< FreqData * >* > *freqDataByPopByChr,
+        vector< MapData * > *mapDataByChr,
+        vector< IndData * > *indDataByPop,
+        int* winsize, double error, int MAX_GAP, int numThreads, int pop);
 
 vector< vector< ROHData * >* > *initROHData(vector< IndData * > *indDataByPop);
 vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* > *winDataByPopByChr,

@@ -138,6 +138,11 @@ void releaseIndData(IndData *data);
 HapData *initHapData(unsigned int nind, unsigned int nloci);
 void releaseHapData(HapData *data);
 void releaseHapData(vector< vector< HapData * >* > *hapDataByPopByChr);
+
+void subsetData(vector< vector< HapData * >* > *hapDataByPopByChr,
+                vector< IndData * > *indDataByPop,
+                vector< vector< HapData * >* > *subsetHapDataByPopByChr,
+                vector< IndData * > *subsetIndDataByPop);
 /*
 vector< vector< HapData * >* > *readHapData(string filename,
         int expectedLoci,
