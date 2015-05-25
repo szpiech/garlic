@@ -141,8 +141,8 @@ void releaseHapData(vector< vector< HapData * >* > *hapDataByPopByChr);
 
 void subsetData(vector< vector< HapData * >* > *hapDataByPopByChr,
                 vector< IndData * > *indDataByPop,
-                vector< vector< HapData * >* > *subsetHapDataByPopByChr,
-                vector< IndData * > *subsetIndDataByPop);
+                vector< vector< HapData * >* > **subsetHapDataByPopByChr,
+                vector< IndData * > **subsetIndDataByPop, int subsample);
 /*
 vector< vector< HapData * >* > *readHapData(string filename,
         int expectedLoci,
@@ -161,8 +161,9 @@ vector< vector< HapData * >* > *readHapData2(string filename,
         map<string, int> &pop2index,
         vector< MapData * > *mapDataByChr);
 */
-vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);
 WinData *initWinData(unsigned int nind, unsigned int nloci);
+vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);
+vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop, int pop);
 void releaseWinData(WinData *data);
 void releaseWinData(vector< vector< WinData * >* > *winDataByPopByChr);
 void writeWinData(vector< vector< WinData * >* > *winDataByPopByChr,

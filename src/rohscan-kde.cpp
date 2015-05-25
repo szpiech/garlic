@@ -1,5 +1,15 @@
 #include "rohscan-kde.h"
 
+double calculateWiggle(KDEResult *kdeResult, int winsize) {
+    double tot = 0;
+    for (int i = 0; i < kdeResult->size; i++) kdeResult->y[i] = kdeResult->y[i]*100;
+    for (int i = 0; i < kdeResult->size - winsize; i++) {
+        double c0, c1, cov00, cov01, cov11, sumsq;
+        gsl_fit_linear (&(kdeResult->x[i]), 1, &(kdeResult->y[i]), 1, winsize, &c0, &c1, &cov00, &cov01, &cov11, &sumsq);
+        tot += sumsq/double(winsize);
+    }
+    return tot;
+}
 
 
 KDEResult *computeKDE(double *data, int size)
@@ -102,7 +112,7 @@ vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vec
     //Fill the vector with null pointers for each population
     for (int pop = 0; pop < rawWinDataByPop->size(); pop++) kdeResultByPop->push_back(NULL);
     //Don't use more threads than populations
-    if(numThreads > rawWinDataByPop->size()) numThreads = rawWinDataByPop->size();
+    if (numThreads > rawWinDataByPop->size()) numThreads = rawWinDataByPop->size();
 
     KDEWork *work_order;
     pthread_t *peer = new pthread_t[numThreads];
@@ -126,7 +136,7 @@ vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vec
     }
 
     for (int i = 0; i < numThreads; i++)
-    {    
+    {
         pthread_join(peer[i], NULL);
     }
     return kdeResultByPop;
@@ -139,8 +149,8 @@ void doKDE(void *kdework)
     int numThreads = w->numThreads;
     vector < DoubleData * > *rawWinDataByPop  = w->rawWinDataByPop;
     vector< IndData * > *indDataByPop = w->indDataByPop;
-    
-    for(int pop = id; pop < rawWinDataByPop->size(); pop += numThreads)
+
+    for (int pop = id; pop < rawWinDataByPop->size(); pop += numThreads)
     {
         KDEResult *result = computeKDE(rawWinDataByPop->at(pop)->data, rawWinDataByPop->at(pop)->size);
         w->kdeResultByPop->at(pop) = result;

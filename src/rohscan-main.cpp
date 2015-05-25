@@ -218,7 +218,7 @@ int main(int argc, char *argv[])
     bool WINSIZE_EXPLORE = false;
     bool AUTO_WINSIZE = params.getBoolFlag(ARG_AUTO_WINSIZE);
 
-    double AUTO_WINSIZE_THRESHOLD = 0.005;
+    double AUTO_WINSIZE_THRESHOLD = 0.05;
 
     if (multiWinsizes[0] != DEFAULT_WINSIZE_MULTI)
     {
@@ -245,7 +245,7 @@ int main(int argc, char *argv[])
 
     //Check if both AUTO_WINSIZE and WINSIZE_EXPLORE are set
     //If so, exit with error.
-    if(WINSIZE_EXPLORE && AUTO_WINSIZE)
+    if (WINSIZE_EXPLORE && AUTO_WINSIZE)
     {
         cerr << "ERROR: Must set only one of " << ARG_WINSIZE_MULTI << " and " << ARG_AUTO_WINSIZE << ".\n";
         return -1;
@@ -478,7 +478,7 @@ int main(int argc, char *argv[])
     //Initialize winsizeByPop with the value given by --winsize
     //If --auto-winsize is set, will be dealt with below
     winsizeByPop = new int [numPop];
-    for(int i = 0; i < numPop; i++)
+    for (int i = 0; i < numPop; i++)
     {
         winsizeByPop[i] = winsize;
     }
@@ -496,7 +496,7 @@ int main(int argc, char *argv[])
             kdeoutfile += ".";
             kdeoutfile += winStr;
 
-            for(int j = 0; j < numPop; j++)
+            for (int j = 0; j < numPop; j++)
             {
                 winsizeByPop[j] = multiWinsizes[i];
             }
@@ -504,7 +504,7 @@ int main(int argc, char *argv[])
             //Since we are not proceeding with the full ROH calling
             //procedure, we only calculate LOD scores for a random
             //subset of individuals as governed by --kde-subsample
-            if(KDE_SUBSAMPLE <= 0)
+            if (KDE_SUBSAMPLE <= 0)
             {
                 winDataByPopByChr = calcLODWindows(hapDataByPopByChr,
                                                    freqDataByPopByChr,
@@ -519,7 +519,7 @@ int main(int argc, char *argv[])
             {
                 vector< vector< HapData * >* > *subsetHapDataByPopByChr;
                 vector< IndData * > *subsetIndDataByPop;
-                subsetData(hapDataByPopByChr,indDataByPop,subsetHapDataByPopByChr,subsetIndDataByPop);
+                subsetData(hapDataByPopByChr, indDataByPop, &subsetHapDataByPopByChr, &subsetIndDataByPop, KDE_SUBSAMPLE);
                 winDataByPopByChr = calcLODWindows(subsetHapDataByPopByChr,
                                                    freqDataByPopByChr,
                                                    mapDataByChr,
@@ -537,7 +537,7 @@ int main(int argc, char *argv[])
             //Prepped for KDE
             vector < DoubleData * > *rawWinDataByPop;
             rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
-            
+
             //Compute KDE of LOD score distribution
             cerr << "Estimating distribution of raw LOD score windows:\n";
             vector < KDEResult * > *kdeResultByPop = computeKDE(rawWinDataByPop, indDataByPop, numThreads);
@@ -560,67 +560,100 @@ int main(int argc, char *argv[])
     }
     else if (AUTO_WINSIZE)
     {
-        double* prev = new double[numPop];
-        double* diff = new double[numPop];
-        for(int i = 0; i < numPop; i++)
+        for (int i = 0; i < numPop; i++)
         {
-            prev[i] = 1;
-            diff[i] = 1;
+            winsizeByPop[i] -= 10;
         }
-        
-        bool finished = FALSE;
-        while(!finished)
+        vector< vector< HapData * >* > *subsetHapDataByPopByChr;
+        vector< IndData * > *subsetIndDataByPop;
+        if (KDE_SUBSAMPLE > 0) {
+            subsetData(hapDataByPopByChr, indDataByPop, &subsetHapDataByPopByChr, &subsetIndDataByPop, KDE_SUBSAMPLE);
+        }
+        /*
+        for (int pop = 0; pop < numPop; pop++) {
+            cerr << subsetIndDataByPop->at(pop)->pop << "\n";
+            for (int chr = 0; chr < hapDataByPopByChr->at(pop)->size(); chr++) {
+                cerr << mapDataByChr->at(chr)->chr << endl;
+                for (int locus = 0; locus < 3q0; locus++) {
+                    cerr << locus << " ";
+                    for (int ind = 0; ind < subsetIndDataByPop->at(pop)->nind; ind++) {
+                        cerr << subsetHapDataByPopByChr->at(pop)->at(chr)->data[locus][ind] << " ";
+                    }
+                    cerr << endl;
+                }
+
+            }
+        }
+        */
+        cerr << "Searching for acceptable window size:\n\
+        pop\twinsize\tsummse\n";
+        for (int pop = 0; pop < numPop; pop++)
         {
-            //Since we are not proceeding with the full ROH calling
-            //procedure, we only calculate LOD scores for a random
-            //subset of individuals as governed by --kde-subsample
-            if(KDE_SUBSAMPLE <= 0)
+            double prev = 1, curr = 1;
+            bool finished = false;
+            while (!finished)
             {
-                winDataByPopByChr = calcLODWindowsSinglePop(hapDataByPopByChr,
-                                               freqDataByPopByChr,
-                                               mapDataByChr,
-                                               indDataByPop,
-                                               winsizeByPop,
-                                               error,
-                                               MAX_GAP,
-                                               numThreads,
-                                               pop);
+                //Since we are not proceeding with the full ROH calling
+                //procedure, we only calculate LOD scores for a random
+                //subset of individuals as governed by --kde-subsample
+                if (KDE_SUBSAMPLE <= 0)
+                {
+                    winDataByPopByChr = calcLODWindowsSinglePop(hapDataByPopByChr,
+                                        freqDataByPopByChr,
+                                        mapDataByChr,
+                                        indDataByPop,
+                                        winsizeByPop,
+                                        error,
+                                        MAX_GAP,
+                                        numThreads,
+                                        pop);
 
+                }
+                else
+                {
+                    winDataByPopByChr = calcLODWindowsSinglePop(subsetHapDataByPopByChr,
+                                        freqDataByPopByChr,
+                                        mapDataByChr,
+                                        subsetIndDataByPop,
+                                        winsizeByPop,
+                                        error,
+                                        MAX_GAP,
+                                        numThreads,
+                                        pop);
+                }
+
+                //Format the LOD window data into a single array per pop with no missing data
+                //Prepped for KDE
+                vector < DoubleData * > *rawWinDataByPop;
+                rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
+
+                //Compute KDE of LOD score distribution
+                cerr << "Estimating distribution of raw LOD score windows:\n";
+                KDEResult *kdeResult = computeKDE(rawWinDataByPop->at(0)->data, rawWinDataByPop->at(0)->size);
+                releaseDoubleData(rawWinDataByPop);
+
+                curr = calculateWiggle(kdeResult);
+                if(winsizeByPop[pop] >= winsize) cerr << indDataByPop->at(pop)->pop << "\t" << winsizeByPop[pop] << "\t" << (prev - curr) / prev << "\n";
+                if (winsizeByPop[pop] >= winsize && (prev - curr) / prev <= AUTO_WINSIZE_THRESHOLD) finished = true;
+                else {
+                    winsizeByPop[pop] += 10;
+                    prev = curr;
+                }
+                releaseWinData(winDataByPopByChr);
             }
-            else
-            {
-                vector< vector< HapData * >* > *subsetHapDataByPopByChr;
-                vector< IndData * > *subsetIndDataByPop;
-                subsetData(hapDataByPopByChr,indDataByPop,subsetHapDataByPopByChr,subsetIndDataByPop);
-                winDataByPopByChr = calcLODWindowsSinglePop(subsetHapDataByPopByChr,
-                                                   freqDataByPopByChr,
-                                                   mapDataByChr,
-                                                   subsetIndDataByPop,
-                                                   winsizeByPop,
-                                                   error,
-                                                   MAX_GAP,
-                                                   numThreads,
-                                                   pop);
-                releaseHapData(subsetHapDataByPopByChr);
-                releaseIndData(subsetIndDataByPop);
-            }
-
-            
-            //Format the LOD window data into a single array per pop with no missing data
-            //Prepped for KDE
-            vector < DoubleData * > *rawWinDataByPop;
-            rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
-            
-            //Compute KDE of LOD score distribution
-            cerr << "Estimating distribution of raw LOD score windows:\n";
-            vector < KDEResult * > *kdeResultByPop = computeKDE(rawWinDataByPop, indDataByPop, numThreads);
-            releaseDoubleData(rawWinDataByPop);
-
-            double wiggle = calculateWiggle();
-
-            releaseWinData(winDataByPopByChr);
+        }
+        if (KDE_SUBSAMPLE > 0) {
+            releaseHapData(subsetHapDataByPopByChr);
+            releaseIndData(subsetIndDataByPop);
         }
     }
+    cerr << "\nFinal window size:\n\
+    pop\twinsize\n";
+    for (int i = 0; i < numPop; i++) {
+        cerr << indDataByPop->at(i)->pop << "\t" << winsizeByPop[i] << endl;
+    }
+
+    return 0;
 
     winDataByPopByChr = calcLODWindows(hapDataByPopByChr,
                                        freqDataByPopByChr,
@@ -661,13 +694,13 @@ int main(int argc, char *argv[])
         //Prepped for KDE
         vector < DoubleData * > *rawWinDataByPop;
 
-        if(KDE_SUBSAMPLE <= 0)
+        if (KDE_SUBSAMPLE <= 0)
         {
             rawWinDataByPop = convertWinData2DoubleData(winDataByPopByChr);
         }
         else
         {
-            rawWinDataByPop = convertSubsetWinData2DoubleData(winDataByPopByChr,KDE_SUBSAMPLE);
+            rawWinDataByPop = convertSubsetWinData2DoubleData(winDataByPopByChr, KDE_SUBSAMPLE);
         }
 
         //Compute KDE of LOD score distribution

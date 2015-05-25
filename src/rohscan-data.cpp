@@ -923,7 +923,7 @@ void writeTPEDDataByPop(string outfile, vector< vector< HapData * >* > *hapDataB
                 fout << mapDataByChr->at(chr)->physicalPos[locus] << "\t";
                 for (int ind = 0; ind < hapDataByPopByChr->at(pop)->at(chr)->nind; ind++)
                 {
-                    if(hapDataByPopByChr->at(pop)->at(chr)->data[locus][ind] == 2)
+                    if (hapDataByPopByChr->at(pop)->at(chr)->data[locus][ind] == 2)
                     {
                         fout << mapDataByChr->at(chr)->allele[locus] << "\t" << mapDataByChr->at(chr)->allele[locus] << "\t";
                     }
@@ -1314,6 +1314,24 @@ vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr,
         }
         winDataByPopByChr->push_back(winDataByChr);
     }
+
+    return winDataByPopByChr;
+}
+
+vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr,
+        vector< IndData * > *indDataByPop, int pop)
+{
+    vector< vector< WinData * >* > *winDataByPopByChr = new vector< vector< WinData * >* >;
+
+    int nind = indDataByPop->at(pop)->nind;
+    vector< WinData * > *winDataByChr = new vector< WinData * >;
+    for (int chr = 0; chr < mapDataByChr->size(); chr++)
+    {
+        int nloci = mapDataByChr->at(chr)->nloci;
+        WinData *data = initWinData(nind, nloci);
+        winDataByChr->push_back(data);
+    }
+    winDataByPopByChr->push_back(winDataByChr);
 
     return winDataByPopByChr;
 }
@@ -2027,7 +2045,7 @@ vector < DoubleData * > *convertSubsetWinData2DoubleData(vector< vector< WinData
     //to hold the indicies of the randomly selected individuals
     int** randInd = new int* [winDataByPopByChr->size()];
     int* nind = new int [winDataByPopByChr->size()];
-    for(int i = 0; i < winDataByPopByChr->size(); i++)
+    for (int i = 0; i < winDataByPopByChr->size(); i++)
     {
         nind[i] = winDataByPopByChr->at(i)->at(0)->nind;
         randInd[i] = NULL;
@@ -2043,18 +2061,18 @@ vector < DoubleData * > *convertSubsetWinData2DoubleData(vector< vector< WinData
         int nrows = 0;
         DoubleData *data;
 
-        if(subsample >= nind[pop])
+        if (subsample >= nind[pop])
         {
             randInd[pop] = new int[winDataByPopByChr->at(pop)->at(0)->nind];
-            for(int i =0; i < winDataByPopByChr->at(pop)->at(0)->nind; i++) randInd[pop][i] = i;
+            for (int i = 0; i < winDataByPopByChr->at(pop)->at(0)->nind; i++) randInd[pop][i] = i;
         }
         else
         {
             nind[pop] = subsample;
             int* indIndex = new int[winDataByPopByChr->at(pop)->at(0)->nind];
-            for(int i =0; i < winDataByPopByChr->at(pop)->at(0)->nind; i++) indIndex[i] = i;
+            for (int i = 0; i < winDataByPopByChr->at(pop)->at(0)->nind; i++) indIndex[i] = i;
             randInd[pop] = new int[subsample];
-            gsl_ran_choose(r,randInd[pop],subsample,indIndex,winDataByPopByChr->at(pop)->at(0)->nind,sizeof(int));
+            gsl_ran_choose(r, randInd[pop], subsample, indIndex, winDataByPopByChr->at(pop)->at(0)->nind, sizeof(int));
         }
 
         for (int chr = 0; chr < winDataByPopByChr->at(pop)->size(); chr++)
@@ -2100,7 +2118,7 @@ vector < DoubleData * > *convertSubsetWinData2DoubleData(vector< vector< WinData
 
     gsl_rng_free(r);
 
-    for(int i = 0; i < winDataByPopByChr->size(); i++)
+    for (int i = 0; i < winDataByPopByChr->size(); i++)
     {
         for (int j = 0; j < nind[i]; j++) cerr << randInd[i][j] << " ";
         cerr << endl;
@@ -2142,24 +2160,62 @@ void subsetData(vector< vector< HapData * >* > *hapDataByPopByChr,
     r = gsl_rng_alloc (T);
     gsl_rng_set(r, time(NULL));
 
-    //to hold the indicies of the randomly selected individuals
-    int** randInd = new int* [indDataByPop->size()];
-    int* nind = new int [indDataByPop->size()];
-    for(int i = 0; i < winDataByPopByChr->size(); i++)
+    int npops = hapDataByPopByChr->size();
+    vector< vector< HapData * >* > *newHapDataByPopByChr = new vector< vector< HapData * >* >;
+    vector< IndData * > *newIndDataByPop = new vector< IndData * >;
+    double val;
+    for (int pop = 0; pop < npops; pop++)
     {
-        nind[i] = indDataByPop->at(i)->nind;
-        randInd[i] = NULL;
+        int nind = hapDataByPopByChr->at(pop)->at(0)->nind;
+        int *randInd;
+        if (subsample >= nind)
+        {
+            randInd = new int[nind];
+            for (int i = 0; i < nind; i++) randInd[i] = i;
+        }
+        else
+        {
+            int* indIndex = new int[nind];
+            for (int i = 0; i < nind; i++) indIndex[i] = i;
+            randInd = new int[subsample];
+            gsl_ran_choose(r, randInd, subsample, indIndex, nind, sizeof(int));
+            delete [] indIndex;
+            nind = subsample;
+        }
+
+        newIndDataByPop->push_back(initIndData(nind));
+        newIndDataByPop->at(pop)->pop = indDataByPop->at(pop)->pop;
+
+        for (int ind = 0; ind < nind; ind++) {
+            newIndDataByPop->at(pop)->indID[ind] = indDataByPop->at(pop)->indID[randInd[ind]];
+        }
+
+        vector< HapData * >* newHapDataByChr = new vector< HapData * >;
+        int nchr = hapDataByPopByChr->at(pop)->size();
+        HapData *hapData;
+        for (int chr = 0; chr < nchr; chr++)
+        {
+            int nloci = hapDataByPopByChr->at(pop)->at(chr)->nloci;
+            hapData = initHapData(nind, nloci);
+
+            for (int locus = 0; locus < nloci; locus++)
+            {
+                for (int ind = 0; ind < nind; ind++)
+                {
+                    hapData->data[locus][ind] = hapDataByPopByChr->at(pop)->at(chr)->data[locus][randInd[ind]];
+                }
+            }
+            newHapDataByChr->push_back(hapData);
+            hapData = NULL;
+        }
+        newHapDataByPopByChr->push_back(newHapDataByChr);
+        delete [] randInd;
     }
 
-    vector< vector< HapData * >* > *newHapDataByPopByChr;
-    vector< IndData * > *newIndDataByPop;
-
-
+    *(subsetHapDataByPopByChr) = newHapDataByPopByChr;
+    *(subsetIndDataByPop) = newIndDataByPop;
     gsl_rng_free(r);
     return;
 }
-
-
-
 
 

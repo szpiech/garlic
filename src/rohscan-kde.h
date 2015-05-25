@@ -11,6 +11,7 @@
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_sort.h>
 #include <gsl/gsl_math.h>
+#include <gsl/gsl_fit.h>
 #include "figtree.h"
 #include "rohscan-data.h"
 
@@ -45,5 +46,6 @@ double slope(double x0, double y0, double x1, double y1);
 
 void doKDE(void *kdework);
 
+double calculateWiggle(KDEResult *kdeResultByPop, int size = 20);
 
 #endif

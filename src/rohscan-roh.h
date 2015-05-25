@@ -46,6 +46,7 @@ struct ROHLength
 };
 
 void scan(void *work_order);
+void scanSinglePop(void *order);
 void calcLOD(IndData *indData, MapData *mapData,
              HapData *hapData, FreqData *freqData,
              WinData *winData, int winsize, double error, int MAX_GAP);

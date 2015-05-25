@@ -44,6 +44,50 @@ void scan(void *order)
     return;
 }
 
+//ugly hack 
+void scanSinglePop(void *order)
+{
+    work_order_t *w = (work_order_t *)order;
+    int id = w->id;
+    int first_index = w->first_index;
+    int last_index = w->last_index;
+    vector<int_pair_t> *popChrPairs = w->popChrPairs;
+    vector< IndData * > *indDataByPop = w->indDataByPop;
+    vector< MapData * > *mapDataByChr = w->mapDataByChr;
+    vector< vector< HapData * >* > *hapDataByPopByChr = w->hapDataByPopByChr;
+    vector< vector< FreqData * >* > *freqDataByPopByChr = w->freqDataByPopByChr;
+    vector< vector< WinData * >* > *winDataByPopByChr = w->winDataByPopByChr;
+    int* winsize = w->winsize;
+    double error = w->error;
+    int MAX_GAP = w->MAX_GAP;
+
+
+    //pthread_mutex_lock(&cerr_mutex);
+    //cerr << "Thread " << id << ":\n";
+    //pthread_mutex_unlock(&cerr_mutex);
+
+    for (int i = first_index; i < last_index; i++)
+    {
+        int pop = popChrPairs->at(i).first;
+        int chr = popChrPairs->at(i).second;
+
+        IndData *indData = indDataByPop->at(pop);
+        MapData *mapData = mapDataByChr->at(chr);
+        HapData *hapData = hapDataByPopByChr->at(pop)->at(chr);
+        FreqData *freqData = freqDataByPopByChr->at(pop)->at(chr);
+        WinData *winData = winDataByPopByChr->at(0)->at(chr);
+
+        calcLOD(indData, mapData, hapData, freqData, winData, winsize[pop], error, MAX_GAP);
+
+        pthread_mutex_lock(&cerr_mutex);
+        cerr << indDataByPop->at(pop)->pop << " chromosome " << mapDataByChr->at(chr)->chr << " LOD windows finished.\n";
+        pthread_mutex_unlock(&cerr_mutex);
+    }
+
+    return;
+}
+
+
 void calcLOD(IndData *indData, MapData *mapData,
              HapData *hapData, FreqData *freqData,
              WinData *winData, int winsize, double error,
@@ -228,7 +272,7 @@ vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData 
     int numChr = mapDataByChr->size();
     int numPop = 1;
 
-    vector< vector< WinData * >* > *winDataByPopByChr = initWinData(mapDataByChr, indDataByPop);
+    vector< vector< WinData * >* > *winDataByPopByChr = initWinData(mapDataByChr, indDataByPop, pop);
 
     //Create a vector of pop/chr pairs
     //These will be distributed across threads for LOD score calculation
@@ -284,7 +328,7 @@ vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData 
         order->id = i;
         pthread_create(&(peer[i]),
                        NULL,
-                       (void *(*)(void *))scan,
+                       (void *(*)(void *))scanSinglePop,
                        (void *)order);
 
     }
