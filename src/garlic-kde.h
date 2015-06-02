@@ -1,5 +1,5 @@
-#ifndef __ROHSCAN_KDE_H__
-#define __ROHSCAN_KDE_H__
+#ifndef __GARLIC_KDE_H__
+#define __GARLIC_KDE_H__
 
 #include <vector>
 #include <cmath>
@@ -13,7 +13,7 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_fit.h>
 #include "figtree.h"
-#include "rohscan-data.h"
+#include "garlic-data.h"
 
 struct KDEResult
 {

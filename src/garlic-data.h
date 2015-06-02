@@ -1,5 +1,5 @@
-#ifndef __ROHSCAN_DATA_H__
-#define __ROHSCAN_DATA_H__
+#ifndef __GARLIC_DATA_H__
+#define __GARLIC_DATA_H__
 #include <string>
 #include <iostream>
 #include <fstream>

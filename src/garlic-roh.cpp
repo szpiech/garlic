@@ -1,4 +1,4 @@
-#include "rohscan-roh.h"
+#include "garlic-roh.h"
 
 pthread_mutex_t cerr_mutex = PTHREAD_MUTEX_INITIALIZER;
 

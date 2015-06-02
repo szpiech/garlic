@@ -1,4 +1,4 @@
-# Makefile for rohscan
+# Makefile for garlic
 
 #G++FLAG = -g -Wall
 G++FLAG = -fast -m64 -mmmx -msse -msse2
@@ -17,22 +17,22 @@ LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_
 #LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a -static
 
 
-all : rohscan
+all : garlic
 
-rohscan : rohscan-main.o rohscan-data.o param_t.o rohscan-roh.o rohscan-kde.o gmm.o BoundFinder.o gzstream.o
-	g++ -o rohscan rohscan-main.o rohscan-data.o param_t.o rohscan-roh.o rohscan-kde.o gmm.o BoundFinder.o gzstream.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
+garlic : garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o gmm.o BoundFinder.o gzstream.o
+	g++ -o garlic garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o gmm.o BoundFinder.o gzstream.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
 
-rohscan-main.o : rohscan-main.cpp rohscan-cli.h
-	g++ $(G++FLAG) -c rohscan-main.cpp -I$(I_PATH)
+garlic-main.o : garlic-main.cpp garlic-cli.h
+	g++ $(G++FLAG) -c garlic-main.cpp -I$(I_PATH)
 
-rohscan-data.o : rohscan-data.cpp rohscan-data.h
-	g++ $(G++FLAG) -c rohscan-data.cpp  -I$(I_PATH)
+garlic-data.o : garlic-data.cpp garlic-data.h
+	g++ $(G++FLAG) -c garlic-data.cpp  -I$(I_PATH)
 
-rohscan-roh.o : rohscan-roh.cpp rohscan-roh.h
-	g++ $(G++FLAG) -c rohscan-roh.cpp -I$(I_PATH)
+garlic-roh.o : garlic-roh.cpp garlic-roh.h
+	g++ $(G++FLAG) -c garlic-roh.cpp -I$(I_PATH)
 
-rohscan-kde.o : rohscan-kde.cpp rohscan-kde.h
-	g++ $(G++FLAG) -c rohscan-kde.cpp -I$(I_PATH)
+garlic-kde.o : garlic-kde.cpp garlic-kde.h
+	g++ $(G++FLAG) -c garlic-kde.cpp -I$(I_PATH)
 
 param_t.o : param_t.cpp param_t.h
 	g++ $(G++FLAG) -c param_t.cpp

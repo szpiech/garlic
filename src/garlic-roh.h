@@ -1,6 +1,6 @@
-#ifndef __ROHSCAN_ROH_H__
-#define __ROHSCAN_ROH_H__
-#include "rohscan-data.h"
+#ifndef __GARLIC_ROH_H__
+#define __GARLIC_ROH_H__
+#include "garlic-data.h"
 #include "param_t.h"
 #include <pthread.h>
 #include <cmath>

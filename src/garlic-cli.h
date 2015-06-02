@@ -1,5 +1,5 @@
-#ifndef __ROHSCAN_CLI_H__
-#define __ROHSCAN_CLI_H__
+#ifndef __GARLIC_CLI_H__
+#define __GARLIC_CLI_H__
 
 #include <string>
 
@@ -54,7 +54,7 @@ const string HELP_MAX_GAP = "A LOD score window is not calculated if the gap (in
 const string ARG_RESAMPLE = "--resample";
 const int DEFAULT_RESAMPLE = 0;
 const string HELP_RESAMPLE = "Number of resamples for estimating allele frequencies.\n\
-\tWhen set to 0 (default), rohscan will use allele\n\
+\tWhen set to 0 (default), garlic will use allele\n\
 \tfrequencies as calculated from the data.";
 
 const string ARG_TPED = "--tped";

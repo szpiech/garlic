@@ -3,10 +3,10 @@
 #include <fstream>
 #include <cmath>
 #include <pthread.h>
-#include "rohscan-cli.h"
-#include "rohscan-data.h"
-#include "rohscan-roh.h"
-#include "rohscan-kde.h"
+#include "garlic-cli.h"
+#include "garlic-data.h"
+#include "garlic-roh.h"
+#include "garlic-kde.h"
 #include "param_t.h"
 #include "gmm.h"
 #include "gsl/gsl_statistics.h"

@@ -1,4 +1,4 @@
-#include "rohscan-kde.h"
+#include "garlic-kde.h"
 
 double calculateWiggle(KDEResult *kdeResult, int winsize) {
     double tot = 0;
