@@ -22,28 +22,28 @@ all : rohscan
 rohscan : rohscan-main.o rohscan-data.o param_t.o rohscan-roh.o rohscan-kde.o gmm.o BoundFinder.o gzstream.o
 	g++ -o rohscan rohscan-main.o rohscan-data.o param_t.o rohscan-roh.o rohscan-kde.o gmm.o BoundFinder.o gzstream.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
 
-rohscan-main.o : rohscan-main.cpp
+rohscan-main.o : rohscan-main.cpp rohscan-cli.h
 	g++ $(G++FLAG) -c rohscan-main.cpp -I$(I_PATH)
 
-rohscan-data.o : rohscan-data.cpp
+rohscan-data.o : rohscan-data.cpp rohscan-data.h
 	g++ $(G++FLAG) -c rohscan-data.cpp  -I$(I_PATH)
 
-rohscan-roh.o : rohscan-roh.cpp
+rohscan-roh.o : rohscan-roh.cpp rohscan-roh.h
 	g++ $(G++FLAG) -c rohscan-roh.cpp -I$(I_PATH)
 
-rohscan-kde.o : rohscan-kde.cpp
+rohscan-kde.o : rohscan-kde.cpp rohscan-kde.h
 	g++ $(G++FLAG) -c rohscan-kde.cpp -I$(I_PATH)
 
-param_t.o : param_t.cpp
+param_t.o : param_t.cpp param_t.h
 	g++ $(G++FLAG) -c param_t.cpp
 
-gzstream.o : gzstream.cpp
+gzstream.o : gzstream.cpp gzstream.h
 	g++ $(G++FLAG) -c gzstream.cpp
 
-gmm.o : gmm.cpp
+gmm.o : gmm.cpp gmm.h
 	g++ $(G++FLAG) -c gmm.cpp -I$(I_PATH)
 
-BoundFinder.o : BoundFinder.cpp
+BoundFinder.o : BoundFinder.cpp BoundFinder.h
 	g++ $(G++FLAG) -c BoundFinder.cpp -I$(I_PATH)
 
 clean :
