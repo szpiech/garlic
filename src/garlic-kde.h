@@ -37,7 +37,7 @@ KDEResult *computeKDE(double *data, int size);
 vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vector< IndData * > *indDataByPop, int numThreads);
 void releaseKDEResult(KDEResult *data);
 void releaseKDEResult(vector < KDEResult * > *kdeResultByPop);
-void writeKDEResult(vector < KDEResult * > *kdeResultByPop, vector< IndData * > *indDataByPop, string outfile);
+void writeKDEResult(vector < KDEResult * > *kdeResultByPop, vector< IndData * > *indDataByPop, string outfile, int *winSizeByPop);
 
 int get_arg_max(double *nums, int size);
 int get_arg_min(double *nums, int size);

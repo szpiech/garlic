@@ -2,11 +2,11 @@
 
 double calculateWiggle(KDEResult *kdeResult, int winsize) {
     double tot = 0;
-    for (int i = 0; i < kdeResult->size; i++) kdeResult->y[i] = kdeResult->y[i]*100;
+    for (int i = 0; i < kdeResult->size; i++) kdeResult->y[i] = kdeResult->y[i] * 100;
     for (int i = 0; i < kdeResult->size - winsize; i++) {
         double c0, c1, cov00, cov01, cov11, sumsq;
         gsl_fit_linear (&(kdeResult->x[i]), 1, &(kdeResult->y[i]), 1, winsize, &c0, &c1, &cov00, &cov01, &cov11, &sumsq);
-        tot += sumsq/double(winsize);
+        tot += sumsq / double(winsize);
     }
     return tot;
 }
@@ -314,15 +314,19 @@ int get_arg_min(double *nums, int size)
     return arg_min;
 }
 
-void writeKDEResult(vector < KDEResult * > *kdeResultByPop, vector< IndData * > *indDataByPop, string outfile)
+void writeKDEResult(vector < KDEResult * > *kdeResultByPop, vector< IndData * > *indDataByPop, string outfile, int *winsizeByPop)
 {
     ofstream fout;
     int numPop = indDataByPop->size();
     for (int pop = 0; pop < numPop; pop++)
     {
+        char winStr[10];
+        sprintf(winStr, "%d", winsizeByPop[pop]);
         string popName = indDataByPop->at(pop)->pop;
         string kdeOutfile = outfile;
         kdeOutfile += ".";
+        kdeOutfile += winStr;
+        kdeOutfile += "SNPs.";
         kdeOutfile += popName;
         kdeOutfile += ".kde";
 
