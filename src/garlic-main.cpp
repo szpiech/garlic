@@ -406,7 +406,7 @@ int main(int argc, char *argv[])
             //Output kde points
             try
             {
-                writeKDEResult(kdeResultByPop, indDataByPop, kdeoutfile);
+                writeKDEResult(kdeResultByPop, indDataByPop, outfile, winsizeByPop);
             }
             catch (...)
             {
@@ -511,9 +511,7 @@ int main(int argc, char *argv[])
     pop\twinsize\n";
     for (int i = 0; i < numPop; i++) {
         cerr << indDataByPop->at(i)->pop << "\t" << winsizeByPop[i] << endl;
-    }
-
-    return 0;
+   }
 
     winDataByPopByChr = calcLODWindows(hapDataByPopByChr,
                                        freqDataByPopByChr,
@@ -545,11 +543,6 @@ int main(int argc, char *argv[])
     double *lodScoreCutoffByPop = new double[numPop];
     if (AUTO_CUTOFF)
     {
-        char winStr[10];
-        sprintf(winStr, "%d", winsize);
-        string kdeoutfile = outfile;
-        kdeoutfile += ".";
-        kdeoutfile += winStr;
         //Format the LOD window data into a single array per pop with no missing data
         //Prepped for KDE
         vector < DoubleData * > *rawWinDataByPop;
@@ -571,7 +564,7 @@ int main(int argc, char *argv[])
         //Output kde points
         try
         {
-            writeKDEResult(kdeResultByPop, indDataByPop, kdeoutfile);
+            writeKDEResult(kdeResultByPop, indDataByPop, outfile, winsizeByPop);
         }
         catch (...)
         {
@@ -731,7 +724,7 @@ int main(int argc, char *argv[])
     //Output ROH calls to file, one for each individual
     //includes A/B/C size classifications
     cerr << "Writing ROH tracts...\n";
-    writeROHData(outfile, rohDataByPopByInd, mapDataByChr, shortMedBound, medLongBound, ind2pop);
+    writeROHData(outfile, rohDataByPopByInd, mapDataByChr, shortMedBound, medLongBound, ind2pop, VERSION);
 
     return 0;
 
