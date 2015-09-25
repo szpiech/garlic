@@ -44,7 +44,7 @@ void scan(void *order)
     return;
 }
 
-//ugly hack 
+//ugly hack
 void scanSinglePop(void *order)
 {
     work_order_t *w = (work_order_t *)order;
@@ -278,14 +278,14 @@ vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData 
     //These will be distributed across threads for LOD score calculation
     vector<int_pair_t> *popChrPairs = new vector<int_pair_t>;
     int_pair_t pair;
-    
+
     for (int chr = 0; chr < numChr; chr++)
     {
         pair.first = pop;
         pair.second = chr;
         popChrPairs->push_back(pair);
     }
-    
+
     //cerr << "There are " << popChrPairs->size() << " pop/chr combinations to compute.\n";
 
     int numThreadsLODcalc = numThreads;
@@ -522,39 +522,51 @@ void writeROHData(string outfile,
                   vector< MapData * > *mapDataByChr,
                   double *shortMedBound,
                   double *medLongBound,
-                  map<string, string> &ind2pop)
+                  map<string, string> &ind2pop,
+                  string version)
 {
+
+    string rohOutfile = outfile;
+    rohOutfile += ".roh.bed";
+    ofstream out;
+    out.open(rohOutfile.c_str());
+    if (out.fail())
+    {
+        cerr << "ERROR: Failed to open " << rohOutfile << " for writing.\n";
+        throw 0;
+    }
+
     for (int pop = 0; pop < rohDataByPopByInd->size(); pop++)
     {
         vector< ROHData * > *rohDataByInd = rohDataByPopByInd->at(pop);
         for (int ind = 0; ind < rohDataByInd->size(); ind++)
         {
             ROHData *rohData = rohDataByInd->at(ind);
-            string rohOutfile = outfile;
-            rohOutfile += ".";
-            rohOutfile += ind2pop[rohData->indID];
-            rohOutfile += ".";
-            rohOutfile += rohData->indID;
-            rohOutfile += ".roh";
-            ofstream out;
-            out.open(rohOutfile.c_str());
-            if (out.fail())
-            {
-                cerr << "ERROR: Failed to open " << rohOutfile << " for writing.\n";
-                throw 0;
-            }
+            string popStr = ind2pop[rohData->indID];
+            out << "track name=\"Ind: " + rohData->indID + " Pop:" + popStr + 
+                " ROH\" description=\"Ind: " + rohData->indID + " Pop:" + popStr + 
+                " ROH from GARLIC v" + version + "\" visibility=2 itemRgb=\"On\"\n";
 
             for (int roh = 0; roh < rohData->chr.size(); roh++)
             {
                 int size = (rohData->stop[roh] - rohData->start[roh]);
                 char sizeClass = 'C';
-                if (size < shortMedBound[pop]) sizeClass = 'A';
-                else if (size < medLongBound[pop]) sizeClass = 'B';
-                out << mapDataByChr->at(rohData->chr[roh])->chr << " " << rohData->start[roh] << " " << rohData->stop[roh] << " " << size << " " << sizeClass << endl;
+                string color = "0,76,153";
+                if (size < shortMedBound[pop]){
+                    sizeClass = 'A';
+                    color = "153,0,0";
+                }
+                else if (size < medLongBound[pop]){
+                    sizeClass = 'B';
+                    color = "0,153,0";
+                }
+                string chr = mapDataByChr->at(rohData->chr[roh])->chr;
+                if(chr[0] != 'c' && chr[0] != 'C') chr = "chr" + chr;
+                out << chr << "\t" << rohData->start[roh] << "\t" << rohData->stop[roh] 
+                    << "\t" << sizeClass << "\t" << size << "\t.\t0\t0\t" << color << endl;
             }
-
-            out.close();
         }
     }
+    out.close();
     return;
 }

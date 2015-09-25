@@ -79,7 +79,8 @@ void writeROHData(string outfile,
                   vector< MapData * > *mapDataByChr,
                   double *shortMedBound,
                   double *medLongBound,
-                  map<string, string> &ind2pop);
+                  map<string, string> &ind2pop,
+                  string version);
 
 extern pthread_mutex_t cerr_mutex;
 
