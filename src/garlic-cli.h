@@ -5,6 +5,8 @@
 
 using namespace std;
 
+const string VERSION = "1.0.0";
+
 const string ARG_POP_SPLIT = "--split-pops";
 const bool DEFAULT_POP_SPLIT = false;
 const string HELP_POP_SPLIT = "Read in data, calculate allele frequencies, and output\n\
