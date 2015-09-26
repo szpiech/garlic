@@ -628,7 +628,8 @@ int main(int argc, char *argv[])
             indDataByPop,
             lodScoreCutoffByPop,
             &rohLengthByPop,
-            winsize);
+            winsize,
+            MAX_GAP);
 
     //GMM set up for size classifications
     //There might be some benefit in doing this across a range of ngaussians and choosing the classification

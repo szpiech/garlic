@@ -402,7 +402,8 @@ vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* 
         vector< IndData * > *indDataByPop,
         double *lodScoreCutoffByPop,
         vector< ROHLength * > **rohLengthByPop,
-        int winSize)
+        int winSize,
+        int MAX_GAP)
 {
 
     //rohLengthByPop = new vector< ROHLength* >;
@@ -461,6 +462,16 @@ vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* 
                     //Window being extended and snp is not in ROH
                     //end the window at w-1
                     //reset winStart to -1
+                    else if (inWin[w] && mapData->physicalPos[w] - mapData->physicalPos[w - 1] > MAX_GAP){
+                        winStop = mapData->physicalPos[w - 1];
+                        int size = winStop - winStart + 1;
+                        lengths.push_back(size);
+                        rohData->chr.push_back(chr);
+                        rohData->start.push_back(winStart);
+                        rohData->stop.push_back(winStop);
+                        winStop = -1;
+                        winStart = mapData->physicalPos[w];
+                    }
                     else if (winStart > 0 && !inWin[w])
                     {
                         winStop = mapData->physicalPos[w - 1];

@@ -69,7 +69,8 @@ vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* 
         vector< IndData * > *indDataByPop,
         double *lodScoreCutoffByPop,
         vector< ROHLength * > **rohLengthByPop,
-        int winSize);
+        int winSize,
+        int MAX_GAP);
 ROHLength *initROHLength(int size, string pop);
 void releaseROHLength(ROHLength *rohLength);
 void releaseROHLength(vector< ROHLength * > *rohLengthByPop);
