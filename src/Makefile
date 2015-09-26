@@ -34,6 +34,9 @@ garlic-roh.o : garlic-roh.cpp garlic-roh.h
 garlic-kde.o : garlic-kde.cpp garlic-kde.h
 	g++ $(G++FLAG) -c garlic-kde.cpp -I$(I_PATH)
 
+garlic-centromeres.o : garlic-centromeres.cpp garlic-centromeres.h
+	g++ $(G++FLAG) -c garlic-centromeres.cpp -I$(I_PATH)
+
 param_t.o : param_t.cpp param_t.h
 	g++ $(G++FLAG) -c param_t.cpp
 
