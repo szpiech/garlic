@@ -12,6 +12,7 @@
 #include "gsl/gsl_statistics.h"
 #include "gsl/gsl_sort.h"
 #include "BoundFinder.h"
+#include "garlic-centromeres.h"
 
 using namespace std;
 
@@ -41,6 +42,8 @@ int main(int argc, char *argv[])
     params.addFlag(ARG_POP_SPLIT, DEFAULT_POP_SPLIT , "", HELP_POP_SPLIT);
     params.addFlag(ARG_KDE_SUBSAMPLE, DEFAULT_KDE_SUBSAMPLE , "", HELP_KDE_SUBSAMPLE);
     params.addFlag(ARG_AUTO_WINSIZE, DEFAULT_AUTO_WINSIZE, "", HELP_AUTO_WINSIZE);
+    params.addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);
+    params.addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
 
     try
     {
@@ -78,7 +81,18 @@ int main(int argc, char *argv[])
     bool WINSIZE_EXPLORE = false;
     bool AUTO_WINSIZE = params.getBoolFlag(ARG_AUTO_WINSIZE);
 
+    string BUILD = params.getStringFlag(ARG_BUILD);
+    string centromereFile = params.getStringFlag(ARG_CENTROMERE_FILE);
+
     double AUTO_WINSIZE_THRESHOLD = 0.05;
+
+    if (BUILD.compare("hg18") != 0 &&
+            BUILD.compare("hg19") != 0 &&
+            BUILD.compare("hg38") != 0 &&
+            BUILD.compare("none") != 0) {
+        cerr << "ERROR: Must choose hg18/hg19/hg38/none for build version.\n";
+        return -1;
+    }
 
     if (multiWinsizes[0] != DEFAULT_WINSIZE_MULTI)
     {
@@ -211,6 +225,23 @@ int main(int argc, char *argv[])
     {
         cerr << "ERROR: SNP window size must be > 1.\n";
         return 1;
+    }
+
+    centromere *centro;
+    centro = new centromere;
+
+    if (centromereFile.compare(DEFAULT_CENTROMERE_FILE) != 0) {
+        cerr << "Using custom centromere file: " << centromereFile << endl;
+        centro->readCustomCentromeres(centromereFile);
+    }
+    else if (BUILD.compare("hg18") == 0) {
+        centro->makeHG18();
+    }
+    else if (BUILD.compare("hg19") == 0) {
+        centro->makeHG19();
+    }
+    else if (BUILD.compare("hg38") == 0) {
+        centro->makeHG38();
     }
 
     int numLoci, numInd;
@@ -370,6 +401,7 @@ int main(int argc, char *argv[])
                                                    freqDataByPopByChr,
                                                    mapDataByChr,
                                                    indDataByPop,
+                                                   centro,
                                                    winsizeByPop,
                                                    error,
                                                    MAX_GAP,
@@ -384,6 +416,7 @@ int main(int argc, char *argv[])
                                                    freqDataByPopByChr,
                                                    mapDataByChr,
                                                    subsetIndDataByPop,
+                                                   centro,
                                                    winsizeByPop,
                                                    error,
                                                    MAX_GAP,
@@ -462,6 +495,7 @@ int main(int argc, char *argv[])
                                         freqDataByPopByChr,
                                         mapDataByChr,
                                         indDataByPop,
+                                        centro,
                                         winsizeByPop,
                                         error,
                                         MAX_GAP,
@@ -475,6 +509,7 @@ int main(int argc, char *argv[])
                                         freqDataByPopByChr,
                                         mapDataByChr,
                                         subsetIndDataByPop,
+                                        centro,
                                         winsizeByPop,
                                         error,
                                         MAX_GAP,
@@ -493,7 +528,7 @@ int main(int argc, char *argv[])
                 releaseDoubleData(rawWinDataByPop);
 
                 curr = calculateWiggle(kdeResult);
-                if(winsizeByPop[pop] >= winsize) cerr << indDataByPop->at(pop)->pop << "\t" << winsizeByPop[pop] << "\t" << (prev - curr) / prev << "\n";
+                if (winsizeByPop[pop] >= winsize) cerr << indDataByPop->at(pop)->pop << "\t" << winsizeByPop[pop] << "\t" << (prev - curr) / prev << "\n";
                 if (winsizeByPop[pop] >= winsize && (prev - curr) / prev <= AUTO_WINSIZE_THRESHOLD) finished = true;
                 else {
                     winsizeByPop[pop] += 10;
@@ -511,12 +546,13 @@ int main(int argc, char *argv[])
     pop\twinsize\n";
     for (int i = 0; i < numPop; i++) {
         cerr << indDataByPop->at(i)->pop << "\t" << winsizeByPop[i] << endl;
-   }
+    }
 
     winDataByPopByChr = calcLODWindows(hapDataByPopByChr,
                                        freqDataByPopByChr,
                                        mapDataByChr,
                                        indDataByPop,
+                                       centro,
                                        winsizeByPop,
                                        error,
                                        MAX_GAP,
@@ -626,6 +662,7 @@ int main(int argc, char *argv[])
     vector< vector< ROHData * >* > *rohDataByPopByInd = assembleROHWindows(winDataByPopByChr,
             mapDataByChr,
             indDataByPop,
+            centro,
             lodScoreCutoffByPop,
             &rohLengthByPop,
             winsize,

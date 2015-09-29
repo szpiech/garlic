@@ -19,8 +19,8 @@ LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_
 
 all : garlic
 
-garlic : garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o gmm.o BoundFinder.o gzstream.o
-	g++ -o garlic garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o gmm.o BoundFinder.o gzstream.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
+garlic : garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o
+	g++ -o garlic garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
 
 garlic-main.o : garlic-main.cpp garlic-cli.h
 	g++ $(G++FLAG) -c garlic-main.cpp -I$(I_PATH)

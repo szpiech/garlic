@@ -17,7 +17,7 @@ void scan(void *order)
     int* winsize = w->winsize;
     double error = w->error;
     int MAX_GAP = w->MAX_GAP;
-
+    centromere *centro = w->centro;
 
     //pthread_mutex_lock(&cerr_mutex);
     //cerr << "Thread " << id << ":\n";
@@ -34,7 +34,7 @@ void scan(void *order)
         FreqData *freqData = freqDataByPopByChr->at(pop)->at(chr);
         WinData *winData = winDataByPopByChr->at(pop)->at(chr);
 
-        calcLOD(indData, mapData, hapData, freqData, winData, winsize[pop], error, MAX_GAP);
+        calcLOD(indData, mapData, hapData, freqData, winData, centro, winsize[pop], error, MAX_GAP);
 
         pthread_mutex_lock(&cerr_mutex);
         cerr << indDataByPop->at(pop)->pop << " chromosome " << mapDataByChr->at(chr)->chr << " LOD windows finished.\n";
@@ -60,7 +60,7 @@ void scanSinglePop(void *order)
     int* winsize = w->winsize;
     double error = w->error;
     int MAX_GAP = w->MAX_GAP;
-
+    centromere *centro = w->centro;
 
     //pthread_mutex_lock(&cerr_mutex);
     //cerr << "Thread " << id << ":\n";
@@ -77,7 +77,7 @@ void scanSinglePop(void *order)
         FreqData *freqData = freqDataByPopByChr->at(pop)->at(chr);
         WinData *winData = winDataByPopByChr->at(0)->at(chr);
 
-        calcLOD(indData, mapData, hapData, freqData, winData, winsize[pop], error, MAX_GAP);
+        calcLOD(indData, mapData, hapData, freqData, winData, centro, winsize[pop], error, MAX_GAP);
 
         pthread_mutex_lock(&cerr_mutex);
         cerr << indDataByPop->at(pop)->pop << " chromosome " << mapDataByChr->at(chr)->chr << " LOD windows finished.\n";
@@ -87,11 +87,16 @@ void scanSinglePop(void *order)
     return;
 }
 
+bool inGap(int qStart, int qEnd, int targetStart, int targetEnd) {
+    return ( (targetStart <= qStart && targetEnd >= qStart) ||
+             (targetStart <= qEnd && targetEnd >= qEnd) ||
+             (targetStart >= qStart && targetEnd <= qEnd) );
+}
 
 void calcLOD(IndData *indData, MapData *mapData,
              HapData *hapData, FreqData *freqData,
-             WinData *winData, int winsize, double error,
-             int MAX_GAP)
+             WinData *winData, centromere *centro,
+             int winsize, double error, int MAX_GAP)
 {
     short **data = hapData->data;
     int nloci = hapData->nloci;
@@ -104,6 +109,9 @@ void calcLOD(IndData *indData, MapData *mapData,
     int stop = mapData->nloci;
     double **win = winData->data;
     //int nmiss = 0;
+
+    int cStart = centro->centromereStart(mapData->chr);
+    int cEnd = centro->centromereEnd(mapData->chr);
 
     //Check if the last window would overshoot the last locus in the data
     if (nloci - stop < winsize) stop = nloci - winsize + 1;
@@ -122,7 +130,8 @@ void calcLOD(IndData *indData, MapData *mapData,
                 int prevI = locus;
                 for (int i = locus; i < locus + winsize; i++)
                 {
-                    if (physicalPos[i] - physicalPos[prevI] > MAX_GAP)
+                    if (physicalPos[i] - physicalPos[prevI] > MAX_GAP ||
+                            inGap(physicalPos[prevI], physicalPos[i], cStart, cEnd))
                     {
                         win[ind][locus] = MISSING;
                         //nmiss++;
@@ -142,7 +151,8 @@ void calcLOD(IndData *indData, MapData *mapData,
                 if (win[ind][locus - 1] != MISSING)
                 {
                     //If the gap to the next locus is > MAX_GAP then make the window MISSING
-                    if (physicalPos[locus + winsize - 1] - physicalPos[locus + winsize - 2] > MAX_GAP)
+                    if (physicalPos[locus + winsize - 1] - physicalPos[locus + winsize - 2] > MAX_GAP ||
+                            inGap(physicalPos[locus + winsize - 2], physicalPos[locus + winsize - 1], cStart, cEnd))
                     {
                         win[ind][locus] = MISSING;
                         //nmiss++;
@@ -160,7 +170,8 @@ void calcLOD(IndData *indData, MapData *mapData,
                     int prevI = locus;
                     for (int i = locus; i < locus + winsize; i++)
                     {
-                        if (physicalPos[i] - physicalPos[prevI] > MAX_GAP)
+                        if (physicalPos[i] - physicalPos[prevI] > MAX_GAP ||
+                                inGap(physicalPos[prevI], physicalPos[i], cStart, cEnd))
                         {
                             win[ind][locus] = MISSING;
                             //nmiss++;
@@ -186,6 +197,7 @@ vector< vector< WinData * >* > *calcLODWindows(vector< vector< HapData * >* > *h
         vector< vector< FreqData * >* > *freqDataByPopByChr,
         vector< MapData * > *mapDataByChr,
         vector< IndData * > *indDataByPop,
+        centromere *centro,
         int* winsize, double error, int MAX_GAP, int numThreads)
 {
 
@@ -246,6 +258,7 @@ vector< vector< WinData * >* > *calcLODWindows(vector< vector< HapData * >* > *h
         order->hapDataByPopByChr = hapDataByPopByChr;
         order->freqDataByPopByChr = freqDataByPopByChr;
         order->winDataByPopByChr = winDataByPopByChr;
+        order->centro = centro;
 
         order->id = i;
         pthread_create(&(peer[i]),
@@ -266,6 +279,7 @@ vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData 
         vector< vector< FreqData * >* > *freqDataByPopByChr,
         vector< MapData * > *mapDataByChr,
         vector< IndData * > *indDataByPop,
+        centromere *centro,
         int* winsize, double error, int MAX_GAP, int numThreads, int pop)
 {
 
@@ -324,6 +338,7 @@ vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData 
         order->hapDataByPopByChr = hapDataByPopByChr;
         order->freqDataByPopByChr = freqDataByPopByChr;
         order->winDataByPopByChr = winDataByPopByChr;
+        order->centro = centro;
 
         order->id = i;
         pthread_create(&(peer[i]),
@@ -400,6 +415,7 @@ vector< vector< ROHData * >* > *initROHData(vector< IndData * > *indDataByPop)
 vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* > *winDataByPopByChr,
         vector< MapData * > *mapDataByChr,
         vector< IndData * > *indDataByPop,
+        centromere *centro,
         double *lodScoreCutoffByPop,
         vector< ROHLength * > **rohLengthByPop,
         int winSize,
@@ -427,6 +443,10 @@ vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* 
             {
                 WinData *winData = winDataByChr->at(chr);
                 MapData *mapData = mapDataByChr->at(chr);
+
+                int cStart = centro->centromereStart(mapData->chr);
+                int cEnd = centro->centromereEnd(mapData->chr);
+
 
                 //translation of the perl script here###Updated to match trevor's algorithm
                 //int winStart = -1;
@@ -462,7 +482,8 @@ vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* 
                     //Window being extended and snp is not in ROH
                     //end the window at w-1
                     //reset winStart to -1
-                    else if (inWin[w] && mapData->physicalPos[w] - mapData->physicalPos[w - 1] > MAX_GAP){
+                    else if (inWin[w] && (mapData->physicalPos[w] - mapData->physicalPos[w - 1] > MAX_GAP ||
+                                          inGap(mapData->physicalPos[w - 1], mapData->physicalPos[w], cStart, cEnd)) ) {
                         winStop = mapData->physicalPos[w - 1];
                         int size = winStop - winStart + 1;
                         lengths.push_back(size);
@@ -554,8 +575,8 @@ void writeROHData(string outfile,
         {
             ROHData *rohData = rohDataByInd->at(ind);
             string popStr = ind2pop[rohData->indID];
-            out << "track name=\"Ind: " + rohData->indID + " Pop:" + popStr + 
-                " ROH\" description=\"Ind: " + rohData->indID + " Pop:" + popStr + 
+            out << "track name=\"Ind: " + rohData->indID + " Pop:" + popStr +
+                " ROH\" description=\"Ind: " + rohData->indID + " Pop:" + popStr +
                 " ROH from GARLIC v" + version + "\" visibility=2 itemRgb=\"On\"\n";
 
             for (int roh = 0; roh < rohData->chr.size(); roh++)
@@ -563,17 +584,17 @@ void writeROHData(string outfile,
                 int size = (rohData->stop[roh] - rohData->start[roh]);
                 char sizeClass = 'C';
                 string color = "0,76,153";
-                if (size < shortMedBound[pop]){
+                if (size < shortMedBound[pop]) {
                     sizeClass = 'A';
                     color = "153,0,0";
                 }
-                else if (size < medLongBound[pop]){
+                else if (size < medLongBound[pop]) {
                     sizeClass = 'B';
                     color = "0,153,0";
                 }
                 string chr = mapDataByChr->at(rohData->chr[roh])->chr;
-                if(chr[0] != 'c' && chr[0] != 'C') chr = "chr" + chr;
-                out << chr << "\t" << rohData->start[roh] << "\t" << rohData->stop[roh] 
+                if (chr[0] != 'c' && chr[0] != 'C') chr = "chr" + chr;
+                out << chr << "\t" << rohData->start[roh] << "\t" << rohData->stop[roh]
                     << "\t" << sizeClass << "\t" << size << "\t.\t0\t0\t" << color << endl;
             }
         }

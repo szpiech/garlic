@@ -1,6 +1,7 @@
 #ifndef __GARLIC_ROH_H__
 #define __GARLIC_ROH_H__
 #include "garlic-data.h"
+#include "garlic-centromeres.h"
 #include "param_t.h"
 #include <pthread.h>
 #include <cmath>
@@ -28,6 +29,8 @@ struct work_order_t
 
     vector< vector< WinData * >* > *winDataByPopByChr;
 
+    centromere *centro;
+
 };
 
 struct ROHData
@@ -49,24 +52,41 @@ void scan(void *work_order);
 void scanSinglePop(void *order);
 void calcLOD(IndData *indData, MapData *mapData,
              HapData *hapData, FreqData *freqData,
-             WinData *winData, int winsize, double error, int MAX_GAP);
+             WinData *winData, centromere *centro,
+             int winsize, double error, int MAX_GAP);
+/*
+void calcLOD(IndData *indData, MapData *mapData,
+             HapData *hapData, FreqData *freqData,
+             WinData *winData,
+             int winsize, double error, int MAX_GAP);
+*/
 double lod(const short &genotype, const double &freq, const double &error);
 
 vector< vector< WinData * >* > *calcLODWindows(vector< vector< HapData * >* > *hapDataByPopByChr,
         vector< vector< FreqData * >* > *freqDataByPopByChr,
         vector< MapData * > *mapDataByChr,
-        vector< IndData * > *indDataByPop,
+        vector< IndData * > *indDataByPop, centromere *centro,
         int* winsize, double error, int MAX_GAP, int numThreads);
 vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,
         vector< vector< FreqData * >* > *freqDataByPopByChr,
         vector< MapData * > *mapDataByChr,
-        vector< IndData * > *indDataByPop,
+        vector< IndData * > *indDataByPop, centromere *centro,
         int* winsize, double error, int MAX_GAP, int numThreads, int pop);
 
 vector< vector< ROHData * >* > *initROHData(vector< IndData * > *indDataByPop);
+/*
 vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* > *winDataByPopByChr,
         vector< MapData * > *mapDataByChr,
         vector< IndData * > *indDataByPop,
+        double *lodScoreCutoffByPop,
+        vector< ROHLength * > **rohLengthByPop,
+        int winSize,
+        int MAX_GAP);
+*/
+vector< vector< ROHData * >* > *assembleROHWindows(vector< vector< WinData * >* > *winDataByPopByChr,
+        vector< MapData * > *mapDataByChr,
+        vector< IndData * > *indDataByPop,
+        centromere *centro,
         double *lodScoreCutoffByPop,
         vector< ROHLength * > **rohLengthByPop,
         int winSize,
@@ -82,6 +102,8 @@ void writeROHData(string outfile,
                   double *medLongBound,
                   map<string, string> &ind2pop,
                   string version);
+
+bool inGap(int qStart, int qEnd, int targetStart, int targetEnd);
 
 extern pthread_mutex_t cerr_mutex;
 

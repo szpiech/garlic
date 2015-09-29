@@ -1517,6 +1517,22 @@ vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci)
     return chrStartStop;
 }
 
+string lc(string str){
+    char c[2] = {' ','\0'};
+    for(int i = 0; i < str.size(); i++){
+        c[0] = char(tolower(str[i]));
+        str.replace(i,1,c);
+    }
+    return str;
+}
+
+string checkChrName(string chr){
+    if(chr[0] != 'c'){
+        chr = "chr" + chr;
+    }
+    return chr;
+}
+
 vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrCoordList, char TPED_MISSING)
 {
     vector< MapData * > *mapDataByChr = new vector< MapData * >;
@@ -1548,6 +1564,8 @@ vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrC
             data->allele0[locus] = TPED_MISSING;
             getline(fin, junk);
         }
+        data->chr = lc(data->chr);
+        data->chr = checkChrName(data->chr);
         cerr << size << " loci on chromosome " << data->chr << endl;
         mapDataByChr->push_back(data);
     }

@@ -121,4 +121,12 @@ const string HELP_KDE_SUBSAMPLE = "The number of individuals to randomly sample 
 \tare fewer individuals in the population all are used.\n\
 Set <= 0 to use all individuals (may use large amounts of RAM).";
 
+const string ARG_BUILD = "--build";
+const string DEFAULT_BUILD = "none";
+const string HELP_BUILD = "Choose which genome build to use for centromere locations (hg18, hg19, or hg38).\n";
+
+const string ARG_CENTROMERE_FILE = "--centromere";
+const string DEFAULT_CENTROMERE_FILE = "__none";
+const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
+
 #endif

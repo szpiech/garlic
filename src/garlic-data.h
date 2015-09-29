@@ -182,5 +182,6 @@ void writeDoubleData(vector < DoubleData * > *rawWinDataByPop, vector< MapData *
 //where a field is defined as a contiguous set of non whitespace
 //characters and fields are delimited by whitespace
 int countFields(const string &str);
-
+string lc(string str);
+string checkChrName(string chr);
 #endif
