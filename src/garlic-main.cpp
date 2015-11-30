@@ -242,20 +242,25 @@ int main(int argc, char *argv[])
         centro->makeHG38();
     }
 
-    int numLoci, numInd;
+    int numLoci, numInd, numCols;
     vector< int_pair_t > *chrCoordList;
     vector< MapData * > *mapDataByChr;
 
     //vector< int_pair_t > *indCoordList;
 
     string *indList;
-    map<string, string> ind2pop;
-    map<string, int> pop2size;
+    //map<string, string> ind2pop;
+    //map<string, int> pop2size;
     map<string, int> pop2index;
-    vector< IndData * > *indDataByPop;
+    //vector< IndData * > *indDataByPop;
+    string popName;
+    IndData *indData;
 
-    vector< vector< HapData * >* > *hapDataByPopByChr;
-    vector< vector< FreqData * >* > *freqDataByPopByChr;
+    vector< HapData * > *hapDataByChr;
+    //vector< vector< HapData * >* > *hapDataByPopByChr;
+    
+    //vector< vector< FreqData * >* > *freqDataByPopByChr;
+    vector< FreqData * > *freqDataByChr;
 
     vector< vector< WinData * >* > *winDataByPopByChr;
 
@@ -265,22 +270,24 @@ int main(int argc, char *argv[])
     string *oneAllele;
     try
     {
-        chrCoordList = scanTPEDMapData(tpedfile, numLoci);
-        mapDataByChr = readTPEDMapData(tpedfile, chrCoordList, TPED_MISSING);
+        chrCoordList = scanTPEDMapData(tpedfile, numLoci, numCols);
+        mapDataByChr = readTPEDMapData(tpedfile, numCols, chrCoordList, TPED_MISSING);
 
-        scanIndData2(tfamfile, numInd, ind2pop, pop2size);
+        scanIndData3(tfamfile, numInd, popName);
         indList = new string[numInd];
-        indDataByPop = readIndData2(tfamfile, numInd, ind2pop, pop2size, indList, pop2index);
+        indData = readIndData3(tfamfile, numInd, indList);
 
         //Read user pprovided freq data here
         if (!AUTO_FREQ)
         {
             cerr << "Loading user provided allele frequencies from " << freqfile << "...\n";
-            freqDataByPopByChr = readFreqData(freqfile, chrCoordList, mapDataByChr, pop2index);
+            freqDataByChr = readFreqData(freqfile, chrCoordList, mapDataByChr, pop2index);
         }
 
-        hapDataByPopByChr = readTPEDHapData2(tpedfile, numLoci, numInd, chrCoordList, indList,
-                                             ind2pop, pop2size, pop2index, TPED_MISSING, mapDataByChr);
+        hapDataByChr = readTPEDHapData3(tpedfile, numLoci, numInd,TPED_MISSING, mapDataByChr);
+
+
+//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
         //load LOD score cutoff if specified
         if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF)

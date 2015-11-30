@@ -36,7 +36,7 @@ struct MapData
     double *geneticPos;
     string *locusName;
     char *allele;
-    char *allele0;
+    //char *allele0;
     int nloci;
     string chr;
 };
@@ -79,20 +79,31 @@ void releaseFreqData(FreqData *data);
 void releaseFreqData(vector< vector< FreqData * >* > *freqDataByPopByChr);
 FreqData *calcFreqData(HapData *data, int nresample, const gsl_rng *r);
 vector< vector< FreqData * >* > *calcFreqData(vector< vector< HapData * >* > *hapDataByPopByChr, int nresample);
+/*
 void writeFreqData(string freqOutfile,
                    vector< vector< FreqData * >* > *freqDataByPopByChr,
                    vector< MapData * > *mapDataByChr,
                    vector< IndData * > *indDataByPop);
+*/
+void writeFreqData(string freqOutfile, string popName,
+                   vector< FreqData * > *freqDataByChr,
+                   vector< MapData * > *mapDataByChr,
+                   IndData *indData);
+/*
 vector< vector< FreqData * >* > *readFreqData(string freqfile,
         vector< int_pair_t > *chrCoordList,
         vector< MapData * > *mapDataByChr,
         map<string, int> &pop2index);
+*/
+vector< FreqData * > *readFreqData(string freqfile, string popName,
+        vector< int_pair_t > *chrCoordList,
+        vector< MapData * > *mapDataByChr);
 
 vector< int_pair_t > *scanTFAMData(string filename, int &numInd);
 vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoordList);
 
-vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci);
-vector< MapData * > *readTPEDMapData(string filename, vector< int_pair_t > *chrCoordList, char TPED_MISSING);
+vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci, int &numCols);
+vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_pair_t > *chrCoordList, char TPED_MISSING);
 void writeTPEDDataByPop(string outfile,
                         vector< vector< HapData * >* > *hapDataByPopByChr,
                         vector< MapData * > *mapDataByChr,
@@ -106,6 +117,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
         vector< int_pair_t > *chrCoordList,
         vector< int_pair_t > *indCoordList);
 */
+/*
 vector< vector< HapData * >* > *readTPEDHapData2(string filename,
         int expectedLoci,
         int expectedInd,
@@ -116,6 +128,12 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
         map<string, int> &pop2index,
         char TPED_MISSING,
         vector< MapData * > *mapDataByChr);
+*/
+vector< HapData * > *readTPEDHapData3(string filename,
+        int expectedLoci,
+        int expectedInd,
+        char TPED_MISSING,
+        vector< MapData * > *mapDataByChr);
 
 MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);
@@ -124,13 +142,18 @@ void releaseMapData(vector< MapData * > *mapDataByChr);
 //vector< int_pair_t > *scanMapData(string filename, int &numLoci);
 
 //vector< int_pair_t > *scanIndData(string filename, int &numInd);
-void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, map<string, int> &pop2size);
+//void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, map<string, int> &pop2size);
+void scanIndData3(string filename, int &numInd, string &popName);
 //vector< IndData * > *readIndData(string filename, vector< int_pair_t > *indCoordList);
+/*
 vector< IndData * > *readIndData2(string filename, int numInd,
                                   map<string, string> &ind2pop,
                                   map<string, int> &pop2size,
                                   string *indList,
                                   map<string, int> &pop2index);
+*/
+IndData *readIndData3(string filename, int numInd, string *indList);
+
 IndData *initIndData(int nind);
 void releaseIndData(vector< IndData * > *indDataByPop);
 void releaseIndData(IndData *data);
