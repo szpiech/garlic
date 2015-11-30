@@ -65,7 +65,6 @@ int main(int argc, char *argv[])
     double error = params.getDoubleFlag(ARG_ERROR);
     int MAX_GAP = params.getIntFlag(ARG_MAX_GAP);
     int nresample = params.getIntFlag(ARG_RESAMPLE);
-    bool TPED = false;
     bool RAW_LOD = params.getBoolFlag(ARG_RAW_LOD);
     vector<double> boundSizes = params.getDoubleListFlag(ARG_BOUND_SIZE);
     double LOD_CUTOFF = params.getDoubleFlag(ARG_LOD_CUTOFF);
@@ -175,8 +174,7 @@ int main(int argc, char *argv[])
     }
 
 
-    if (tpedfile.compare(DEFAULT_TPED) != 0 && tfamfile.compare(DEFAULT_TFAM) != 0) TPED = true;
-    else
+    if (tpedfile.compare(DEFAULT_TPED) == 0 || tfamfile.compare(DEFAULT_TFAM) == 0)
     {
         cerr << "ERROR: Must provide both a tped and tfam file.\n";
         return -1;
@@ -267,25 +265,23 @@ int main(int argc, char *argv[])
     string *oneAllele;
     try
     {
-        if (TPED)
+        chrCoordList = scanTPEDMapData(tpedfile, numLoci);
+        mapDataByChr = readTPEDMapData(tpedfile, chrCoordList, TPED_MISSING);
+
+        scanIndData2(tfamfile, numInd, ind2pop, pop2size);
+        indList = new string[numInd];
+        indDataByPop = readIndData2(tfamfile, numInd, ind2pop, pop2size, indList, pop2index);
+
+        //Read user pprovided freq data here
+        if (!AUTO_FREQ)
         {
-            chrCoordList = scanTPEDMapData(tpedfile, numLoci);
-            mapDataByChr = readTPEDMapData(tpedfile, chrCoordList, TPED_MISSING);
-
-            scanIndData2(tfamfile, numInd, ind2pop, pop2size);
-            indList = new string[numInd];
-            indDataByPop = readIndData2(tfamfile, numInd, ind2pop, pop2size, indList, pop2index);
-
-            //Read user pprovided freq data here
-            if (!AUTO_FREQ)
-            {
-                cerr << "Loading user provided allele frequencies from " << freqfile << "...\n";
-                freqDataByPopByChr = readFreqData(freqfile, chrCoordList, mapDataByChr, pop2index);
-            }
-
-            hapDataByPopByChr = readTPEDHapData2(tpedfile, numLoci, numInd, chrCoordList, indList,
-                                                 ind2pop, pop2size, pop2index, TPED_MISSING, mapDataByChr);
+            cerr << "Loading user provided allele frequencies from " << freqfile << "...\n";
+            freqDataByPopByChr = readFreqData(freqfile, chrCoordList, mapDataByChr, pop2index);
         }
+
+        hapDataByPopByChr = readTPEDHapData2(tpedfile, numLoci, numInd, chrCoordList, indList,
+                                             ind2pop, pop2size, pop2index, TPED_MISSING, mapDataByChr);
+
         //load LOD score cutoff if specified
         if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF)
         {
