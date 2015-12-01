@@ -39,15 +39,17 @@ const string HELP_AUTO_WINSIZE = "Initiates an ad hoc method for automatically s
 \tcalculate LOD scores. Starts at the value specified by --winsize and increases\n\
 \tby 10 SNPs until finished.";
 
+/*
 const string ARG_POINTS = "--kde-points";
 const int DEFAULT_POINTS = 512;
 const string HELP_POINTS = "The number of equally spaced points at which to do KDE.";
-
+*/
+/*
 const string ARG_BW = "--kde-bw";
 const double DEFAULT_BW = -1;
 const string HELP_BW = "Manually set the bandwidth for the KDE of lod scores.\n\
 \tBy default, the nrd0 rule of thumb is used.";
-
+*/
 const string ARG_MAX_GAP = "--max-gap";
 const int DEFAULT_MAX_GAP = 200000;
 const string HELP_MAX_GAP = "A LOD score window is not calculated if the gap (in bps)\n\
@@ -77,19 +79,20 @@ const string HELP_LOD_CUTOFF = "For LOD based ROH calling, specify a single LOD 
 \tabove which ROH are called in all populations.  By default, this is chosen\n\
 \tautomatically per population with KDE.";
 
+/*
 const string ARG_LOD_CUTOFF_FILE = "--lod-cutoff-file";
 const string DEFAULT_LOD_CUTOFF_FILE = "_none";
 const string HELP_LOD_CUTOFF_FILE = "For LOD based ROH calling, specify a file with LOD score cutoffs\n\
 \tabove which ROH are called for each population.\n\
 \tFile format is <pop ID> <cutoff>.\n\
 \tBy default, these cutoffs are chosen automatically per population with KDE.";
-
+*/
 const string ARG_BOUND_SIZE = "--size-bounds";
 const double DEFAULT_BOUND_SIZE = -1;
 const string HELP_BOUND_SIZE = "Specify the short/medium and medium/long\n\
 \tROH boundaries.  By default, this is chosen automatically\n\
 \twith a 3-component GMM.  Must provide 2 numbers.";
-
+/*
 const string ARG_BOUND_SIZE_FILE = "--size-bounds-file";
 const string DEFAULT_BOUND_SIZE_FILE = "_none";
 const string HELP_BOUND_SIZE_FILE = "A file specifying the short/medium and medium/long\n\
@@ -97,7 +100,7 @@ const string HELP_BOUND_SIZE_FILE = "A file specifying the short/medium and medi
 \tFile format <pop ID> <short/medium boundary> <medium/long boundary>\n\
 \tBy default, this is chosen automatically\n\
 \twith a 3-component GMM.  Must provide 2 numbers.";
-
+*/
 const string ARG_TPED_MISSING = "--tped-missing";
 const char DEFAULT_TPED_MISSING = '0';
 const string HELP_TPED_MISSING = "Missing data code for TPED files.";

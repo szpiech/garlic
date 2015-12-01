@@ -219,6 +219,7 @@ FreqData *calcFreqData(HapData *hapData, int nresample, const gsl_rng *r)
     return freqData;
 }
 
+/*
 vector< vector< FreqData * >* > *calcFreqData(vector< vector< HapData * >* > *hapDataByPopByChr, int nresample)
 {
     const gsl_rng_type *T;
@@ -244,6 +245,27 @@ vector< vector< FreqData * >* > *calcFreqData(vector< vector< HapData * >* > *ha
 
     return freqDataByPopByChr;
 }
+*/
+vector< FreqData * > *calcFreqData2(vector< HapData * > *hapDataByChr, int nresample)
+{
+    const gsl_rng_type *T;
+    gsl_rng *r;
+    T = gsl_rng_default;
+    r = gsl_rng_alloc (T);
+    gsl_rng_set(r, time(NULL));
+
+    vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
+    for (int chr = 0; chr < hapDataByChr->size(); chr++)
+    {
+        FreqData *data = calcFreqData(hapDataByChr->at(chr), nresample, r);
+        freqDataByChr->push_back(data);
+    }
+
+    gsl_rng_free(r);
+
+    return freqDataByChr;
+}
+
 
 
 //allocates the arrays and populates them with MISSING
@@ -972,93 +994,93 @@ vector< vector< HapData * >* > *readTPEDHapData2(string filename,
             ss >> junk;
             ss >> junk;
             */
-            fin >> junk;
-            fin >> junk;
-            fin >> junk;
-            fin >> junk;
-            for (int ind = 0; ind < expectedInd; ind++)
-            {
-                string popStr = ind2pop[indList[ind]];
-                int pop = pop2index[popStr];
-                int index = pop2currind[popStr];
-                //ss >> alleleStr1 >> alleleStr2;
-                fin >> alleleStr1 >> alleleStr2;
-                short allele1, allele2;
-                allele1 = -1;
-                allele2 = -1;
+fin >> junk;
+fin >> junk;
+fin >> junk;
+fin >> junk;
+for (int ind = 0; ind < expectedInd; ind++)
+{
+    string popStr = ind2pop[indList[ind]];
+    int pop = pop2index[popStr];
+    int index = pop2currind[popStr];
+    //ss >> alleleStr1 >> alleleStr2;
+    fin >> alleleStr1 >> alleleStr2;
+    short allele1, allele2;
+    allele1 = -1;
+    allele2 = -1;
 
-                //if (alleleStr1.compare(TPED_MISSING) == 0)
-                if (alleleStr1 == TPED_MISSING)
-                {
-                    allele1 = -9;
-                }
-                //else if (oneAllele.compare(TPED_MISSING) == 0)
-                else if (oneAllele == TPED_MISSING)
-                {
-                    oneAllele = alleleStr1;
-                    allele1 = 1;
-                }
-                //else if (alleleStr1.compare(oneAllele) == 0)
-                else if (alleleStr1 == oneAllele)
-                {
-                    allele1 = 1;
-                }
-                else
-                {
-                    zeroAllele = alleleStr1;
-                    allele1 = 0;
-                }
-
-                //if (alleleStr2.compare(TPED_MISSING) == 0)
-                if (alleleStr2 == TPED_MISSING)
-                {
-                    allele2 = -9;
-                }
-                //else if (oneAllele.compare(TPED_MISSING) == 0)
-                else if (oneAllele == TPED_MISSING)
-                {
-                    oneAllele = alleleStr2;
-                    allele2 = 1;
-                }
-                //else if (alleleStr2.compare(oneAllele) == 0)
-                else if (alleleStr2 == oneAllele)
-                {
-                    allele2 = 1;
-                }
-                else
-                {
-                    zeroAllele = alleleStr2;
-                    allele2 = 0;
-                }
-
-                //load into data stru
-                if (allele1 + allele2 < 0)
-                {
-                    hapDataByPopByChr->at(pop)->at(chr)->data[locus][index] = -9;
-                }
-                else
-                {
-                    hapDataByPopByChr->at(pop)->at(chr)->data[locus][index] = allele1 + allele2;
-                }
-                //hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
-                pop2currind[ind2pop[indList[ind]]]++;
-                //ss.clear();
-            }
-
-            mapDataByChr->at(chr)->allele[locus] = oneAllele;
-            mapDataByChr->at(chr)->allele0[locus] = zeroAllele;
-        }
+    //if (alleleStr1.compare(TPED_MISSING) == 0)
+    if (alleleStr1 == TPED_MISSING)
+    {
+        allele1 = -9;
+    }
+    //else if (oneAllele.compare(TPED_MISSING) == 0)
+    else if (oneAllele == TPED_MISSING)
+    {
+        oneAllele = alleleStr1;
+        allele1 = 1;
+    }
+    //else if (alleleStr1.compare(oneAllele) == 0)
+    else if (alleleStr1 == oneAllele)
+    {
+        allele1 = 1;
+    }
+    else
+    {
+        zeroAllele = alleleStr1;
+        allele1 = 0;
     }
 
-    fin.close();
-    return hapDataByPopByChr;
+    //if (alleleStr2.compare(TPED_MISSING) == 0)
+    if (alleleStr2 == TPED_MISSING)
+    {
+        allele2 = -9;
+    }
+    //else if (oneAllele.compare(TPED_MISSING) == 0)
+    else if (oneAllele == TPED_MISSING)
+    {
+        oneAllele = alleleStr2;
+        allele2 = 1;
+    }
+    //else if (alleleStr2.compare(oneAllele) == 0)
+    else if (alleleStr2 == oneAllele)
+    {
+        allele2 = 1;
+    }
+    else
+    {
+        zeroAllele = alleleStr2;
+        allele2 = 0;
+    }
+
+    //load into data stru
+    if (allele1 + allele2 < 0)
+    {
+        hapDataByPopByChr->at(pop)->at(chr)->data[locus][index] = -9;
+    }
+    else
+    {
+        hapDataByPopByChr->at(pop)->at(chr)->data[locus][index] = allele1 + allele2;
+    }
+    //hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
+    pop2currind[ind2pop[indList[ind]]]++;
+    //ss.clear();
 }
-*/
+
+mapDataByChr->at(chr)->allele[locus] = oneAllele;
+mapDataByChr->at(chr)->allele0[locus] = zeroAllele;
+}
+}
+
+fin.close();
+return hapDataByPopByChr;
+}
+* /
 vector< HapData * > *readTPEDHapData3(string filename,
-        int expectedLoci,
-        int expectedInd,
-        char TPED_MISSING,
-        vector< MapData * > *mapDataByChr)
+                                      int expectedLoci,
+                                      int expectedInd,
+                                      char TPED_MISSING,
+                                      vector< MapData * > *mapDataByChr)
 {
     int expectedHaps = 2 * expectedInd;
     igzstream fin;
@@ -1537,19 +1559,14 @@ void releaseWinData(WinData *data)
     return;
 }
 
-void releaseWinData(vector< vector< WinData * >* > *winDataByPopByChr)
+void releaseWinData(vector< WinData * > *winDataByChr)
 {
-    for (int pop = 0; pop < winDataByPopByChr->size(); pop++)
+    for (int chr = 0; chr < winDataByChr->size(); chr++)
     {
-        for (int chr = 0; chr < winDataByPopByChr->at(pop)->size(); chr++)
-        {
-            releaseWinData(winDataByPopByChr->at(pop)->at(chr));
-        }
-        winDataByPopByChr->at(pop)->clear();
-        delete winDataByPopByChr->at(pop);
+        releaseWinData(winDataByChr->at(chr));
     }
-    winDataByPopByChr->clear();
-    delete winDataByPopByChr;
+    winDataByChr->clear();
+    delete winDataByChr;
 }
 
 vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr,
@@ -1591,52 +1608,45 @@ vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr,
     return winDataByPopByChr;
 }
 
-void writeWinData(vector< vector< WinData * >* > *winDataByPopByChr,
-                  vector< IndData * > *indDataByPop,
+void writeWinData(vector< WinData * > *winDataByChr,
+                  IndData *indData,
                   vector< MapData * > *mapDataByChr,
                   string outfile)
 {
     ogzstream fout;
-    int numPop = indDataByPop->size();
     int numChr = mapDataByChr->size();
-    for (int pop = 0; pop < numPop; pop++)
+    string popName = indData->pop;
+
+    for (int chr = 0; chr < numChr; chr++)
     {
-        string popName = indDataByPop->at(pop)->pop;
+        string rawWinOutfile = outfile;
+        rawWinOutfile += ".";
+        rawWinOutfile += popName;
+        rawWinOutfile += ".";
+        rawWinOutfile += mapDataByChr->at(chr)->chr;
+        rawWinOutfile += ".raw.lod.windows.gz";
 
-        for (int chr = 0; chr < numChr; chr++)
+        fout.open(rawWinOutfile.c_str());
+        if (fout.fail())
         {
-            //char chrnum[5];
-            //sprintf(chrnum, "%d", mapDataByChr->at(chr)->chr);
-            string rawWinOutfile = outfile;
-            rawWinOutfile += ".";
-            rawWinOutfile += popName;
-            rawWinOutfile += ".chr";
-            rawWinOutfile += mapDataByChr->at(chr)->chr;
-            rawWinOutfile += ".raw.lod.windows.gz";
-
-            fout.open(rawWinOutfile.c_str());
-            if (fout.fail())
-            {
-                cerr << "ERROR: Failed to open " << rawWinOutfile << " for writing.\n";
-                throw - 1;
-            }
-
-            WinData *winData = winDataByPopByChr->at(pop)->at(chr);
-
-            for (int ind = 0; ind < winData->nind; ind++)
-            {
-                for (int locus = 0; locus < winData->nloci; locus++)
-                {
-                    if (winData->data[ind][locus] == MISSING) fout << "NA";
-                    else fout << winData->data[ind][locus];
-                    if (locus < winData->nloci - 1) fout << " ";
-                }
-                fout << endl;
-            }
-            cerr << "Wrote " << rawWinOutfile << "\n";
-            fout.close();
+            cerr << "ERROR: Failed to open " << rawWinOutfile << " for writing.\n";
+            throw - 1;
         }
 
+        WinData *winData = winDataByChr->at(chr);
+
+        for (int ind = 0; ind < winData->nind; ind++)
+        {
+            for (int locus = 0; locus < winData->nloci; locus++)
+            {
+                if (winData->data[ind][locus] == MISSING) fout << "NA";
+                else fout << winData->data[ind][locus];
+                if (locus < winData->nloci - 1) fout << " ";
+            }
+            fout << endl;
+        }
+        cerr << "Wrote " << rawWinOutfile << "\n";
+        fout.close();
     }
 
     return;
@@ -1824,11 +1834,11 @@ vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_p
             count = 4;
             while (alleles.size() < 2 && count < numCols) {
                 fin >> junk;
-                if(junk.compare(TPED_MISSING) != 0) alleles[junk.c_str()[0]] = 0;
+                if (junk.compare(TPED_MISSING) != 0) alleles[junk.c_str()[0]] = 0;
                 count++;
             }
 
-            if(count >= numCols){
+            if (count >= numCols) {
                 cerr << "ERROR: locus " << data->locusName[locus] << " appears monomorphic.\n";
                 throw 0;
             }
@@ -1851,312 +1861,7 @@ vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_p
     return mapDataByChr;
 }
 
-/*
-vector< int_pair_t > *scanMapData(string filename, int &numLoci)
-{
-    igzstream fin;
-    cerr << "Scanning " << filename << "...\n";
-    fin.open(filename.c_str());
 
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    vector< int_pair_t > *chrStartStop = new vector< int_pair_t >;
-    stringstream ss;
-    string line;
-    int nloci = 0;
-    int index;
-    int num_cols = 4;
-    int current_cols = 0;
-    int prevChr = -1;
-    int currChr = prevChr;
-    int_pair_t currChrCoordinates;
-    while (getline(fin, line))
-    {
-        nloci++;
-        index = nloci - 1;
-        current_cols = countFields(line);
-        if (current_cols != num_cols)
-        {
-            cerr << "ERROR: line " << nloci << " of " << filename << " has " << current_cols
-                 << ", but expected " << num_cols << ".\n";
-            throw 0;
-        }
-        ss.str(line);
-        ss >> currChr;
-        if (prevChr == -1 && index == 0)
-        {
-            prevChr = currChr;
-            currChrCoordinates.first = index;
-        }
-
-        if (currChr != prevChr)
-        {
-            currChrCoordinates.second = index - 1;
-            chrStartStop->push_back(currChrCoordinates);
-            currChrCoordinates.first = index;
-            prevChr = currChr;
-        }
-    }
-
-    fin.close();
-
-    numLoci = nloci;
-
-    currChrCoordinates.second = index;
-    chrStartStop->push_back(currChrCoordinates);
-
-
-    return chrStartStop;
-}
-*/
-/*
-vector< MapData * > *readMapData(string filename, vector< int_pair_t > *chrCoordList)
-{
-    vector< MapData * > *mapDataByChr = new vector< MapData * >;
-
-    igzstream fin;
-    cerr << "Loading map " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    //For each chromosome
-    for (int i = 0; i < chrCoordList->size(); i++)
-    {
-        int size = chrCoordList->at(i).second - chrCoordList->at(i).first + 1;
-        MapData *data = initMapData(size);
-        for (int locus = 0; locus < size; locus++)
-        {
-            fin >> data->chr;
-            fin >> data->locusName[locus];
-            fin >> data->geneticPos[locus];
-            fin >> data->physicalPos[locus];
-        }
-        cerr << size << " loci on chromosome " << data->chr << endl;
-        mapDataByChr->push_back(data);
-    }
-
-    fin.close();
-
-    return mapDataByChr;
-}
-*/
-/*
-vector< int_pair_t > *scanTFAMData(string filename, int &numInd)
-{
-    igzstream fin;
-    cerr << "Scanning " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    vector< int_pair_t > *indStartStop = new vector< int_pair_t >;
-    stringstream ss;
-    string line;
-    int nind = 0;
-    int index;
-    int num_cols = 6;
-    int current_cols = 0;
-    string prevPop = "__BLANK__";
-    string currPop = prevPop;
-    int_pair_t currPopCoordinates;
-    while (getline(fin, line))
-    {
-        nind++;
-        index = nind - 1;
-        current_cols = countFields(line);
-        if (current_cols != num_cols)
-        {
-            cerr << "ERROR: line " << nind << " of " << filename << " has " << current_cols
-                 << ", but expected " << num_cols << ".\n";
-            throw 0;
-        }
-        ss.str(line);
-        ss >> currPop;
-        if (prevPop.compare("__BLANK__") == 0 && index == 0)
-        {
-            prevPop = currPop;
-            currPopCoordinates.first = index;
-        }
-
-        if (currPop.compare(prevPop) != 0)
-        {
-            currPopCoordinates.second = index - 1;
-            indStartStop->push_back(currPopCoordinates);
-            currPopCoordinates.first = index;
-            prevPop = currPop;
-        }
-    }
-
-    fin.close();
-
-    numInd = nind;
-
-    currPopCoordinates.second = index;
-    indStartStop->push_back(currPopCoordinates);
-
-    return indStartStop;
-}
-*/
-/*
-vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoordList)
-{
-    vector< IndData * > *indDataByPop = new vector< IndData * >;
-
-    igzstream fin;
-    cerr << "Loading " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-    string junk;
-    //For each population
-    for (int i = 0; i < indCoordList->size(); i++)
-    {
-        int size = indCoordList->at(i).second - indCoordList->at(i).first + 1;
-        IndData *data = initIndData(size);
-        for (int ind = 0; ind < size; ind++)
-        {
-            fin >> data->pop;
-            fin >> data->indID[ind];
-            getline(fin, junk);
-        }
-        cerr << size << " individuals in population " << data->pop << endl;
-        indDataByPop->push_back(data);
-    }
-
-    fin.close();
-
-    return indDataByPop;
-}
-*/
-/*
-vector< int_pair_t > *scanIndData(string filename, int &numInd)
-{
-    igzstream fin;
-    cerr << "Scanning " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    vector< int_pair_t > *indStartStop = new vector< int_pair_t >;
-    stringstream ss;
-    string line;
-    int nind = 0;
-    int index;
-    int num_cols = 2;
-    int current_cols = 0;
-    string prevPop = "__BLANK__";
-    string currPop = prevPop;
-    int_pair_t currPopCoordinates;
-    while (getline(fin, line))
-    {
-        nind++;
-        index = nind - 1;
-        current_cols = countFields(line);
-        if (current_cols != num_cols)
-        {
-            cerr << "ERROR: line " << nind << " of " << filename << " has " << current_cols
-                 << ", but expected " << num_cols << ".\n";
-            throw 0;
-        }
-        ss.str(line);
-        ss >> currPop;
-        if (prevPop.compare("__BLANK__") == 0 && index == 0)
-        {
-            prevPop = currPop;
-            currPopCoordinates.first = index;
-        }
-
-        if (currPop.compare(prevPop) != 0)
-        {
-            currPopCoordinates.second = index - 1;
-            indStartStop->push_back(currPopCoordinates);
-            currPopCoordinates.first = index;
-            prevPop = currPop;
-        }
-    }
-
-    fin.close();
-
-    numInd = nind;
-
-    currPopCoordinates.second = index;
-    indStartStop->push_back(currPopCoordinates);
-
-    return indStartStop;
-}
-*/
-/*
-void scanIndData2(string filename, int &numInd, map<string, string> &ind2pop, map<string, int> &pop2size)
-{
-    igzstream fin;
-    cerr << "Scanning " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    string line;
-    int nind = 0;
-    int min_cols = 2;
-    int current_cols = 0;
-    string pop, ind;
-    stringstream ss;
-    while (getline(fin, line))
-    {
-        nind++;
-        current_cols = countFields(line);
-        if (current_cols < min_cols)
-        {
-            cerr << "ERROR: line " << nind << " of " << filename << " has " << current_cols
-                 << ", but expected at least " << min_cols << ".\n";
-            throw 0;
-        }
-        //stringstream ss;
-        ss.str(line);
-        ss >> pop >> ind;
-        if (ind2pop.count(ind) > 0)
-        {
-            cerr << "ERROR: Found duplicate individual ID (" << ind << ") in " << filename << endl;
-            throw 0;
-        }
-        else ind2pop[ind] = pop;
-
-        if (pop2size.count(pop) > 0) pop2size[pop]++;
-        else pop2size[pop] = 1;
-        ss.clear();
-    }
-
-    fin.close();
-
-    numInd = nind;
-
-    return;
-}
-*/
 void scanIndData3(string filename, int &numInd, string &popName) {
     igzstream fin;
     cerr << "Scanning " << filename << "...\n";
@@ -2215,95 +1920,7 @@ void scanIndData3(string filename, int &numInd, string &popName) {
     return;
 }
 
-/*
-vector< IndData * > *readIndData(string filename, vector< int_pair_t > *indCoordList)
-{
-    vector< IndData * > *indDataByPop = new vector< IndData * >;
 
-    igzstream fin;
-    cerr << "Loading " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    //For each chromosome
-    for (int i = 0; i < indCoordList->size(); i++)
-    {
-        int size = indCoordList->at(i).second - indCoordList->at(i).first + 1;
-        IndData *data = initIndData(size);
-        for (int ind = 0; ind < size; ind++)
-        {
-            fin >> data->pop;
-            fin >> data->indID[ind];
-        }
-        cerr << size << " individuals in population " << data->pop << endl;
-        indDataByPop->push_back(data);
-    }
-
-    fin.close();
-
-    return indDataByPop;
-}
-*/
-/*
-vector< IndData * > *readIndData2(string filename, int numInd,
-                                  map<string, string> &ind2pop,
-                                  map<string, int> &pop2size,
-                                  string *indList, map<string, int> &pop2index)
-{
-    vector< IndData * > *indDataByPop = new vector< IndData * >;
-
-    igzstream fin;
-    cerr << "Loading " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    //pop2curpos tracks the current index of the IndData underlying array
-    //   so we know where to load the next ind ID in the following section
-    //   it is initialized here.
-    map<string, int> pop2curpos;
-    IndData *data;
-    int index = 0;
-    //Initialize indDataByPop
-    for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
-    {
-        cerr << it->second << " individuals in population " << it->first << endl;
-        data = initIndData(it->second);
-        data->pop = it->first;
-        indDataByPop->push_back(data);
-        pop2curpos[it->first] = 0;
-        pop2index[it->first] = index;
-        index++;
-    }
-
-    string line, pop, ind;
-    stringstream ss;
-    for (int i = 0; i < numInd; i++)
-    {
-        //stringstream ss;
-        getline(fin, line);
-        ss.str(line);
-        ss >> pop >> ind;
-        indList[i] = ind;
-        indDataByPop->at(pop2index[pop])->indID[pop2curpos[pop]] = ind;
-        pop2curpos[pop]++;
-        ss.clear();
-    }
-
-    fin.close();
-
-    return indDataByPop;
-}
-*/
 IndData *readIndData3(string filename, int numInd, string *indList)
 {
     igzstream fin;
@@ -2364,61 +1981,47 @@ DoubleData *initDoubleData(int n)
     return data;
 }
 
-vector < DoubleData * > *convertWinData2DoubleData(vector< vector< WinData * >* > *winDataByPopByChr)
+DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr)
 {
-    vector < DoubleData * > *rawWinDataByPop = new vector < DoubleData * >;
-    double val;
-    for (int pop = 0; pop < winDataByPopByChr->size(); pop++)
+    int nmiss = 0;
+    int ncols = 0;
+    int nrows = 0;
+    DoubleData *rawWinData;
+    for (int chr = 0; chr < winDataByChr->size(); chr++)
     {
-        int nmiss = 0;
-        int ncols = 0;
-        int nrows = 0;
-        DoubleData *data;
-        for (int chr = 0; chr < winDataByPopByChr->at(pop)->size(); chr++)
+        for (int ind = 0; ind < winDataByChr->at(chr)->nind; ind++)
         {
-            for (int ind = 0; ind < winDataByPopByChr->at(pop)->at(chr)->nind; ind++)
+            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus++)
             {
-                for (int locus = 0; locus < winDataByPopByChr->at(pop)->at(chr)->nloci; locus++)
-                {
-                    val = winDataByPopByChr->at(pop)->at(chr)->data[ind][locus];
-                    if (val == MISSING) nmiss++;
-                }
+                if (winDataByChr->at(chr)->data[ind][locus] == MISSING) nmiss++;
             }
-
-            ncols += winDataByPopByChr->at(pop)->at(chr)->nloci;
-            nrows = winDataByPopByChr->at(pop)->at(chr)->nind;
         }
-        data = initDoubleData(ncols * nrows - nmiss);
-        rawWinDataByPop->push_back(data);
 
-        //cerr << "missing: " << nmiss << endl;
+        ncols += winDataByChr->at(chr)->nloci;
+        nrows = winDataByChr->at(chr)->nind;
     }
+    rawWinData = initDoubleData(ncols * nrows - nmiss);
 
-    int i;
-    for (int pop = 0; pop < winDataByPopByChr->size(); pop++)
+    int i = 0;
+    for (int chr = 0; chr < winDataByChr->size(); chr++)
     {
-        i = 0;
-        for (int chr = 0; chr < winDataByPopByChr->at(pop)->size(); chr++)
+        for (int ind = 0; ind < winDataByChr->at(chr)->nind; ind++)
         {
-            for (int ind = 0; ind < winDataByPopByChr->at(pop)->at(chr)->nind; ind++)
+            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus++)
             {
-                for (int locus = 0; locus < winDataByPopByChr->at(pop)->at(chr)->nloci; locus++)
+                if (winDataByChr->at(chr)->data[ind][locus] != MISSING)
                 {
-                    val = winDataByPopByChr->at(pop)->at(chr)->data[ind][locus];
-                    if (val != MISSING)
-                    {
-                        rawWinDataByPop->at(pop)->data[i] = val;
-                        i++;
-                    }
+                    rawWinData->data[i] = winDataByChr->at(chr)->data[ind][locus];
+                    i++;
                 }
             }
         }
     }
 
-    return rawWinDataByPop;
+    return rawWinData;
 }
 
-vector < DoubleData * > *convertSubsetWinData2DoubleData(vector< vector< WinData * >* > *winDataByPopByChr, int subsample)
+DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, int subsample)
 {
     const gsl_rng_type *T;
     gsl_rng *r;
@@ -2427,74 +2030,54 @@ vector < DoubleData * > *convertSubsetWinData2DoubleData(vector< vector< WinData
     gsl_rng_set(r, time(NULL));
 
     //to hold the indicies of the randomly selected individuals
-    int** randInd = new int* [winDataByPopByChr->size()];
-    int* nind = new int [winDataByPopByChr->size()];
-    for (int i = 0; i < winDataByPopByChr->size(); i++)
+    int nind = winDataByChr->at(0)->nind;
+    int *randInd;
+    if (subsample >= nind)
     {
-        nind[i] = winDataByPopByChr->at(i)->at(0)->nind;
-        randInd[i] = NULL;
+        randInd = new int[nind];
+        for (int i = 0; i < nind; i++) randInd[i] = i;
+    }
+    else
+    {
+        int* indIndex = new int[nind];
+        for (int i = 0; i < nind; i++) indIndex[i] = i;
+        randInd = new int[subsample];
+        gsl_ran_choose(r, randInd, subsample, indIndex, nind, sizeof(int));
+        delete [] indIndex;
+        nind = subsample;
     }
 
+    DoubleData *rawWinData;
+    int nmiss = 0;
+    int ncols = 0;
+    int nrows = 0;
 
-    vector < DoubleData * > *rawWinDataByPop = new vector < DoubleData * >;
-    double val;
-    for (int pop = 0; pop < winDataByPopByChr->size(); pop++)
+    for (int chr = 0; chr < winDataByChr->size(); chr++)
     {
-        int nmiss = 0;
-        int ncols = 0;
-        int nrows = 0;
-        DoubleData *data;
-
-        if (subsample >= nind[pop])
+        for (int ind = 0; ind < nind; ind++)
         {
-            randInd[pop] = new int[winDataByPopByChr->at(pop)->at(0)->nind];
-            for (int i = 0; i < winDataByPopByChr->at(pop)->at(0)->nind; i++) randInd[pop][i] = i;
-        }
-        else
-        {
-            nind[pop] = subsample;
-            int* indIndex = new int[winDataByPopByChr->at(pop)->at(0)->nind];
-            for (int i = 0; i < winDataByPopByChr->at(pop)->at(0)->nind; i++) indIndex[i] = i;
-            randInd[pop] = new int[subsample];
-            gsl_ran_choose(r, randInd[pop], subsample, indIndex, winDataByPopByChr->at(pop)->at(0)->nind, sizeof(int));
-        }
-
-        for (int chr = 0; chr < winDataByPopByChr->at(pop)->size(); chr++)
-        {
-            for (int ind = 0; ind < nind[pop]; ind++)
+            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus++)
             {
-                for (int locus = 0; locus < winDataByPopByChr->at(pop)->at(chr)->nloci; locus++)
-                {
-                    val = winDataByPopByChr->at(pop)->at(chr)->data[randInd[pop][ind]][locus];
-                    if (val == MISSING) nmiss++;
-                }
+                if (winDataByChr->at(chr)->data[randInd[ind]][locus] == MISSING) nmiss++;
             }
-
-            ncols += winDataByPopByChr->at(pop)->at(chr)->nloci;
-            nrows = nind[pop];
         }
-        data = initDoubleData(ncols * nrows - nmiss);
-        rawWinDataByPop->push_back(data);
 
-        //cerr << "missing: " << nmiss << endl;
+        ncols += winDataByChr->at(chr)->nloci;
+        nrows = nind;
     }
+    rawWinData = initDoubleData(ncols * nrows - nmiss);
 
-    int i;
-    for (int pop = 0; pop < winDataByPopByChr->size(); pop++)
+    int i = 0;
+    for (int chr = 0; chr < winDataByChr->size(); chr++)
     {
-        i = 0;
-        for (int chr = 0; chr < winDataByPopByChr->at(pop)->size(); chr++)
+        for (int ind = 0; ind < nind; ind++)
         {
-            for (int ind = 0; ind < nind[pop]; ind++)
+            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus++)
             {
-                for (int locus = 0; locus < winDataByPopByChr->at(pop)->at(chr)->nloci; locus++)
+                if (winDataByChr->at(chr)->data[randInd[ind]][locus] != MISSING)
                 {
-                    val = winDataByPopByChr->at(pop)->at(chr)->data[randInd[pop][ind]][locus];
-                    if (val != MISSING)
-                    {
-                        rawWinDataByPop->at(pop)->data[i] = val;
-                        i++;
-                    }
+                    rawWinData->data[i] = winDataByChr->at(chr)->data[randInd[ind]][locus];
+                    i++;
                 }
             }
         }
@@ -2502,16 +2085,10 @@ vector < DoubleData * > *convertSubsetWinData2DoubleData(vector< vector< WinData
 
     gsl_rng_free(r);
 
-    for (int i = 0; i < winDataByPopByChr->size(); i++)
-    {
-        for (int j = 0; j < nind[i]; j++) cerr << randInd[i][j] << " ";
-        cerr << endl;
-        delete [] randInd[i];
-    }
+    
     delete [] randInd;
-    delete [] nind;
 
-    return rawWinDataByPop;
+    return rawWinData;
 }
 
 void releaseDoubleData(DoubleData *data)
@@ -2533,10 +2110,11 @@ void releaseDoubleData(vector < DoubleData * > *rawWinDataByPop)
     return;
 }
 
-void subsetData(vector< vector< HapData * >* > *hapDataByPopByChr,
-                vector< IndData * > *indDataByPop,
-                vector< vector< HapData * >* > **subsetHapDataByPopByChr,
-                vector< IndData * > **subsetIndDataByPop, int subsample)
+void subsetData(vector< HapData * > *hapDataByChr,
+                IndData *indData,
+                vector< HapData * > **subsetHapDataByChr,
+                IndData **subsetIndData,
+                int subsample)
 {
     const gsl_rng_type *T;
     gsl_rng *r;
@@ -2544,60 +2122,53 @@ void subsetData(vector< vector< HapData * >* > *hapDataByPopByChr,
     r = gsl_rng_alloc (T);
     gsl_rng_set(r, time(NULL));
 
-    int npops = hapDataByPopByChr->size();
-    vector< vector< HapData * >* > *newHapDataByPopByChr = new vector< vector< HapData * >* >;
-    vector< IndData * > *newIndDataByPop = new vector< IndData * >;
-    double val;
-    for (int pop = 0; pop < npops; pop++)
+    int nind = hapDataByChr->at(0)->nind;
+    int *randInd;
+    if (subsample >= nind)
     {
-        int nind = hapDataByPopByChr->at(pop)->at(0)->nind;
-        int *randInd;
-        if (subsample >= nind)
-        {
-            randInd = new int[nind];
-            for (int i = 0; i < nind; i++) randInd[i] = i;
-        }
-        else
-        {
-            int* indIndex = new int[nind];
-            for (int i = 0; i < nind; i++) indIndex[i] = i;
-            randInd = new int[subsample];
-            gsl_ran_choose(r, randInd, subsample, indIndex, nind, sizeof(int));
-            delete [] indIndex;
-            nind = subsample;
-        }
-
-        newIndDataByPop->push_back(initIndData(nind));
-        newIndDataByPop->at(pop)->pop = indDataByPop->at(pop)->pop;
-
-        for (int ind = 0; ind < nind; ind++) {
-            newIndDataByPop->at(pop)->indID[ind] = indDataByPop->at(pop)->indID[randInd[ind]];
-        }
-
-        vector< HapData * >* newHapDataByChr = new vector< HapData * >;
-        int nchr = hapDataByPopByChr->at(pop)->size();
-        HapData *hapData;
-        for (int chr = 0; chr < nchr; chr++)
-        {
-            int nloci = hapDataByPopByChr->at(pop)->at(chr)->nloci;
-            hapData = initHapData(nind, nloci);
-
-            for (int locus = 0; locus < nloci; locus++)
-            {
-                for (int ind = 0; ind < nind; ind++)
-                {
-                    hapData->data[locus][ind] = hapDataByPopByChr->at(pop)->at(chr)->data[locus][randInd[ind]];
-                }
-            }
-            newHapDataByChr->push_back(hapData);
-            hapData = NULL;
-        }
-        newHapDataByPopByChr->push_back(newHapDataByChr);
-        delete [] randInd;
+        randInd = new int[nind];
+        for (int i = 0; i < nind; i++) randInd[i] = i;
+    }
+    else
+    {
+        int* indIndex = new int[nind];
+        for (int i = 0; i < nind; i++) indIndex[i] = i;
+        randInd = new int[subsample];
+        gsl_ran_choose(r, randInd, subsample, indIndex, nind, sizeof(int));
+        delete [] indIndex;
+        nind = subsample;
     }
 
-    *(subsetHapDataByPopByChr) = newHapDataByPopByChr;
-    *(subsetIndDataByPop) = newIndDataByPop;
+    IndData *newIndData = initIndData(nind);
+    newIndData->pop = indData->pop;
+
+    for (int ind = 0; ind < nind; ind++) {
+        newIndData->indID[ind] = indData->indID[randInd[ind]];
+    }
+
+    vector< HapData * > *newHapDataByChr = new vector< HapData * >;
+
+    int nchr = hapDataByChr->size();
+    HapData *hapData;
+    for (int chr = 0; chr < nchr; chr++)
+    {
+        int nloci = hapDataByChr->at(chr)->nloci;
+        hapData = initHapData(nind, nloci);
+
+        for (int locus = 0; locus < nloci; locus++)
+        {
+            for (int ind = 0; ind < nind; ind++)
+            {
+                hapData->data[locus][ind] = hapDataByChr->at(chr)->data[locus][randInd[ind]];
+            }
+        }
+        newHapDataByChr->push_back(hapData);
+        hapData = NULL;
+    }
+    delete [] randInd;
+
+    *(subsetHapDataByChr) = newHapDataByChr;
+    *(subsetIndData) = newIndData;
     gsl_rng_free(r);
     return;
 }

@@ -106,9 +106,17 @@ void releaseKDEResult(KDEResult *data)
     return;
 }
 
-vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vector< IndData * > *indDataByPop, int numThreads)
+/*
+KDEResult *computeKDE(DoubleData *rawWinData, IndData *indData, int numThreads)
 {
-    vector < KDEResult * > *kdeResultByPop = new  vector < KDEResult * >;
+    KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+
+    return kdeResult;
+}
+*/
+
+/*
+vector < KDEResult * > *kdeResultByPop = new  vector < KDEResult * >;
     //Fill the vector with null pointers for each population
     for (int pop = 0; pop < rawWinDataByPop->size(); pop++) kdeResultByPop->push_back(NULL);
     //Don't use more threads than populations
@@ -140,25 +148,27 @@ vector < KDEResult * > *computeKDE(vector < DoubleData * > *rawWinDataByPop, vec
         pthread_join(peer[i], NULL);
     }
     return kdeResultByPop;
-}
 
+*/
+/*
 void doKDE(void *kdework)
 {
-    KDEWork *w = (KDEWork *)kdework;
-    int id = w->id;
-    int numThreads = w->numThreads;
-    vector < DoubleData * > *rawWinDataByPop  = w->rawWinDataByPop;
-    vector< IndData * > *indDataByPop = w->indDataByPop;
+KDEWork *w = (KDEWork *)kdework;
+int id = w->id;
+int numThreads = w->numThreads;
+vector < DoubleData * > *rawWinDataByPop  = w->rawWinDataByPop;
+vector< IndData * > *indDataByPop = w->indDataByPop;
 
-    for (int pop = id; pop < rawWinDataByPop->size(); pop += numThreads)
-    {
-        KDEResult *result = computeKDE(rawWinDataByPop->at(pop)->data, rawWinDataByPop->at(pop)->size);
-        w->kdeResultByPop->at(pop) = result;
-    }
-
-    return;
+for (int pop = id; pop < rawWinDataByPop->size(); pop += numThreads)
+{
+    KDEResult *result = computeKDE(rawWinDataByPop->at(pop)->data, rawWinDataByPop->at(pop)->size);
+    w->kdeResultByPop->at(pop) = result;
 }
 
+return;
+}
+*/
+/*
 void releaseKDEResult(vector < KDEResult * > *kdeResultByPop)
 {
     for (int pop = 0; pop < kdeResultByPop->size(); pop++)
@@ -169,7 +179,7 @@ void releaseKDEResult(vector < KDEResult * > *kdeResultByPop)
     kdeResultByPop = NULL;
     return;
 }
-
+*/
 double nrd0(double x[], const int N)
 {
     gsl_sort(x, 1, N);
@@ -313,7 +323,7 @@ int get_arg_min(double *nums, int size)
 
     return arg_min;
 }
-
+/*
 void writeKDEResult(vector < KDEResult * > *kdeResultByPop, vector< IndData * > *indDataByPop, string outfile, int *winsizeByPop)
 {
     ofstream fout;
@@ -344,6 +354,36 @@ void writeKDEResult(vector < KDEResult * > *kdeResultByPop, vector< IndData * > 
         cerr << "Wrote " << kdeOutfile << endl;
         fout.close();
     }
+
+    return;
+}
+*/
+void writeKDEResult(KDEResult *kdeResult, IndData *indData, string outfile, int winsize)
+{
+    ofstream fout;
+    char winStr[10];
+    sprintf(winStr, "%d", winsize);
+    string popName = indData->pop;
+    string kdeOutfile = outfile;
+    kdeOutfile += ".";
+    kdeOutfile += winStr;
+    kdeOutfile += "SNPs.";
+    kdeOutfile += popName;
+    kdeOutfile += ".kde";
+
+    fout.open(kdeOutfile.c_str());
+    if (fout.fail())
+    {
+        cerr << "ERROR: Failed to open " << kdeOutfile << " for writing.\n";
+        throw - 1;
+    }
+
+    for (int i = 0; i < kdeResult->size; i++)
+    {
+        fout << kdeResult->x[i] << " " << kdeResult->y[i] << endl;
+    }
+    cerr << "Wrote " << kdeOutfile << endl;
+    fout.close();
 
     return;
 }
