@@ -2,6 +2,7 @@
 #define __GARLIC_CLI_H__
 
 #include <string>
+#include "param_t.h"
 
 using namespace std;
 
@@ -131,5 +132,7 @@ const string HELP_BUILD = "Choose which genome build to use for centromere locat
 const string ARG_CENTROMERE_FILE = "--centromere";
 const string DEFAULT_CENTROMERE_FILE = "__none";
 const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
+
+param_t *initCLI();
 
 #endif

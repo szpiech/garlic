@@ -23,7 +23,7 @@ LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_
 all : garlic
 
 garlic : garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o
-	$(CC) -o garlic garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
+	$(CC) -o garlic garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o garlic-cli.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
 
 garlic-main.o : garlic-main.cpp garlic-cli.h
 	$(CC) $(G++FLAG) -c garlic-main.cpp -I$(I_PATH)
@@ -36,6 +36,9 @@ garlic-roh.o : garlic-roh.cpp garlic-roh.h
 
 garlic-kde.o : garlic-kde.cpp garlic-kde.h
 	$(CC) $(G++FLAG) -c garlic-kde.cpp -I$(I_PATH)
+
+garlic-cli.o : garlic-cli.cpp garlic-cli.h
+	$(CC) $(G++FLAG) -c garlic-cli.cpp -I$(I_PATH)
 
 garlic-centromeres.o : garlic-centromeres.cpp garlic-centromeres.h
 	$(CC) $(G++FLAG) -c garlic-centromeres.cpp -I$(I_PATH)
