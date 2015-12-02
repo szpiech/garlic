@@ -106,80 +106,6 @@ void releaseKDEResult(KDEResult *data)
     return;
 }
 
-/*
-KDEResult *computeKDE(DoubleData *rawWinData, IndData *indData, int numThreads)
-{
-    KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
-
-    return kdeResult;
-}
-*/
-
-/*
-vector < KDEResult * > *kdeResultByPop = new  vector < KDEResult * >;
-    //Fill the vector with null pointers for each population
-    for (int pop = 0; pop < rawWinDataByPop->size(); pop++) kdeResultByPop->push_back(NULL);
-    //Don't use more threads than populations
-    if (numThreads > rawWinDataByPop->size()) numThreads = rawWinDataByPop->size();
-
-    KDEWork *work_order;
-    pthread_t *peer = new pthread_t[numThreads];
-    for (int i = 0; i < numThreads; i++)
-    {
-        work_order = new KDEWork;
-        work_order->id = i;
-        work_order->numThreads = numThreads;
-        work_order->indDataByPop = indDataByPop;
-        work_order->kdeResultByPop = kdeResultByPop;
-        work_order->rawWinDataByPop = rawWinDataByPop;
-        pthread_create(&(peer[i]),
-                       NULL,
-                       (void *(*)(void *))doKDE,
-                       (void *)work_order);
-
-        //cerr << "\t" << indDataByPop->at(pop)->pop << "...";
-        //KDEResult *result = computeKDE(rawWinDataByPop->at(pop)->data, rawWinDataByPop->at(pop)->size);
-        //cerr << "\tdone.\n";
-        //kdeResultByPop->push_back(result);
-    }
-
-    for (int i = 0; i < numThreads; i++)
-    {
-        pthread_join(peer[i], NULL);
-    }
-    return kdeResultByPop;
-
-*/
-/*
-void doKDE(void *kdework)
-{
-KDEWork *w = (KDEWork *)kdework;
-int id = w->id;
-int numThreads = w->numThreads;
-vector < DoubleData * > *rawWinDataByPop  = w->rawWinDataByPop;
-vector< IndData * > *indDataByPop = w->indDataByPop;
-
-for (int pop = id; pop < rawWinDataByPop->size(); pop += numThreads)
-{
-    KDEResult *result = computeKDE(rawWinDataByPop->at(pop)->data, rawWinDataByPop->at(pop)->size);
-    w->kdeResultByPop->at(pop) = result;
-}
-
-return;
-}
-*/
-/*
-void releaseKDEResult(vector < KDEResult * > *kdeResultByPop)
-{
-    for (int pop = 0; pop < kdeResultByPop->size(); pop++)
-    {
-        releaseKDEResult(kdeResultByPop->at(pop));
-    }
-    delete kdeResultByPop;
-    kdeResultByPop = NULL;
-    return;
-}
-*/
 double nrd0(double x[], const int N)
 {
     gsl_sort(x, 1, N);
@@ -251,58 +177,14 @@ int get_arg_min(double *nums, int size)
 
     return arg_min;
 }
-/*
-void writeKDEResult(vector < KDEResult * > *kdeResultByPop, vector< IndData * > *indDataByPop, string outfile, int *winsizeByPop)
+
+void writeKDEResult(KDEResult *kdeResult, string outfile)
 {
     ofstream fout;
-    int numPop = indDataByPop->size();
-    for (int pop = 0; pop < numPop; pop++)
-    {
-        char winStr[10];
-        sprintf(winStr, "%d", winsizeByPop[pop]);
-        string popName = indDataByPop->at(pop)->pop;
-        string kdeOutfile = outfile;
-        kdeOutfile += ".";
-        kdeOutfile += winStr;
-        kdeOutfile += "SNPs.";
-        kdeOutfile += popName;
-        kdeOutfile += ".kde";
-
-        fout.open(kdeOutfile.c_str());
-        if (fout.fail())
-        {
-            cerr << "ERROR: Failed to open " << kdeOutfile << " for writing.\n";
-            throw - 1;
-        }
-
-        for (int i = 0; i < kdeResultByPop->at(pop)->size; i++)
-        {
-            fout << kdeResultByPop->at(pop)->x[i] << " " << kdeResultByPop->at(pop)->y[i] << endl;
-        }
-        cerr << "Wrote " << kdeOutfile << endl;
-        fout.close();
-    }
-
-    return;
-}
-*/
-void writeKDEResult(KDEResult *kdeResult, IndData *indData, string outfile, int winsize)
-{
-    ofstream fout;
-    char winStr[10];
-    sprintf(winStr, "%d", winsize);
-    string popName = indData->pop;
-    string kdeOutfile = outfile;
-    kdeOutfile += ".";
-    kdeOutfile += winStr;
-    kdeOutfile += "SNPs.";
-    kdeOutfile += popName;
-    kdeOutfile += ".kde";
-
-    fout.open(kdeOutfile.c_str());
+    fout.open(outfile.c_str());
     if (fout.fail())
     {
-        cerr << "ERROR: Failed to open " << kdeOutfile << " for writing.\n";
+        cerr << "ERROR: Failed to open " << outfile << " for writing.\n";
         throw - 1;
     }
 
@@ -310,8 +192,18 @@ void writeKDEResult(KDEResult *kdeResult, IndData *indData, string outfile, int 
     {
         fout << kdeResult->x[i] << " " << kdeResult->y[i] << endl;
     }
-    cerr << "Wrote " << kdeOutfile << endl;
+    cerr << "Wrote " << outfile << endl;
     fout.close();
 
     return;
+}
+
+string makeKDEFilename(string basename, int winsize)
+{
+    char winStr[10];
+    sprintf(winStr, "%d", winsize);
+    basename += ".";
+    basename += winStr;
+    basename += "SNPs.kde";
+    return basename;
 }

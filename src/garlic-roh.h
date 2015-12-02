@@ -48,8 +48,7 @@ struct ROHLength
   int size;
 };
 
-void scan(void *work_order);
-void scanSinglePop(void *order);
+
 void calcLOD(IndData *indData, MapData *mapData,
              HapData *hapData, FreqData *freqData,
              WinData *winData, centromere *centro,
@@ -57,21 +56,12 @@ void calcLOD(IndData *indData, MapData *mapData,
 
 double lod(const short &genotype, const double &freq, const double &error);
 
-
 vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< FreqData * > *freqDataByChr,
                                     vector< MapData * > *mapDataByChr,
                                     IndData *indData,
                                     centromere *centro,
                                     int winsize, double error, int MAX_GAP);
-/*
-vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,
-    vector< vector< FreqData * >* > *freqDataByPopByChr,
-    vector< MapData * > *mapDataByChr,
-    vector< IndData * > *indDataByPop, centromere *centro,
-    int* winsize, double error, int MAX_GAP, int numThreads, int pop);
-*/
-vector< ROHData * > *initROHData(IndData *indData);
 
 vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         vector< MapData * > *mapDataByChr,
@@ -86,17 +76,28 @@ ROHLength *initROHLength(int size, string pop);
 void releaseROHLength(ROHLength *rohLength);
 void releaseROHLength(vector< ROHLength * > *rohLengthByPop);
 
+vector< ROHData * > *initROHData(IndData *indData);
 void writeROHData(string outfile,
                   vector< ROHData * > *rohDataByInd,
                   vector< MapData * > *mapDataByChr,
-                  double shortMedBound,
-                  double medLongBound,
+                  int_pair_t bounds,
                   string popName,
                   string version);
+
+string makeROHFilename(string outfile);
 
 bool inGap(int qStart, int qEnd, int targetStart, int targetEnd);
 
 extern pthread_mutex_t cerr_mutex;
 
+/*
+vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,
+    vector< vector< FreqData * >* > *freqDataByPopByChr,
+    vector< MapData * > *mapDataByChr,
+    vector< IndData * > *indDataByPop, centromere *centro,
+    int* winsize, double error, int MAX_GAP, int numThreads, int pop);
+*/
+//void scan(void *work_order);
+//void scanSinglePop(void *order);
 
 #endif
