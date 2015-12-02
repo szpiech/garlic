@@ -22,7 +22,7 @@ LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_
 
 all : garlic
 
-garlic : garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o
+garlic : garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o garlic-cli.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o
 	$(CC) -o garlic garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o garlic-cli.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
 
 garlic-main.o : garlic-main.cpp garlic-cli.h
