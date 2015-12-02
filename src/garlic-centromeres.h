@@ -11,8 +11,7 @@ class centromere {
 
 public:
 
-	centromere(string arg);
-
+	centromere(string arg, string file, string defaultFileName);
 	centromere();
 
 	int centromereStart(string chr);

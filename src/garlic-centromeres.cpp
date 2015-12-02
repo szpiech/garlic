@@ -1,6 +1,6 @@
 #include "garlic-centromeres.h"
 
-centromere::centromere(string arg) {
+centromere::centromere(string arg, string file, string defaultFileName) {
 	if (arg.compare("hg18") == 0) {
 		makeHG18();
 	}
@@ -14,7 +14,7 @@ centromere::centromere(string arg) {
 		gapStart.clear();
 		gapEnd.clear();
 	}
-	else {
+	else if (file.compare(defaultFileName) != 0){
 		readCustomCentromeres(arg);
 	}
 	return;

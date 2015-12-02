@@ -134,5 +134,16 @@ const string DEFAULT_CENTROMERE_FILE = "__none";
 const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
 
 param_t *getCLI(int argc, char *argv[]);
+bool checkBuild(string BUILD);
+bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE);
+bool checkAutoFreq(string freqfile, bool FREQ_ONLY, bool &AUTO_FREQ);
+bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE);
+bool checkAutoCutoff(bool LOD_CUTOFF, bool &AUTO_CUTOFF);
+bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS);
+bool checkRequiredFiles(string tpedfile, string tfamfile);
+bool checkThreads(int numThreads);
+bool checkError(double error);
+bool checkWinsize(int winsize);
+bool checkMaxGap(int MAX_GAP);
 
 #endif

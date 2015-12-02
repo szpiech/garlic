@@ -40,153 +40,64 @@ int main(int argc, char *argv[])
 {
     param_t *params = getCLI(argc, argv);
 
-    int KDE_SUBSAMPLE = params->getIntFlag(ARG_KDE_SUBSAMPLE);
-    int POP_SPLIT = params->getBoolFlag(ARG_POP_SPLIT);
-    int winsize = params->getIntFlag(ARG_WINSIZE);
-    int* winsizeByPop = NULL;
-    string outfile = params->getStringFlag(ARG_OUTFILE);
-    string tpedfile = params->getStringFlag(ARG_TPED);
-    string tfamfile = params->getStringFlag(ARG_TFAM);
-    int numThreads = params->getIntFlag(ARG_THREADS);
-    double error = params->getDoubleFlag(ARG_ERROR);
-    int MAX_GAP = params->getIntFlag(ARG_MAX_GAP);
-    int nresample = params->getIntFlag(ARG_RESAMPLE);
-    bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
-    vector<double> boundSizes = params->getDoubleListFlag(ARG_BOUND_SIZE);
-    double LOD_CUTOFF = params->getDoubleFlag(ARG_LOD_CUTOFF);
-    //string lodCutoffFile = params->getStringFlag(ARG_LOD_CUTOFF_FILE);
-    //string boundSizeFile = params->getStringFlag(ARG_BOUND_SIZE_FILE);
-    bool AUTO_BOUNDS = true;
-    bool AUTO_CUTOFF = true;
-    char TPED_MISSING = params->getCharFlag(ARG_TPED_MISSING);
-    string freqfile = params->getStringFlag(ARG_FREQ_FILE);
-    bool AUTO_FREQ = true;
-    bool FREQ_ONLY = params->getBoolFlag(ARG_FREQ_ONLY);
-    vector<int> multiWinsizes = params->getIntListFlag(ARG_WINSIZE_MULTI);
-    bool WINSIZE_EXPLORE = false;
-    bool AUTO_WINSIZE = params->getBoolFlag(ARG_AUTO_WINSIZE);
+    bool argerr = false;
 
     string BUILD = params->getStringFlag(ARG_BUILD);
+    argerr = checkBuild(BUILD);
+
+    vector<int> multiWinsizes = params->getIntListFlag(ARG_WINSIZE_MULTI);
+    bool WINSIZE_EXPLORE = false;
+    argerr = checkMultiWinsizes(multiWinsizes, WINSIZE_EXPLORE);
+
+    bool AUTO_WINSIZE = params->getBoolFlag(ARG_AUTO_WINSIZE);
+    argerr = checkAutoWinsize(WINSIZE_EXPLORE, AUTO_WINSIZE);
+
+    string freqfile = params->getStringFlag(ARG_FREQ_FILE);
+    bool FREQ_ONLY = params->getBoolFlag(ARG_FREQ_ONLY);
+    bool AUTO_FREQ = true;
+    argerr = checkAutoFreq(freqfile, FREQ_ONLY, AUTO_FREQ);
+
+    double LOD_CUTOFF = params->getDoubleFlag(ARG_LOD_CUTOFF);
+    bool AUTO_CUTOFF = true;
+    argerr = checkAutoCutoff(LOD_CUTOFF, AUTO_CUTOFF);
+
+    vector<double> boundSizes = params->getDoubleListFlag(ARG_BOUND_SIZE);
+    bool AUTO_BOUNDS = true;
+    argerr = checkBoundSizes(boundSizes, AUTO_BOUNDS);
+
+    string tpedfile = params->getStringFlag(ARG_TPED);
+    string tfamfile = params->getStringFlag(ARG_TFAM);
+    argerr = checkRequiredFiles(tpedfile, tfamfile);
+
+    int numThreads = params->getIntFlag(ARG_THREADS);
+    argerr = checkThreads(numThreads);
+
+    double error = params->getDoubleFlag(ARG_ERROR);
+    argerr = checkError(error);
+
+    int winsize = params->getIntFlag(ARG_WINSIZE);
+    argerr = checkWinsize(winsize);
+
+    int MAX_GAP = params->getIntFlag(ARG_MAX_GAP);
+    argerr = checkMaxGap(MAX_GAP);
+
+    if(argerr) return -1;
+
+    int KDE_SUBSAMPLE = params->getIntFlag(ARG_KDE_SUBSAMPLE);
+    int nresample = params->getIntFlag(ARG_RESAMPLE);
+    string outfile = params->getStringFlag(ARG_OUTFILE);    
+    bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
+    char TPED_MISSING = params->getCharFlag(ARG_TPED_MISSING);
     string centromereFile = params->getStringFlag(ARG_CENTROMERE_FILE);
 
-    if (BUILD.compare("hg18") != 0 &&
-            BUILD.compare("hg19") != 0 &&
-            BUILD.compare("hg38") != 0 &&
-            BUILD.compare("none") != 0) {
-        cerr << "ERROR: Must choose hg18/hg19/hg38/none for build version.\n";
-        return -1;
-    }
-
-    if (multiWinsizes[0] != DEFAULT_WINSIZE_MULTI)
-    {
-        for (int i = 0; i < multiWinsizes.size(); i++)
-        {
-            if (multiWinsizes[i] <= 0)
-            {
-                cerr << "ERROR: SNP window sizes must be > 1.\n";
-                return -1;
-            }
-        }
-        WINSIZE_EXPLORE = true;
-    }
-
-    if (freqfile.compare(DEFAULT_FREQ_FILE) != 0)
-    {
-        AUTO_FREQ = false;
-        if (FREQ_ONLY)
-        {
-            cerr << "ERROR: Specifying both " << ARG_FREQ_ONLY << " and " << ARG_FREQ_FILE << " accomplishes nothing.\n";
-            return -1;
-        }
-    }
-
-    //Check if both AUTO_WINSIZE and WINSIZE_EXPLORE are set
-    //If so, exit with error.
-    if (WINSIZE_EXPLORE && AUTO_WINSIZE)
-    {
-        cerr << "ERROR: Must set only one of " << ARG_WINSIZE_MULTI << " and " << ARG_AUTO_WINSIZE << ".\n";
-        return -1;
-    }
-
-    if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF) {
-        AUTO_CUTOFF = false;
-    }
-
-    if (boundSizes[0] != DEFAULT_BOUND_SIZE && boundSizes.size() != 2) {
-        cerr << "ERROR: Must provide two bounds.\n";
-        return -1;
-    }
-    else if (boundSizes.size() == 2)
-    {
-        double tmp;
-        AUTO_BOUNDS = false;
-        if (boundSizes[0] <= 0 || boundSizes[1] <= 0)
-        {
-            cerr << "ERROR: User provided size boundaries must be positive.\n";
-            return -1;
-        }
-        else if (boundSizes[0] > boundSizes[1])
-        {
-            tmp = boundSizes[0];
-            boundSizes[0] = boundSizes[1];
-            boundSizes[1] = tmp;
-        }
-        else if (boundSizes[0] == boundSizes[1])
-        {
-            cerr << "ERROR: Size boundaries must be different.\n";
-            return -1;
-        }
-    }
-
-
-    if (tpedfile.compare(DEFAULT_TPED) == 0 || tfamfile.compare(DEFAULT_TFAM) == 0)
-    {
-        cerr << "ERROR: Must provide both a tped and tfam file.\n";
-        return -1;
-    }
-
-    if (numThreads <= 0)
-    {
-        cerr << "ERROR: Number of threads must be > 0.\n";
-        return 1;
-    }
-
-    if (error <= 0 || error >= 1)
-    {
-        cerr << "ERROR: Genotype error rate must be > 0 and < 1.\n";
-        return 1;
-    }
-
-    if (winsize <= 1)
-    {
-        cerr << "ERROR: SNP window size must be > 1.\n";
-        return 1;
-    }
-
     centromere *centro;
-    centro = new centromere;
-
-    if (centromereFile.compare(DEFAULT_CENTROMERE_FILE) != 0) {
-        cerr << "Using custom centromere file: " << centromereFile << endl;
-        centro->readCustomCentromeres(centromereFile);
-    }
-    else if (BUILD.compare("hg18") == 0) {
-        centro->makeHG18();
-    }
-    else if (BUILD.compare("hg19") == 0) {
-        centro->makeHG19();
-    }
-    else if (BUILD.compare("hg38") == 0) {
-        centro->makeHG38();
-    }
+    centro = new centromere(BUILD, centromereFile, DEFAULT_CENTROMERE_FILE);
 
     int numLoci, numInd, numCols;
     vector< int_pair_t > *chrCoordList;
     vector< MapData * > *mapDataByChr;
-
     string popName;
     IndData *indData;
-
     vector< HapData * > *hapDataByChr;
     vector< FreqData * > *freqDataByChr;
     vector< WinData * > *winDataByChr;
