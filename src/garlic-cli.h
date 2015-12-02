@@ -133,6 +133,6 @@ const string ARG_CENTROMERE_FILE = "--centromere";
 const string DEFAULT_CENTROMERE_FILE = "__none";
 const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
 
-param_t *initCLI();
+param_t *getCLI(int argc, char *argv[]);
 
 #endif

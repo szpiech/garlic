@@ -1,6 +1,6 @@
 #include "garlic-cli.h"
 
-param_t *initCLI(){
+param_t *getCLI(int argc, char *argv[]){
 	param_t *params = new param_t;
 	params->addFlag(ARG_OUTFILE, DEFAULT_OUTFILE, "", HELP_OUTFILE);
     params->addFlag(ARG_THREADS, DEFAULT_THREADS, "", HELP_THREADS);
