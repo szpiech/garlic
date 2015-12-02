@@ -63,7 +63,7 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< MapData * > *mapDataByChr,
                                     IndData *indData,
                                     centromere *centro,
-                                    int* winsize, double error, int MAX_GAP);
+                                    int winsize, double error, int MAX_GAP);
 /*
 vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,
     vector< vector< FreqData * >* > *freqDataByPopByChr,

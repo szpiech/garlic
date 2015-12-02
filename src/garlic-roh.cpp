@@ -201,7 +201,7 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< MapData * > *mapDataByChr,
                                     IndData *indData,
                                     centromere *centro,
-                                    int* winsize, double error, int MAX_GAP)
+                                    int winsize, double error, int MAX_GAP)
 {
     vector< WinData * > *winDataByChr = initWinData(mapDataByChr, indData);
 
@@ -341,8 +341,6 @@ vector< ROHData * > *initROHData(IndData *indData)
         ROHData *rohData = new ROHData;
         rohDataByInd->push_back(rohData);
     }
-    rohDataByInd->push_back(rohDataByInd);
-
     return rohDataByInd;
 }
 

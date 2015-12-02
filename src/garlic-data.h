@@ -1,4 +1,4 @@
-#ifndef __GARLIC_DATA_H__
+ #ifndef __GARLIC_DATA_H__
 #define __GARLIC_DATA_H__
 #include <string>
 #include <iostream>
@@ -71,12 +71,12 @@ struct DoubleData
 string getPost(int num);
 bool goodDouble(string str);
 
-map<string, double> readLODCutoff(string lodCutoffFile, map<string, int> &pop2size);
+//map<string, double> readLODCutoff(string lodCutoffFile, map<string, int> &pop2size);
 void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<string, double> &pop2MLbound, map<string, int> &pop2size);
 
 FreqData *initFreqData(int nloci);
 void releaseFreqData(FreqData *data);
-void releaseFreqData(vector< vector< FreqData * >* > *freqDataByPopByChr);
+void releaseFreqData(vector< FreqData * > *freqDataByChr);
 
 FreqData *calcFreqData(HapData *data, int nresample, const gsl_rng *r);
 vector< FreqData * > *calcFreqData2(vector< HapData * > *hapDataByChr, int nresample);
@@ -84,6 +84,7 @@ void writeFreqData(string freqOutfile, string popName,
                    vector< FreqData * > *freqDataByChr,
                    vector< MapData * > *mapDataByChr,
                    IndData *indData);
+
 vector< FreqData * > *readFreqData(string freqfile, string popName,
         vector< int_pair_t > *chrCoordList,
         vector< MapData * > *mapDataByChr);
@@ -112,16 +113,13 @@ void releaseMapData(MapData *data);
 void releaseMapData(vector< MapData * > *mapDataByChr);
 
 void scanIndData3(string filename, int &numInd, string &popName);
-
-IndData *readIndData3(string filename, int numInd, string *indList);
-
+IndData *readIndData3(string filename, int numInd);
 IndData *initIndData(int nind);
-void releaseIndData(vector< IndData * > *indDataByPop);
 void releaseIndData(IndData *data);
 
 HapData *initHapData(unsigned int nind, unsigned int nloci);
 void releaseHapData(HapData *data);
-void releaseHapData(vector< vector< HapData * >* > *hapDataByPopByChr);
+void releaseHapData(vector< HapData * > *hapDataByChr);
 
 void subsetData(vector< HapData * > *hapDataByChr,
                 IndData *indData,
@@ -131,8 +129,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
 
 
 WinData *initWinData(unsigned int nind, unsigned int nloci);
-vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);
-vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop, int pop);
+vector< WinData * > *initWinData(vector< MapData * > *mapDataByChr, IndData *indData);
 void releaseWinData(WinData *data);
 void releaseWinData(vector< WinData * > *winDataByChr);
 void writeWinData(vector< WinData * > *winDataByChr,

@@ -219,33 +219,6 @@ FreqData *calcFreqData(HapData *hapData, int nresample, const gsl_rng *r)
     return freqData;
 }
 
-/*
-vector< vector< FreqData * >* > *calcFreqData(vector< vector< HapData * >* > *hapDataByPopByChr, int nresample)
-{
-    const gsl_rng_type *T;
-    gsl_rng *r;
-    T = gsl_rng_default;
-    r = gsl_rng_alloc (T);
-    gsl_rng_set(r, time(NULL));
-
-    vector< vector< FreqData * >* > *freqDataByPopByChr = new vector< vector< FreqData * >* >;
-
-    for (int pop = 0; pop < hapDataByPopByChr->size(); pop++)
-    {
-        vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
-        for (int chr = 0; chr < hapDataByPopByChr->at(pop)->size(); chr++)
-        {
-            FreqData *data = calcFreqData(hapDataByPopByChr->at(pop)->at(chr), nresample, r);
-            freqDataByChr->push_back(data);
-        }
-        freqDataByPopByChr->push_back(freqDataByChr);
-    }
-
-    gsl_rng_free(r);
-
-    return freqDataByPopByChr;
-}
-*/
 vector< FreqData * > *calcFreqData2(vector< HapData * > *hapDataByChr, int nresample)
 {
     const gsl_rng_type *T;
@@ -302,65 +275,17 @@ void releaseFreqData(FreqData *data)
     return;
 }
 
-void releaseFreqData(vector< vector< FreqData * >* > *freqDataByPopByChr)
+void releaseFreqData(vector< FreqData * > *freqDataByChr)
 {
-    for (int pop = 0; pop < freqDataByPopByChr->size(); pop++)
+    for (int chr = 0; chr < freqDataByChr->size(); chr++)
     {
-        for (int chr = 0; chr < freqDataByPopByChr->at(pop)->size(); chr++)
-        {
-            releaseFreqData(freqDataByPopByChr->at(pop)->at(chr));
-        }
-        freqDataByPopByChr->at(pop)->clear();
-        delete freqDataByPopByChr->at(pop);
+        releaseFreqData(freqDataByChr->at(chr));
     }
-    freqDataByPopByChr->clear();
-    delete freqDataByPopByChr;
+    freqDataByChr->clear();
+    delete freqDataByChr;
     return;
 }
 
-/*
-void writeFreqData(string freqOutfile,
-                   vector< vector< FreqData * >* > *freqDataByPopByChr,
-                   vector< MapData * > *mapDataByChr,
-                   vector< IndData * > *indDataByPop)
-{
-    freqOutfile += ".gz";
-    ogzstream fout;
-    fout.open(freqOutfile.c_str());
-
-    if (fout.fail())
-    {
-        cerr << "ERROR: Failed to open " << freqOutfile << " for writing.\n";
-        throw 0;
-    }
-
-    fout << "SNP\tALLELE\t";
-
-    for (int pop = 0; pop < indDataByPop->size(); pop++)
-    {
-        fout << indDataByPop->at(pop)->pop << "\t";
-    }
-
-    fout << "\n";
-
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
-    {
-        for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
-        {
-            fout << mapDataByChr->at(chr)->locusName[locus] << "\t"
-                 << mapDataByChr->at(chr)->allele[locus] << "\t";
-            for (int pop = 0; pop < indDataByPop->size(); pop++)
-            {
-                fout << freqDataByPopByChr->at(pop)->at(chr)->freq[locus] << "\t";
-            }
-            fout << "\n";
-        }
-    }
-    cerr << "Wrote " << freqOutfile << endl;
-    fout.close();
-    return;
-}
-*/
 void writeFreqData(string freqOutfile, string popName,
                    vector< FreqData * > *freqDataByChr,
                    vector< MapData * > *mapDataByChr,
@@ -392,161 +317,6 @@ void writeFreqData(string freqOutfile, string popName,
     return;
 }
 
-/*
-vector< vector< FreqData * >* > *readFreqData(string freqfile,
-        vector< int_pair_t > *chrCoordList,
-        vector< MapData * > *mapDataByChr,
-        map<string, int> &pop2index)
-{
-    //scan file for format integrity
-    int expectedCols = pop2index.size() + 2;
-    int expectedRows = 1;
-
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
-    {
-        expectedRows += mapDataByChr->at(chr)->nloci;
-    }
-
-    igzstream fin;
-    fin.open(freqfile.c_str());
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << freqfile << " for reading.\n";
-        throw 0;
-    }
-    cerr << "Checking " << freqfile << " integrity...\n";
-    string line;
-    int currentRows = 0;
-    int currentCols = 0;
-    int previousCols = -1;
-    while (getline(fin, line))
-    {
-        currentRows++;
-        currentCols = countFields(line);
-        if (currentCols < expectedCols)
-        {
-            cerr << "ERROR: Found " << currentCols << " in " << freqfile
-                 << " on line " << currentRows << " but expected at least "
-                 << expectedCols << ".\n";
-            throw 0;
-        }
-        if (currentCols != previousCols && previousCols != -1)
-        {
-            cerr << "ERROR: " << freqfile << " has differing number of columns across rows.\n";
-            throw 0;
-        }
-        previousCols = currentCols;
-    }
-
-    if (currentRows != expectedRows)
-    {
-        cerr << "ERROR: " << freqfile << " has " << currentRows << " rows but expected "
-             << expectedRows << ".\n";
-        throw 0;
-    }
-
-    fin.close();
-    fin.clear();
-
-    //allocate
-    vector< vector< FreqData * >* > *freqDataByPopByChr = new vector< vector< FreqData * >* >;
-
-    for (int pop = 0; pop < pop2index.size(); pop++)
-    {
-        vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
-        for (int chr = 0; chr < mapDataByChr->size(); chr++)
-        {
-            FreqData *data = initFreqData(mapDataByChr->at(chr)->nloci);
-            freqDataByChr->push_back(data);
-        }
-        freqDataByPopByChr->push_back(freqDataByChr);
-    }
-
-    fin.open(freqfile.c_str());
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << freqfile << " for reading.\n";
-        throw 0;
-    }
-
-    cerr << "Loading frequencies...\n";
-
-    string header, junk;
-    int popsFound = 0;
-    getline(fin, header);
-    int headerSize = countFields(header) - 2;
-    if (headerSize <= 0)
-    {
-        cerr << "ERROR: " << freqfile << " header line has too few columns.\n";
-        throw 0;
-    }
-    stringstream ss;
-    ss.str(header);
-    ss >> junk >> junk;
-    string *popList = new string[headerSize];
-    for (int i = 0; i < headerSize; i++)
-    {
-        ss >> popList[i];
-        if (pop2index.count(popList[i]) > 0) popsFound++;
-    }
-
-    if (popsFound != pop2index.size())
-    {
-        cerr << "ERROR: " << freqfile << " must provide allele frequencies for all populations.\n";
-        cerr << "\tExpected frequencies for\n";
-
-        for (map<string, int>::iterator it = pop2index.begin(); it != pop2index.end(); it++)
-        {
-            cerr << "\t" << it->first << endl;
-        }
-        cerr << "\tbut found only\n";
-        for (int i = 0; i < headerSize; i++)
-        {
-            if (pop2index.count(popList[i]) > 0)
-            {
-                cerr << "\t" << popList[i] << endl;
-            }
-        }
-        throw 0;
-    }
-
-
-    string locusID;//, allele;
-    char allele;
-    double freq;
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
-    {
-        for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
-        {
-            getline(fin, line);
-            ss.clear();
-            ss.str(line);
-            ss >> locusID >> allele;
-            if (mapDataByChr->at(chr)->locusName[locus].compare(locusID) != 0)
-            {
-                cerr << "ERROR: Loci appear out of order in " << freqfile << " relative to other files.\n";
-                throw 0;
-            }
-            else
-            {
-                mapDataByChr->at(chr)->allele[locus] = allele;
-            }
-            for (int pop = 0; pop < headerSize; pop++)
-            {
-                ss >> freq;
-                if (pop2index.count(popList[pop]) > 0)
-                {
-                    freqDataByPopByChr->at(pop2index[popList[pop]])->at(chr)->freq[locus] = freq;
-                }
-            }
-        }
-    }
-
-    fin.close();
-
-    return freqDataByPopByChr;
-}
-*/
 vector< FreqData * > *readFreqData(string freqfile, string popName,
                                    vector< int_pair_t > *chrCoordList,
                                    vector< MapData * > *mapDataByChr)
@@ -661,7 +431,7 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
                 fin >> freq;
                 if (pop == popLocation)
                 {
-                    freqDataByPopByChr->at(chr)->freq[locus] = freq;
+                    freqDataByChr->at(chr)->freq[locus] = freq;
                 }
             }
         }
@@ -887,195 +657,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
     return hapDataByPopByChr;
 }
 */
-/*
-vector< vector< HapData * >* > *readTPEDHapData2(string filename,
-        int expectedLoci,
-        int expectedInd,
-        vector< int_pair_t > *chrCoordList,
-        string *indList,
-        map<string, string> &ind2pop,
-        map<string, int> &pop2size,
-        map<string, int> &pop2index,
-        char TPED_MISSING,
-        vector< MapData * > *mapDataByChr)
-{
-    int expectedHaps = 2 * expectedInd;
-    igzstream fin;
-    cerr << "Checking " << filename << "...\n";
-    fin.open(filename.c_str());
 
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    //int fileStart = fin.tellg();
-    string line;
-    int nhaps = -1;
-    int nloci = 0;
-    while (getline(fin, line))
-    {
-        nloci++;
-        nhaps = countFields(line);
-        //cout << "nhaps: " << current_nhaps << endl;
-        if (nhaps != expectedHaps + 4)
-        {
-            cerr << "ERROR: line " << nloci << " of " << filename << " has " << nhaps
-                 << " columns, but expected " << expectedHaps + 4 << ".\n";
-            throw 0;
-        }
-    }
-    if (nloci != expectedLoci)
-    {
-        cerr << "ERROR: " << filename << " has " << nloci
-             << " loci, but expected " << expectedLoci << ".\n";
-        throw 0;
-    }
-
-    fin.close();
-    fin.clear(); // clear error flags
-    //fin.seekg(fileStart);
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    cerr << "Loading genotypes " << filename << "...\n";
-
-    vector< vector< HapData * >* > *hapDataByPopByChr = new vector< vector< HapData * >* >;
-    //track index for individuals in hapDataByPopByChr->at(pop)->at(chr)->data
-    map<string, int> pop2currind;
-
-    //For each population
-    for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
-    {
-        pop2currind[it->first] = 0; //init
-        //number of haplotypes in current population
-        int totalInd = it->second;
-        vector< HapData * > *hapDataByChr = new vector< HapData * >;
-        for (int chr = 0; chr < chrCoordList->size(); chr++)
-        {
-            int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
-            HapData *data = initHapData(totalInd, totalLoci);
-            hapDataByChr->push_back(data);
-        }
-        hapDataByPopByChr->push_back(hapDataByChr);
-    }
-
-    //string alleleStr1, alleleStr2;
-    char alleleStr1, alleleStr2;
-    string junk;//, oneAllele;
-    char oneAllele, zeroAllele;
-    //stringstream ss;
-    //For each chromosome
-    for (int chr = 0; chr < chrCoordList->size(); chr++)
-    {
-        int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
-        //For each locus on the chromosome
-        for (int locus = 0; locus < totalLoci; locus++)
-        {
-            for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
-            {
-                pop2currind[it->first] = 0;
-            }
-            //stringstream ss;
-            oneAllele = mapDataByChr->at(chr)->allele[locus];
-            zeroAllele = mapDataByChr->at(chr)->allele0[locus];
-            //string genotypes;
-            //getline(fin, genotypes);
-            //ss.str(genotypes);
-            /*
-            ss >> junk;
-            ss >> junk;
-            ss >> junk;
-            ss >> junk;
-            */
-fin >> junk;
-fin >> junk;
-fin >> junk;
-fin >> junk;
-for (int ind = 0; ind < expectedInd; ind++)
-{
-    string popStr = ind2pop[indList[ind]];
-    int pop = pop2index[popStr];
-    int index = pop2currind[popStr];
-    //ss >> alleleStr1 >> alleleStr2;
-    fin >> alleleStr1 >> alleleStr2;
-    short allele1, allele2;
-    allele1 = -1;
-    allele2 = -1;
-
-    //if (alleleStr1.compare(TPED_MISSING) == 0)
-    if (alleleStr1 == TPED_MISSING)
-    {
-        allele1 = -9;
-    }
-    //else if (oneAllele.compare(TPED_MISSING) == 0)
-    else if (oneAllele == TPED_MISSING)
-    {
-        oneAllele = alleleStr1;
-        allele1 = 1;
-    }
-    //else if (alleleStr1.compare(oneAllele) == 0)
-    else if (alleleStr1 == oneAllele)
-    {
-        allele1 = 1;
-    }
-    else
-    {
-        zeroAllele = alleleStr1;
-        allele1 = 0;
-    }
-
-    //if (alleleStr2.compare(TPED_MISSING) == 0)
-    if (alleleStr2 == TPED_MISSING)
-    {
-        allele2 = -9;
-    }
-    //else if (oneAllele.compare(TPED_MISSING) == 0)
-    else if (oneAllele == TPED_MISSING)
-    {
-        oneAllele = alleleStr2;
-        allele2 = 1;
-    }
-    //else if (alleleStr2.compare(oneAllele) == 0)
-    else if (alleleStr2 == oneAllele)
-    {
-        allele2 = 1;
-    }
-    else
-    {
-        zeroAllele = alleleStr2;
-        allele2 = 0;
-    }
-
-    //load into data stru
-    if (allele1 + allele2 < 0)
-    {
-        hapDataByPopByChr->at(pop)->at(chr)->data[locus][index] = -9;
-    }
-    else
-    {
-        hapDataByPopByChr->at(pop)->at(chr)->data[locus][index] = allele1 + allele2;
-    }
-    //hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
-    pop2currind[ind2pop[indList[ind]]]++;
-    //ss.clear();
-}
-
-mapDataByChr->at(chr)->allele[locus] = oneAllele;
-mapDataByChr->at(chr)->allele0[locus] = zeroAllele;
-}
-}
-
-fin.close();
-return hapDataByPopByChr;
-}
-* /
 vector< HapData * > *readTPEDHapData3(string filename,
                                       int expectedLoci,
                                       int expectedInd,
@@ -1173,6 +755,7 @@ vector< HapData * > *readTPEDHapData3(string filename,
     return hapDataByChr;
 }
 
+/*
 void writeTPEDDataByPop(string outfile, vector< vector< HapData * >* > *hapDataByPopByChr, vector< MapData * > *mapDataByChr, map<string, int> &pop2index)
 {
     ogzstream fout;
@@ -1221,6 +804,8 @@ void writeTPEDDataByPop(string outfile, vector< vector< HapData * >* > *hapDataB
     }
     return;
 }
+*/
+/*
 void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<string, int> &pop2index)
 {
     ogzstream fout;
@@ -1249,259 +834,16 @@ void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<s
     }
     return;
 }
-
-/*
-vector< vector< HapData * >* > *readHapData(string filename,
-        int expectedLoci,
-        int expectedInd,
-        vector< int_pair_t > *chrCoordList,
-        vector< int_pair_t > *indCoordList)
-{
-    int expectedHaps = 2 * expectedInd;
-    igzstream fin;
-    cerr << "Checking " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    //int fileStart = fin.tellg();
-    string line;
-    int nhaps = 0;
-    int nloci = -1;
-    while (getline(fin, line))
-    {
-        nhaps++;
-        nloci = countFields(line);
-        //cout << "nloci: " << current_nloci << endl;
-        if (nloci != expectedLoci)
-        {
-            cerr << "ERROR: line " << nhaps << " of " << filename << " has " << nloci
-                 << ", but expected " << expectedLoci << ".\n";
-            throw 0;
-        }
-    }
-    if (nhaps != expectedHaps)
-    {
-        cerr << "ERROR: " << filename << " has " << nhaps
-             << " haplotypes, but expected " << expectedHaps << ".\n";
-        throw 0;
-    }
-
-    fin.close();
-    fin.clear(); // clear error flags
-    //fin.seekg(fileStart);
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    cerr << "Loading genotypes " << filename << "...\n";
-
-    vector< vector< HapData * >* > *hapDataByPopByChr = new vector< vector< HapData * >* >;
-
-    for (int pop = 0; pop < indCoordList->size(); pop++)
-    {
-        int totalHaps = 2 * (indCoordList->at(pop).second - indCoordList->at(pop).first + 1);
-        vector< HapData * > *hapDataByChr = new vector< HapData * >;
-        for (int chr = 0; chr < chrCoordList->size(); chr++)
-        {
-            int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
-            HapData *data = initHapData(totalHaps, totalLoci);
-            hapDataByChr->push_back(data);
-        }
-        hapDataByPopByChr->push_back(hapDataByChr);
-    }
-
-    //For each population
-    for (int pop = 0; pop < indCoordList->size(); pop++)
-    {
-        int totalHaps = 2 * (indCoordList->at(pop).second - indCoordList->at(pop).first + 1);
-        //For each haplotype in the population
-        for (int hap = 0; hap < totalHaps; hap++)
-        {
-            //For each chromosome
-            for (int chr = 0; chr < chrCoordList->size(); chr++)
-            {
-                int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
-                //For each locus on the chromosome
-                for (int locus = 0; locus < totalLoci; locus++)
-                {
-                    short allele;
-                    fin >> allele;
-                    if (allele != 0 && allele != 1 && allele != -9)
-                    {
-                        string hapPost, popPost, chrPost, locPost;
-                        hapPost = getPost(hap + 1);
-                        popPost = getPost(pop + 1);
-                        chrPost = getPost(chr + 1);
-                        locPost = getPost(locus + 1);
-
-                        cerr << "ERROR: The " << hap + 1 << hapPost << " haplotype in the "
-                             << pop + 1 << popPost << " population at the "
-                             << locus + 1 << locPost << " locus on the "
-                             << chr + 1 << chrPost << " chromosome has an illegal value.  Must be 0/1/-9.\n";
-
-                        throw 0;
-                    }
-                    hapDataByPopByChr->at(pop)->at(chr)->data[hap][locus] = allele;
-                }
-            }
-        }
-
-    }
-    fin.close();
-
-    return hapDataByPopByChr;
-}
-*/
-/*
-vector< vector< HapData * >* > *readHapData2(string filename,
-        int expectedLoci,
-        int expectedInd,
-        vector< int_pair_t > *chrCoordList,
-        string *indList,
-        map<string, string> &ind2pop,
-        map<string, int> &pop2size,
-        map<string, int> &pop2index)
-{
-    int expectedHaps = 2 * expectedInd;
-    igzstream fin;
-    cerr << "Checking " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    //int fileStart = fin.tellg();
-    string line;
-    int nhaps = 0;
-    int nloci = -1;
-    while (getline(fin, line))
-    {
-        nhaps++;
-        nloci = countFields(line);
-        //cout << "nloci: " << current_nloci << endl;
-        if (nloci != expectedLoci)
-        {
-            cerr << "ERROR: line " << nhaps << " of " << filename << " has " << nloci
-                 << ", but expected " << expectedLoci << ".\n";
-            throw 0;
-        }
-    }
-    if (nhaps != expectedHaps)
-    {
-        cerr << "ERROR: " << filename << " has " << nhaps
-             << " haplotypes, but expected " << expectedHaps << ".\n";
-        throw 0;
-    }
-
-    fin.close();
-    fin.clear(); // clear error flags
-    //fin.seekg(fileStart);
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        throw 0;
-    }
-
-    cerr << "Loading genotypes " << filename << "...\n";
-
-    //track index for individuals in hapDataByPopByChr->at(pop)->at(chr)->data
-    map<string, int> pop2currind;
-    vector< vector< HapData * >* > *hapDataByPopByChr = new vector< vector< HapData * >* >;
-
-    //For each population
-    for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
-    {
-        pop2currind[it->first] = 0; //init
-        //number of haplotypes in current population
-        int totalHaps = 2 * (it->second);
-        vector< HapData * > *hapDataByChr = new vector< HapData * >;
-        for (int chr = 0; chr < chrCoordList->size(); chr++)
-        {
-            int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
-            HapData *data = initHapData(totalHaps, totalLoci);
-            hapDataByChr->push_back(data);
-        }
-        hapDataByPopByChr->push_back(hapDataByChr);
-    }
-
-    //for each individual
-    string hap1, hap2;
-    short allele1, allele2;
-    for (int ind = 0; ind < expectedInd; ind++)
-    {
-        stringstream ss1, ss2;
-        getline(fin, hap1);
-        getline(fin, hap2);
-        ss1.str(hap1);
-        ss2.str(hap2);
-
-        int pop = pop2index[ind2pop[indList[ind]]];
-        int index = pop2currind[ind2pop[indList[ind]]];
-        //For each chromosome
-        for (int chr = 0; chr < chrCoordList->size(); chr++)
-        {
-            //int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
-            //For each locus on the chromosome
-            for (int locus = 0; locus < hapDataByPopByChr->at(pop)->at(chr)->nloci; locus++)
-            {
-                ss1 >> allele1;
-                ss2 >> allele2;
-                //error checking
-                if (allele1 != 0 && allele1 != 1 && allele1 != -9)
-                {
-                    cerr << "ERROR: Individual " << indList[ind] << " has an illegal value ("
-                         << allele1 << ").  Must be 0/1/-9.\n";
-
-                    throw 0;
-                }
-                if (allele2 != 0 && allele2 != 1 && allele2 != -9)
-                {
-                    cerr << "ERROR: Individual " << indList[ind] << " has an illegal value ("
-                         << allele2 << ").  Must be 0/1/-9.\n";
-
-                    throw 0;
-                }
-                //load into data stru
-                hapDataByPopByChr->at(pop)->at(chr)->data[2 * index][locus] = allele1;
-                hapDataByPopByChr->at(pop)->at(chr)->data[2 * index + 1][locus] = allele2;
-            }
-        }
-        pop2currind[ind2pop[indList[ind]]]++;
-    }
-
-    fin.close();
-
-    return hapDataByPopByChr;
-}
 */
 
-void releaseHapData(vector< vector< HapData * >* > *hapDataByPopByChr)
+void releaseHapData(vector< HapData * > *hapDataByChr)
 {
-    for (int pop = 0; pop < hapDataByPopByChr->size(); pop++)
+    for (int chr = 0; chr < hapDataByChr->size(); chr++)
     {
-        for (int chr = 0; chr < hapDataByPopByChr->at(pop)->size(); chr++)
-        {
-            releaseHapData(hapDataByPopByChr->at(pop)->at(chr));
-        }
-        hapDataByPopByChr->at(pop)->clear();
-        delete hapDataByPopByChr->at(pop);
+        releaseHapData(hapDataByChr->at(chr));
     }
-    hapDataByPopByChr->clear();
-    delete hapDataByPopByChr;
+    hapDataByChr->clear();
+    delete hapDataByChr;
 }
 
 string getPost(int num)
@@ -1590,12 +932,9 @@ vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr,
     return winDataByPopByChr;
 }
 
-vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr,
-        vector< IndData * > *indDataByPop, int pop)
+vector< WinData * > *initWinData(vector< MapData * > *mapDataByChr, IndData *indData)
 {
-    vector< vector< WinData * >* > *winDataByPopByChr = new vector< vector< WinData * >* >;
-
-    int nind = indDataByPop->at(pop)->nind;
+    int nind = indData->nind;
     vector< WinData * > *winDataByChr = new vector< WinData * >;
     for (int chr = 0; chr < mapDataByChr->size(); chr++)
     {
@@ -1603,9 +942,8 @@ vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr,
         WinData *data = initWinData(nind, nloci);
         winDataByChr->push_back(data);
     }
-    winDataByPopByChr->push_back(winDataByChr);
 
-    return winDataByPopByChr;
+    return winDataByChr;
 }
 
 void writeWinData(vector< WinData * > *winDataByChr,
@@ -1814,8 +1152,7 @@ vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_p
     }
 
     string junk;
-    map<char, int> alleles;
-    map<char, int>::iterator it;
+    char oneAllele;
     int count = 4;
     //For each chromosome
     for (int i = 0; i < chrCoordList->size(); i++)
@@ -1830,25 +1167,21 @@ vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_p
             fin >> data->physicalPos[locus];
 
             //assign 'one' allele coding
-            alleles.clear();
+            oneAllele = TPED_MISSING;
             count = 4;
-            while (alleles.size() < 2 && count < numCols) {
+            while (oneAllele == TPED_MISSING && count < numCols) {
                 fin >> junk;
-                if (junk.compare(TPED_MISSING) != 0) alleles[junk.c_str()[0]] = 0;
+                if (junk[0] != TPED_MISSING) oneAllele = junk.c_str()[0];
                 count++;
             }
 
-            if (count >= numCols) {
-                cerr << "ERROR: locus " << data->locusName[locus] << " appears monomorphic.\n";
+            if (count >= numCols && oneAllele == TPED_MISSING) {
+                cerr << "ERROR: locus " << data->locusName[locus] << " appears to have no data.\n";
                 throw 0;
             }
-            it = alleles.begin();
-            data->allele[locus] = it->first;
-            /*
-            it++;
-            data->allele0[locus] = it->first;
-            */
-            getline(fin, junk);
+
+            data->allele[locus] = oneAllele;
+            if(count < numCols) getline(fin, junk);
         }
         data->chr = lc(data->chr);
         data->chr = checkChrName(data->chr);
@@ -1921,7 +1254,7 @@ void scanIndData3(string filename, int &numInd, string &popName) {
 }
 
 
-IndData *readIndData3(string filename, int numInd, string *indList)
+IndData *readIndData3(string filename, int numInd)
 {
     igzstream fin;
     cerr << "Loading IDs...\n";
@@ -1933,7 +1266,7 @@ IndData *readIndData3(string filename, int numInd, string *indList)
         throw 0;
     }
 
-    IndData *data = initIndData(numInd);
+    IndData *indData = initIndData(numInd);
 
     string line, pop, ind;
     stringstream ss;
@@ -1942,12 +1275,12 @@ IndData *readIndData3(string filename, int numInd, string *indList)
         getline(fin, line);
         ss.str(line);
         ss >> pop >> ind;
-        indList[i] = ind;
+        indData->indID[i] = ind;
         ss.clear();
     }
-
     fin.close();
 
+    indData->pop = pop;
     return indData;
 }
 
@@ -2085,7 +1418,7 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, i
 
     gsl_rng_free(r);
 
-    
+
     delete [] randInd;
 
     return rawWinData;

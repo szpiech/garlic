@@ -16,6 +16,15 @@
 
 using namespace std;
 
+void exploreWinsizes(vector< HapData * > *hapDataByChr,
+                     vector< FreqData * > *freqDataByChr,
+                     vector< MapData * > *mapDataByChr,
+                     IndData *indData,
+                     centromere *centro,
+                     vector<int> &multiWinsizes,
+                     double error,
+                     int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
+
 int main(int argc, char *argv[])
 {
     param_t params;
@@ -45,12 +54,10 @@ int main(int argc, char *argv[])
     params.addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);
     params.addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
 
-    try
-    {
+    try {
         params.parseCommandLine(argc, argv);
     }
-    catch (...)
-    {
+    catch (...) {
         return -1;
     }
 
@@ -124,33 +131,9 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    //Check if both LOD_CUTOFF and LOD_CUTOFF_FILE defined
-    //and error if so
-    /*
-    if (lodCutoffFile.compare(DEFAULT_LOD_CUTOFF_FILE) != 0 && LOD_CUTOFF != DEFAULT_LOD_CUTOFF)
-    {
-        cerr << "ERROR: At most, only one of " << ARG_LOD_CUTOFF << " and " << ARG_LOD_CUTOFF_FILE << " should be specified.\n";
-        return -1;
-    }
-    else if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF || lodCutoffFile.compare(DEFAULT_LOD_CUTOFF_FILE) != 0)
-    {
-        AUTO_CUTOFF = false;
-    }
-    */
     if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF) {
         AUTO_CUTOFF = false;
     }
-    /*
-    if (boundSizes[0] != DEFAULT_BOUND_SIZE && boundSizeFile.compare(DEFAULT_BOUND_SIZE_FILE) != 0)
-    {
-        cerr << "ERROR: At most, only one of " << ARG_BOUND_SIZE << " and " << ARG_BOUND_SIZE_FILE << " should be specified.\n";
-        return -1;
-    }
-    else if (boundSizes[0] != DEFAULT_BOUND_SIZE || boundSizeFile.compare(DEFAULT_BOUND_SIZE_FILE) != 0)
-    {
-        AUTO_BOUNDS = false;
-    }
-    */
 
     if (boundSizes[0] != DEFAULT_BOUND_SIZE && boundSizes.size() != 2) {
         cerr << "ERROR: Must provide two bounds.\n";
@@ -185,33 +168,6 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    /*
-    if (TPED == false)
-    {
-        if (mapfile.compare(DEFAULT_MAPFILE) == 0 ||
-                hapfile.compare(DEFAULT_HAPFILE) == 0 ||
-                indfile.compare(DEFAULT_INDFILE) == 0)
-        {
-            cerr << "ERROR: Must specify map/hap/ind files or tped/tfam files.\n";
-            return 1;
-        }
-        if (tpedfile.compare(DEFAULT_TPED) != 0 || tfamfile.compare(DEFAULT_TFAM) != 0)
-        {
-            cerr << "ERROR: Must specify map/hap/ind files or tped/tfam files, but not both.\n";
-            return 1;
-        }
-    }
-    else
-    {
-        if (mapfile.compare(DEFAULT_MAPFILE) != 0 ||
-                hapfile.compare(DEFAULT_HAPFILE) != 0 ||
-                indfile.compare(DEFAULT_INDFILE) != 0)
-        {
-            cerr << "ERROR: Must specify map/hap/ind files or tped/tfam files, but not both.\n";
-            return 1;
-        }
-    }
-    */
     if (numThreads <= 0)
     {
         cerr << "ERROR: Number of threads must be > 0.\n";
@@ -251,7 +207,6 @@ int main(int argc, char *argv[])
     vector< int_pair_t > *chrCoordList;
     vector< MapData * > *mapDataByChr;
 
-    string *indList;
     map<string, int> pop2index;
     string popName;
     IndData *indData;
@@ -266,14 +221,13 @@ int main(int argc, char *argv[])
         mapDataByChr = readTPEDMapData(tpedfile, numCols, chrCoordList, TPED_MISSING);
 
         scanIndData3(tfamfile, numInd, popName);
-        indList = new string[numInd];
-        indData = readIndData3(tfamfile, numInd, indList);
+        indData = readIndData3(tfamfile, numInd);
 
         //Read user pprovided freq data here
         if (!AUTO_FREQ)
         {
             cerr << "Loading user provided allele frequencies from " << freqfile << "...\n";
-            freqDataByChr = readFreqData(freqfile, chrCoordList, mapDataByChr, pop2index);
+            freqDataByChr = readFreqData(freqfile, popName, chrCoordList, mapDataByChr);
         }
 
         chrCoordList->clear();
@@ -302,6 +256,10 @@ int main(int argc, char *argv[])
     //Output results to file and exit
     if (WINSIZE_EXPLORE)
     {
+        exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
+                        indData, centro, multiWinsizes, error,
+                        MAX_GAP, KDE_SUBSAMPLE, outfile);
+        /*
         //This could be paralellized
         for (int i = 0; i < multiWinsizes.size(); i++)
         {
@@ -330,14 +288,14 @@ int main(int argc, char *argv[])
                 vector< HapData * > *subsetHapDataByChr;
                 IndData *subsetIndData;
                 subsetData(hapDataByChr, indData, &subsetHapDataByChr, &subsetIndData, KDE_SUBSAMPLE);
-                winDataByPopByChr = calcLODWindows(subsetHapDataByChr,
-                                                   freqDataByChr,
-                                                   mapDataByChr,
-                                                   subsetIndData,
-                                                   centro,
-                                                   winsize,
-                                                   error,
-                                                   MAX_GAP);
+                winDataByChr = calcLODWindows(subsetHapDataByChr,
+                                              freqDataByChr,
+                                              mapDataByChr,
+                                              subsetIndData,
+                                              centro,
+                                              winsize,
+                                              error,
+                                              MAX_GAP);
                 releaseHapData(subsetHapDataByChr);
                 releaseIndData(subsetIndData);
             }
@@ -363,11 +321,12 @@ int main(int argc, char *argv[])
 
             releaseWinData(winDataByChr);
         }
+        */
         return 0;
     }
     else if (AUTO_WINSIZE)
     {
-        int winsizeQuery -= 10;
+        int winsizeQuery = winsize - 10;
 
         vector< HapData * > *subsetHapDataByChr;
         IndData *subsetIndData;
@@ -635,4 +594,77 @@ int main(int argc, char *argv[])
     cerr << "Writing ROH tracts...\n";
     writeROHData(outfile, rohDataByInd, mapDataByChr, shortMedBound, medLongBound, popName, VERSION);
     return 0;
+}
+
+void exploreWinsizes(vector< HapData * > *hapDataByChr,
+                     vector< FreqData * > *freqDataByChr,
+                     vector< MapData * > *mapDataByChr,
+                     IndData *indData,
+                     centromere *centro,
+                     vector<int> &multiWinsizes,
+                     double error,
+                     int MAX_GAP, int KDE_SUBSAMPLE, string outfile)
+{
+    vector< WinData * > *winDataByChr;
+    //This could be paralellized
+    for (int i = 0; i < multiWinsizes.size(); i++)
+    {
+        char winStr[10];
+        sprintf(winStr, "%d", multiWinsizes[i]);
+        string kdeoutfile = outfile;
+        kdeoutfile += ".";
+        kdeoutfile += winStr;
+
+        //Since we are not proceeding with the full ROH calling
+        //procedure, we only calculate LOD scores for a random
+        //subset of individuals as governed by --kde-subsample
+        if (KDE_SUBSAMPLE <= 0)
+        {
+            winDataByChr = calcLODWindows(hapDataByChr,
+                                          freqDataByChr,
+                                          mapDataByChr,
+                                          indData,
+                                          centro,
+                                          multiWinsizes[i],
+                                          error,
+                                          MAX_GAP);
+        }
+        else
+        {
+            vector< HapData * > *subsetHapDataByChr;
+            IndData *subsetIndData;
+            subsetData(hapDataByChr, indData, &subsetHapDataByChr, &subsetIndData, KDE_SUBSAMPLE);
+            winDataByChr = calcLODWindows(subsetHapDataByChr,
+                                          freqDataByChr,
+                                          mapDataByChr,
+                                          subsetIndData,
+                                          centro,
+                                          winsize,
+                                          error,
+                                          MAX_GAP);
+            releaseHapData(subsetHapDataByChr);
+            releaseIndData(subsetIndData);
+        }
+
+        //Format the LOD window data into a single array per pop with no missing data
+        //Prepped for KDE
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
+
+        //Compute KDE of LOD score distribution
+        cerr << "Estimating distribution of raw LOD score windows:\n";
+        KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+        releaseDoubleData(rawWinData);
+
+        //Output kde points
+        try
+        {
+            writeKDEResult(kdeResult, indData, outfile, winsize);
+        }
+        catch (...)
+        {
+            throw 0;
+        }
+        releaseWinData(winDataByChr);
+    }
+    return;
 }
