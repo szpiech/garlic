@@ -185,6 +185,7 @@ void writeKDEResult(KDEResult *kdeResult, string outfile)
     if (fout.fail())
     {
         cerr << "ERROR: Failed to open " << outfile << " for writing.\n";
+        LOG.err("ERROR: Failed to open", outfile);
         throw - 1;
     }
 
@@ -192,7 +193,7 @@ void writeKDEResult(KDEResult *kdeResult, string outfile)
     {
         fout << kdeResult->x[i] << " " << kdeResult->y[i] << endl;
     }
-    cerr << "Wrote " << outfile << endl;
+    cerr << "Wrote KDE results to " << outfile << endl;
     fout.close();
 
     return;

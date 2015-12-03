@@ -3,6 +3,7 @@
 
 #include <string>
 #include "param_t.h"
+#include "garlic-errlog.h"
 
 using namespace std;
 
@@ -63,11 +64,11 @@ const string HELP_RESAMPLE = "Number of resamples for estimating allele frequenc
 \tfrequencies as calculated from the data.";
 
 const string ARG_TPED = "--tped";
-const string DEFAULT_TPED = "__tpedfile";
+const string DEFAULT_TPED = "none";
 const string HELP_TPED = "A tped formatted file containing map and genotype information.";
 
 const string ARG_TFAM = "--tfam";
-const string DEFAULT_TFAM = "__tfamfile";
+const string DEFAULT_TFAM = "none";
 const string HELP_TFAM = "A tfam formatted file containing population and individual IDs.";
 
 const string ARG_RAW_LOD = "--raw-lod";
@@ -78,7 +79,7 @@ const string ARG_LOD_CUTOFF = "--lod-cutoff";
 const double DEFAULT_LOD_CUTOFF = -999999;
 const string HELP_LOD_CUTOFF = "For LOD based ROH calling, specify a single LOD score cutoff\n\
 \tabove which ROH are called in all populations.  By default, this is chosen\n\
-\tautomatically per population with KDE.";
+\tautomatically with KDE.";
 
 /*
 const string ARG_LOD_CUTOFF_FILE = "--lod-cutoff-file";
@@ -104,10 +105,10 @@ const string HELP_BOUND_SIZE_FILE = "A file specifying the short/medium and medi
 */
 const string ARG_TPED_MISSING = "--tped-missing";
 const char DEFAULT_TPED_MISSING = '0';
-const string HELP_TPED_MISSING = "Missing data code for TPED files.";
+const string HELP_TPED_MISSING = "Single character missing data code for TPED files.";
 
 const string ARG_FREQ_FILE = "--freq-file";
-const string DEFAULT_FREQ_FILE = "_none";
+const string DEFAULT_FREQ_FILE = "none";
 const string HELP_FREQ_FILE = "A file specifying allele frequencies for\n\
 \teach population for all variants. File format:\n\
 \tSNP\tALLELE\t<pop1 ID> <pop2 ID> ...\n\
@@ -130,7 +131,7 @@ const string DEFAULT_BUILD = "none";
 const string HELP_BUILD = "Choose which genome build to use for centromere locations (hg18, hg19, or hg38).\n";
 
 const string ARG_CENTROMERE_FILE = "--centromere";
-const string DEFAULT_CENTROMERE_FILE = "__none";
+const string DEFAULT_CENTROMERE_FILE = "none";
 const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
 
 param_t *getCLI(int argc, char *argv[]);
@@ -138,7 +139,7 @@ bool checkBuild(string BUILD);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE);
 bool checkAutoFreq(string freqfile, bool FREQ_ONLY, bool &AUTO_FREQ);
 bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE);
-bool checkAutoCutoff(bool LOD_CUTOFF, bool &AUTO_CUTOFF);
+bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF);
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS);
 bool checkRequiredFiles(string tpedfile, string tfamfile);
 bool checkThreads(int numThreads);

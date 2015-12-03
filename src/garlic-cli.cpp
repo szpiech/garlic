@@ -27,8 +27,7 @@ param_t *getCLI(int argc, char *argv[]) {
 	params->addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);
 	params->addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
 
-	try { params->parseCommandLine(argc, argv); }
-	catch (...) { throw 0; }
+	if (!params->parseCommandLine(argc, argv)) return NULL;
 
 	return params;
 }
@@ -40,6 +39,7 @@ bool checkBuild(string BUILD)
 	        BUILD.compare("hg38") != 0 &&
 	        BUILD.compare(DEFAULT_BUILD) != 0) {
 		cerr << "ERROR: Must choose hg18/hg19/hg38/none for build version.\n";
+		LOG.err("ERROR: Must choose hg18/hg19/hg38/none for build version.");
 		return 1;
 	}
 	return 0;
@@ -49,11 +49,12 @@ bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE)
 {
 	if (multiWinsizes[0] != DEFAULT_WINSIZE_MULTI)
 	{
-		for (int i = 0; i < multiWinsizes.size(); i++)
+		for (unsigned int i = 0; i < multiWinsizes.size(); i++)
 		{
 			if (multiWinsizes[i] <= 0)
 			{
 				cerr << "ERROR: SNP window sizes must be > 1.\n";
+				LOG.err("ERROR: SNP window sizes must be > 1.");
 				return 1;
 			}
 		}
@@ -69,7 +70,10 @@ bool checkAutoFreq(string freqfile, bool FREQ_ONLY, bool &AUTO_FREQ)
 		AUTO_FREQ = false;
 		if (FREQ_ONLY)
 		{
-			cerr << "ERROR: Specifying both " << ARG_FREQ_ONLY << " and " << ARG_FREQ_FILE << " accomplishes nothing.\n";
+			cerr << "ERROR: Specifying both " << ARG_FREQ_ONLY << " and " << ARG_FREQ_FILE << " accomplishes nothing useful.\n";
+			LOG.err("ERROR: Specifying both", ARG_FREQ_ONLY, false);
+			LOG.err(" and", ARG_FREQ_FILE, false);
+			LOG.err(" accomplishes nothing useful.");
 			return 1;
 		}
 	}
@@ -83,12 +87,14 @@ bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE)
 	if (WINSIZE_EXPLORE && AUTO_WINSIZE)
 	{
 		cerr << "ERROR: Must set only one of " << ARG_WINSIZE_MULTI << " and " << ARG_AUTO_WINSIZE << ".\n";
+		LOG.err("ERROR: Must set only one of", ARG_WINSIZE_MULTI, false);
+		LOG.err(" and", ARG_AUTO_WINSIZE);
 		return 1;
 	}
 	return 0;
 }
 
-bool checkAutoCutoff(bool LOD_CUTOFF, bool &AUTO_CUTOFF)
+bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF)
 {
 	if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF) {
 		AUTO_CUTOFF = false;
@@ -99,7 +105,8 @@ bool checkAutoCutoff(bool LOD_CUTOFF, bool &AUTO_CUTOFF)
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS)
 {
 	if (boundSizes[0] != DEFAULT_BOUND_SIZE && boundSizes.size() != 2) {
-		cerr << "ERROR: Must provide two bounds.\n";
+		cerr << "ERROR: Must provide two bounds to " << ARG_BOUND_SIZE << endl;
+		LOG.err("ERROR: Must provide two bounds to", ARG_BOUND_SIZE);
 		return 1;
 	}
 	else if (boundSizes.size() == 2)
@@ -109,6 +116,7 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS)
 		if (boundSizes[0] <= 0 || boundSizes[1] <= 0)
 		{
 			cerr << "ERROR: User provided size boundaries must be positive.\n";
+			LOG.err("ERROR: User provided size boundaries must be positive.");
 			return 1;
 		}
 		else if (boundSizes[0] > boundSizes[1])
@@ -120,6 +128,7 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS)
 		else if (boundSizes[0] == boundSizes[1])
 		{
 			cerr << "ERROR: Size boundaries must be different.\n";
+			LOG.err("ERROR: Size boundaries must be different.");
 			return 1;
 		}
 	}
@@ -130,7 +139,8 @@ bool checkRequiredFiles(string tpedfile, string tfamfile)
 {
 	if (tpedfile.compare(DEFAULT_TPED) == 0 || tfamfile.compare(DEFAULT_TFAM) == 0)
 	{
-		cerr << "ERROR: Must provide both a tped and tfam file.\n";
+		cerr << "ERROR: Must provide both a tped and a tfam file.\n";
+		LOG.err("ERROR: Must provide both a tped and a tfam file.");
 		return 1;
 	}
 	return 0;
@@ -141,6 +151,7 @@ bool checkThreads(int numThreads)
 	if (numThreads <= 0)
 	{
 		cerr << "ERROR: Number of threads must be > 0.\n";
+		LOG.err("ERROR: Number of threads must be > 0.");
 		return 1;
 	}
 	return 0;
@@ -149,33 +160,38 @@ bool checkThreads(int numThreads)
 bool checkError(double error)
 {
 	if (error <= 0 || error >= 1)
-    {
-        cerr << "ERROR: Genotype error rate must be > 0 and < 1.\n";
-        return 1;
-    }
-    return 0;
+	{
+		cerr << "ERROR: Genotype error rate must be > 0 and < 1.\n";
+		LOG.err("ERROR: Genotype error rate must be > 0 and < 1.");
+		return 1;
+	}
+	return 0;
 }
 
 bool checkWinsize(int winsize)
 {
 	if (winsize <= 1)
-    {
-        cerr << "ERROR: SNP window size must be > 1.\n";
-        return 1;
-    }
-    return 0;
+	{
+		cerr << "ERROR: SNP window size must be > 1.\n";
+		LOG.err("ERROR: SNP window size must be > 1.");
+		return 1;
+	}
+	return 0;
 }
 
 bool checkMaxGap(int MAX_GAP)
 {
-	if(MAX_GAP < 0)
+	if (MAX_GAP < 0)
 	{
-		cerr << "ERROR: max gap must be > 0.\n";
+		cerr << "ERROR: Max gap must be > 0.\n";
+		LOG.err("ERROR: Max gap must be > 0.");
 		return 1;
 	}
-	else if(MAX_GAP < 10000)
+	else if (MAX_GAP < 10000)
 	{
 		cerr << "WARNING: max gap set very low: " << MAX_GAP << endl;
+		LOG.err("WARNING: max gap set very low:", MAX_GAP);
+		LOG.err("WARNING: max gap set very low:", MAX_GAP);
 	}
 	return 0;
 }

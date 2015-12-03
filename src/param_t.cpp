@@ -513,12 +513,12 @@ bool param_t::parseCommandLine(int argc, char *argv[])
     if (getBoolFlag(ARG_HELP))
     {
         this->printHelp();
-        throw 0;
+        return 0;
     }
 
-    if (badFlags) throw 0;
+    if (badFlags) return 0;
 
-    return 0;
+    return 1;
 }
 
 bool param_t::flagExists(string flag)

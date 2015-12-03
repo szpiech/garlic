@@ -14,6 +14,7 @@
 #include <gsl/gsl_fit.h>
 #include "figtree.h"
 #include "garlic-data.h"
+#include "garlic-errlog.h"
 
 struct KDEResult
 {

@@ -15,177 +15,6 @@ bool goodDouble(string str)
     return 1;
 }
 
-
-map<string, double> readLODCutoff(string lodCutoffFile, map<string, int> &pop2size)
-{
-    igzstream fin;
-    fin.open(lodCutoffFile.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << lodCutoffFile << "\n";
-        throw 0;
-    }
-
-    map<string, double> pop2lodcutoff;
-    string line, popID, cutoffStr;
-    double cutoff;
-    stringstream ss;
-    while (getline(fin, line))
-    {
-        ss.str(line);
-        int fields = countFields(line);
-        if (fields != 2)
-        {
-            cerr << "ERROR: Found " << fields << " fields but expected 2 in " << lodCutoffFile << endl;
-            cerr << "\tFormat is <popID> <LOD cutoff>.\n";
-            throw 0;
-        }
-
-        ss >> popID >> cutoffStr;
-
-        if (pop2lodcutoff.count(popID) > 0)
-        {
-            cerr << "ERROR: Duplicate population ID (" << popID << ") found in " << lodCutoffFile << endl;
-            throw 0;
-        }
-
-        if (!goodDouble(cutoffStr))
-        {
-            cerr << "ERROR: " << cutoffStr << " is not a valid double.\n";
-            throw 0;
-        }
-
-        cutoff = atof(cutoffStr.c_str());
-
-        if (pop2size.count(popID) > 0)
-        {
-            pop2lodcutoff[popID] = cutoff;
-        }
-        ss.clear();
-    }
-
-    if (pop2lodcutoff.size() != pop2size.size())
-    {
-        cerr << "ERROR: " << lodCutoffFile << " must provide one LOD score cutoff per population.\n";
-        cerr << "\tExpected cutoffs for\n";
-
-        for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
-        {
-            cerr << "\t" << it->first << endl;
-        }
-        cerr << "\tbut found only\n";
-        for (map<string, double>::iterator it = pop2lodcutoff.begin(); it != pop2lodcutoff.end(); it++)
-        {
-            cerr << "\t" << it->first << endl;
-        }
-        throw 0;
-    }
-
-    fin.close();
-
-    return pop2lodcutoff;
-}
-
-void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<string, double> &pop2MLbound, map<string, int> &pop2size)
-{
-    igzstream fin;
-    fin.open(boundSizeFile.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << boundSizeFile << "\n";
-        throw 0;
-    }
-
-    string line, popID, SMboundStr, MLboundStr;
-    double SMbound, MLbound;
-    stringstream ss;
-    while (getline(fin, line))
-    {
-        //stringstream ss;
-        ss.str(line);
-        int fields = countFields(line);
-        if (fields != 3)
-        {
-            cerr << "ERROR: Found " << fields << " fields but expected 3 in " << boundSizeFile << endl;
-            cerr << "\tFormat is <popID> <small/medium size bound> <medium/long size bound>.\n";
-            throw 0;
-        }
-
-        ss >> popID >> SMboundStr >> MLboundStr;
-
-        if (pop2SMbound.count(popID) > 0)
-        {
-            cerr << "ERROR: Duplicate population ID (" << popID << ") found in " << boundSizeFile << endl;
-            throw 0;
-        }
-
-        if (!goodDouble(SMboundStr))
-        {
-            cerr << "ERROR: " << SMboundStr << " is not a valid double.\n";
-            throw 0;
-        }
-
-        SMbound = atof(SMboundStr.c_str());
-
-        if (!goodDouble(MLboundStr))
-        {
-            cerr << "ERROR: " << MLboundStr << " is not a valid double.\n";
-            throw 0;
-        }
-
-        MLbound = atof(MLboundStr.c_str());
-
-        if (pop2size.count(popID) > 0)
-        {
-            double tmp;
-            if (SMbound <= 0 || MLbound <= 0)
-            {
-                cerr << "ERROR: User provided size boundaries must be positive.\n";
-                cerr << "\t" << popID << " " << SMbound << " " << MLbound << endl;
-                throw 0;
-            }
-            else if (SMbound == MLbound)
-            {
-                cerr << "ERROR: Size boundaries must be different.\n";
-                cerr << "\t" << popID << " " << SMbound << " " << MLbound << endl;
-                throw 0;
-            }
-            else if (SMbound > MLbound)
-            {
-                tmp = MLbound;
-                MLbound = SMbound;
-                SMbound = tmp;
-            }
-
-            pop2SMbound[popID] = SMbound;
-            pop2MLbound[popID] = MLbound;
-        }
-        ss.clear();
-    }
-
-    if (pop2SMbound.size() != pop2size.size())
-    {
-        cerr << "ERROR: " << boundSizeFile << " must provide size boundaries for each population.\n";
-        cerr << "\tExpected cutoffs for\n";
-        for (map<string, int>::iterator it = pop2size.begin(); it != pop2size.end(); it++)
-        {
-            cerr << "\t" << it->first << endl;
-        }
-        cerr << "\tbut found only\n";
-        for (map<string, double>::iterator it = pop2SMbound.begin(); it != pop2SMbound.end(); it++)
-        {
-            cerr << "\t" << it->first << endl;
-        }
-        throw 0;
-    }
-
-    fin.close();
-
-    return;
-}
-
 FreqData *calcFreqData(HapData *hapData, int nresample, const gsl_rng *r)
 {
     FreqData *freqData = initFreqData(hapData->nloci);
@@ -228,7 +57,7 @@ vector< FreqData * > *calcFreqData2(vector< HapData * > *hapDataByChr, int nresa
     gsl_rng_set(r, time(NULL));
 
     vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
-    for (int chr = 0; chr < hapDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
     {
         FreqData *data = calcFreqData(hapDataByChr->at(chr), nresample, r);
         freqDataByChr->push_back(data);
@@ -247,6 +76,7 @@ FreqData *initFreqData(int nloci)
     if (nloci < 1)
     {
         cerr << "ERROR: number of loci (" << nloci << ") must be positive.\n";
+        LOG.err("ERROR: number of loci must be positive: ", nloci);
         throw 0;
     }
 
@@ -277,7 +107,7 @@ void releaseFreqData(FreqData *data)
 
 void releaseFreqData(vector< FreqData * > *freqDataByChr)
 {
-    for (int chr = 0; chr < freqDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < freqDataByChr->size(); chr++)
     {
         releaseFreqData(freqDataByChr->at(chr));
     }
@@ -298,12 +128,13 @@ void writeFreqData(string freqOutfile, string popName,
     if (fout.fail())
     {
         cerr << "ERROR: Failed to open " << freqOutfile << " for writing.\n";
+        LOG.err("ERROR: Failed to open", freqOutfile);
         throw 0;
     }
 
     fout << "SNP\tALLELE\t" << popName << endl;
 
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
         {
@@ -312,7 +143,7 @@ void writeFreqData(string freqOutfile, string popName,
                  << freqDataByChr->at(chr)->freq[locus] << "\n";
         }
     }
-    cerr << "Wrote " << freqOutfile << endl;
+    cerr << "Wrote allele frequency data to " << freqOutfile << endl;
     fout.close();
     return;
 }
@@ -325,7 +156,7 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
     int minCols = 3;
     int expectedRows = 1;
 
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         expectedRows += mapDataByChr->at(chr)->nloci;
     }
@@ -335,9 +166,10 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
     if (fin.fail())
     {
         cerr << "ERROR: Failed to open " << freqfile << " for reading.\n";
+        LOG.err("ERROR: Failed to open", freqfile);
         throw 0;
     }
-    cerr << "Checking " << freqfile << " integrity...\n";
+    cerr << "Reading " << freqfile << "\n";
     string line;
     int currentRows = 0;
     int currentCols = 0;
@@ -351,11 +183,16 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
             cerr << "ERROR: Found " << currentCols << " in " << freqfile
                  << " on line " << currentRows << " but expected at least "
                  << minCols << ".\n";
+            LOG.err("ERROR: Found", currentCols, false);
+            LOG.err(" in", freqfile, false);
+            LOG.err(" on line", currentRows, false);
+            LOG.err(" but expected at least", minCols);
             throw 0;
         }
         if (currentCols != previousCols && previousCols != -1)
         {
             cerr << "ERROR: " << freqfile << " has differing number of columns across rows.\n";
+            LOG.err("ERROR: Differing number of columns across rows found in", freqfile);
             throw 0;
         }
         previousCols = currentCols;
@@ -365,6 +202,9 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
     {
         cerr << "ERROR: " << freqfile << " has " << currentRows << " rows but expected "
              << expectedRows << ".\n";
+        LOG.err("ERROR:", freqfile, false);
+        LOG.err(" has", currentRows, false);
+        LOG.err(" rows but expected", expectedRows);
         throw 0;
     }
 
@@ -373,7 +213,7 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
 
     //allocate
     vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         FreqData *data = initFreqData(mapDataByChr->at(chr)->nloci);
         freqDataByChr->push_back(data);
@@ -383,13 +223,14 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
     if (fin.fail())
     {
         cerr << "ERROR: Failed to open " << freqfile << " for reading.\n";
+        LOG.err("ERROR: Failed to open", freqfile);
         throw 0;
     }
 
-    cerr << "Loading frequencies...\n";
+    //cerr << "Loading frequencies...\n";
 
     string header, junk;
-    int popsFound = 0;
+    //int popsFound = 0;
     getline(fin, header);
     int headerSize = countFields(header) - 2;
     stringstream ss;
@@ -405,13 +246,15 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
 
     if (popLocation < 0) {
         cerr << "ERROR: Could not find " << popName << " in " << freqfile << endl;
+        LOG.err("ERROR: Could not find", popName, false);
+        LOG.err(" in", freqfile);
         throw 0;
     }
 
     string locusID;//, allele;
     char allele;
     double freq;
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
         {
@@ -419,6 +262,7 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
             if (mapDataByChr->at(chr)->locusName[locus].compare(locusID) != 0)
             {
                 cerr << "ERROR: Loci appear out of order in " << freqfile << " relative to other files.\n";
+                LOG.err("ERROR: Loci appear out of order in", freqfile);
                 throw 0;
             }
             else
@@ -448,6 +292,7 @@ MapData *initMapData(int nloci)
     if (nloci < 1)
     {
         cerr << "ERROR: number of loci (" << nloci << ") must be positive.\n";
+        LOG.err("ERROR: number of loci must be positive:", nloci);
         throw 0;
     }
 
@@ -488,7 +333,7 @@ void releaseMapData(MapData *data)
 
 void releaseMapData(vector< MapData * > *mapDataByChr)
 {
-    for (int i = 0; i < mapDataByChr->size(); i++)
+    for (unsigned int i = 0; i < mapDataByChr->size(); i++)
     {
         releaseMapData(mapDataByChr->at(i));
     }
@@ -499,7 +344,7 @@ void releaseMapData(vector< MapData * > *mapDataByChr)
 
 void releaseIndData(vector< IndData * > *indDataByPop)
 {
-    for (int i = 0; i < indDataByPop->size(); i++)
+    for (unsigned int i = 0; i < indDataByPop->size(); i++)
     {
         releaseIndData(indDataByPop->at(i));
     }
@@ -571,11 +416,11 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
 
     vector< vector< HapData * >* > *hapDataByPopByChr = new vector< vector< HapData * >* >;
 
-    for (int pop = 0; pop < indCoordList->size(); pop++)
+    for (unsigned int pop = 0; pop < indCoordList->size(); pop++)
     {
         int totalHaps = 2 * (indCoordList->at(pop).second - indCoordList->at(pop).first + 1);
         vector< HapData * > *hapDataByChr = new vector< HapData * >;
-        for (int chr = 0; chr < chrCoordList->size(); chr++)
+        for (unsigned int chr = 0; chr < chrCoordList->size(); chr++)
         {
             int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
             HapData *data = initHapData(totalHaps, totalLoci);
@@ -587,7 +432,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
     string junk, oneAllele;
     string TPED_MISSING = "0";
     //For each chromosome
-    for (int chr = 0; chr < chrCoordList->size(); chr++)
+    for (unsigned int chr = 0; chr < chrCoordList->size(); chr++)
     {
         int totalLoci = chrCoordList->at(chr).second - chrCoordList->at(chr).first + 1;
         //For each locus on the chromosome
@@ -604,7 +449,7 @@ vector< vector< HapData * >* > *readTPEDHapData(string filename,
             ss >> junk;
             ss >> junk;
             //For each population
-            for (int pop = 0; pop < indCoordList->size(); pop++)
+            for (unsigned int pop = 0; pop < indCoordList->size(); pop++)
             {
                 int totalHaps = 2 * (indCoordList->at(pop).second - indCoordList->at(pop).first + 1);
                 //For each haplotype in the population
@@ -666,14 +511,17 @@ vector< HapData * > *readTPEDHapData3(string filename,
 {
     int expectedHaps = 2 * expectedInd;
     igzstream fin;
-    cerr << "Checking " << filename << "...\n";
+    //cerr << "Checking " << filename << "...\n";
     fin.open(filename.c_str());
 
     if (fin.fail())
     {
         cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
+
+    cerr << "Loading genotypes from " << filename << "\n";
 
     //int fileStart = fin.tellg();
     string line;
@@ -688,6 +536,10 @@ vector< HapData * > *readTPEDHapData3(string filename,
         {
             cerr << "ERROR: line " << nloci << " of " << filename << " has " << nhaps
                  << " columns, but expected " << expectedHaps + 4 << ".\n";
+            LOG.err("ERROR: line", nloci, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" has", nhaps, false);
+            LOG.err(" columns, but expected", expectedHaps);
             throw 0;
         }
     }
@@ -695,6 +547,9 @@ vector< HapData * > *readTPEDHapData3(string filename,
     {
         cerr << "ERROR: " << filename << " has " << nloci
              << " loci, but expected " << expectedLoci << ".\n";
+        LOG.err("ERROR:", filename, false);
+        LOG.err(" has", nloci, false);
+        LOG.err(" loci, but expected", expectedLoci);
         throw 0;
     }
 
@@ -706,25 +561,24 @@ vector< HapData * > *readTPEDHapData3(string filename,
     if (fin.fail())
     {
         cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
 
     vector< HapData * > *hapDataByChr = new vector< HapData * >;
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         HapData *data = initHapData(expectedInd, mapDataByChr->at(chr)->nloci);
         hapDataByChr->push_back(data);
     }
 
-    cerr << "Loading genotypes " << filename << "...\n";
-
     //string alleleStr1, alleleStr2;
     char alleleStr1, alleleStr2;
     string junk;//, oneAllele;
-    char oneAllele, zeroAllele;
+    char oneAllele;
     short allele;
     //For each chromosome
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         //For each locus on the chromosome
         for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
@@ -773,15 +627,15 @@ void writeTPEDDataByPop(string outfile, vector< vector< HapData * >* > *hapDataB
         }
         cerr << "Writing to " << tpedFile << endl;
         //each chromosome
-        for (int chr = 0; chr < mapDataByChr->size(); chr++)
+        for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
         {
-            for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
+            for (unsigned int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
             {
                 fout << mapDataByChr->at(chr)->chr << "\t";
                 fout << mapDataByChr->at(chr)->locusName[locus] << "\t";
                 fout << mapDataByChr->at(chr)->geneticPos[locus] << "\t";
                 fout << mapDataByChr->at(chr)->physicalPos[locus] << "\t";
-                for (int ind = 0; ind < hapDataByPopByChr->at(pop)->at(chr)->nind; ind++)
+                for (unsigned int ind = 0; ind < hapDataByPopByChr->at(pop)->at(chr)->nind; ind++)
                 {
                     if (hapDataByPopByChr->at(pop)->at(chr)->data[locus][ind] == 2)
                     {
@@ -823,7 +677,7 @@ void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<s
         }
         cerr << "Writing to " << tfamFile << endl;
         //each chromosome
-        for (int ind = 0; ind < indDataByPop->at(pop)->nind; ind++)
+        for (unsigned int ind = 0; ind < indDataByPop->at(pop)->nind; ind++)
         {
             fout << indDataByPop->at(pop)->pop << "\t";
             fout << indDataByPop->at(pop)->indID[ind] << "\t0\t0\t0\t0";
@@ -838,7 +692,7 @@ void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<s
 
 void releaseHapData(vector< HapData * > *hapDataByChr)
 {
-    for (int chr = 0; chr < hapDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
     {
         releaseHapData(hapDataByChr->at(chr));
     }
@@ -860,7 +714,13 @@ WinData *initWinData(unsigned int nind, unsigned int nloci)
 {
     if (nind < 1 || nloci < 1)
     {
-        cerr << "ERROR: Can't allocate WinData object.  Number of individuals (" << nind << ") and number of loci (" << nloci << ") must be positive.\n";
+        cerr << "ERROR: Can't allocate WinData object.  Number of individuals (" << nind
+             << ") and number of loci (" << nloci
+             << ") must be positive.\n";
+        LOG.err("ERROR: Can't allocate WinData object.  Number of individuals (", int(nind), false);
+        LOG.err(" ) and number of loci (", int(nloci), false);
+        LOG.err(" ) must be positive.");
+
         throw 0;
     }
 
@@ -903,7 +763,7 @@ void releaseWinData(WinData *data)
 
 void releaseWinData(vector< WinData * > *winDataByChr)
 {
-    for (int chr = 0; chr < winDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         releaseWinData(winDataByChr->at(chr));
     }
@@ -916,11 +776,11 @@ vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr,
 {
     vector< vector< WinData * >* > *winDataByPopByChr = new vector< vector< WinData * >* >;
 
-    for (int pop = 0; pop < indDataByPop->size(); pop++)
+    for (unsigned int pop = 0; pop < indDataByPop->size(); pop++)
     {
         int nind = indDataByPop->at(pop)->nind;
         vector< WinData * > *winDataByChr = new vector< WinData * >;
-        for (int chr = 0; chr < mapDataByChr->size(); chr++)
+        for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
         {
             int nloci = mapDataByChr->at(chr)->nloci;
             WinData *data = initWinData(nind, nloci);
@@ -936,7 +796,7 @@ vector< WinData * > *initWinData(vector< MapData * > *mapDataByChr, IndData *ind
 {
     int nind = indData->nind;
     vector< WinData * > *winDataByChr = new vector< WinData * >;
-    for (int chr = 0; chr < mapDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         int nloci = mapDataByChr->at(chr)->nloci;
         WinData *data = initWinData(nind, nloci);
@@ -968,6 +828,7 @@ void writeWinData(vector< WinData * > *winDataByChr,
         if (fout.fail())
         {
             cerr << "ERROR: Failed to open " << rawWinOutfile << " for writing.\n";
+            LOG.err("ERROR: Failed to open", rawWinOutfile);
             throw - 1;
         }
 
@@ -994,7 +855,12 @@ HapData *initHapData(unsigned int nind, unsigned int nloci)
 {
     if (nind < 1 || nloci < 1)
     {
-        cerr << "ERROR: Can't allocate HapData object.  Number of haplotypes (" << nind << ") and number of loci (" << nloci << ") must be positive.\n";
+        cerr << "ERROR: Can not allocate HapData object.  Number of haplotypes (" << nind
+             << ") and number of loci (" << nloci
+             << ") must be positive.\n";
+        LOG.err("ERROR: Can not allocate HapData object. Number of haplotypes (", int(nind), false);
+        LOG.err(" ) and number of loci (", int(nloci), false);
+        LOG.err(" ) must be positive.");
         throw 0;
     }
 
@@ -1058,14 +924,16 @@ int countFields(const string &str)
 vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci, int &numCols)
 {
     igzstream fin;
-    cerr << "Scanning " << filename << "...\n";
     fin.open(filename.c_str());
 
     if (fin.fail())
     {
         cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
+
+    cerr << "Reading " << filename << "\n";
 
     vector< int_pair_t > *chrStartStop = new vector< int_pair_t >;
     stringstream ss;
@@ -1087,6 +955,8 @@ vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci, int &numCol
         {
             cerr << "ERROR: line " << nloci << " of " << filename
                  << " has different number of columns from earlier lines.\n";
+            LOG.err("ERROR: line", nloci, false);
+            LOG.err(" has different number of columns from earlier lines in ", filename);
             throw 0;
         }
 
@@ -1123,7 +993,7 @@ vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci, int &numCol
 
 string lc(string str) {
     char c[2] = {' ', '\0'};
-    for (int i = 0; i < str.size(); i++) {
+    for (unsigned int i = 0; i < str.size(); i++) {
         c[0] = char(tolower(str[i]));
         str.replace(i, 1, c);
     }
@@ -1142,20 +1012,22 @@ vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_p
     vector< MapData * > *mapDataByChr = new vector< MapData * >;
 
     igzstream fin;
-    cerr << "Loading map from " << filename << "...\n";
     fin.open(filename.c_str());
 
     if (fin.fail())
     {
         cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
+
+    cerr << "Loading map from " << filename << "\n";
 
     string junk;
     char oneAllele;
     int count = 4;
     //For each chromosome
-    for (int i = 0; i < chrCoordList->size(); i++)
+    for (unsigned int i = 0; i < chrCoordList->size(); i++)
     {
         int size = chrCoordList->at(i).second - chrCoordList->at(i).first + 1;
         MapData *data = initMapData(size);
@@ -1177,11 +1049,12 @@ vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_p
 
             if (count >= numCols && oneAllele == TPED_MISSING) {
                 cerr << "ERROR: locus " << data->locusName[locus] << " appears to have no data.\n";
+                LOG.err("ERROR: Locus appears to have no data:", data->locusName[locus]);
                 throw 0;
             }
 
             data->allele[locus] = oneAllele;
-            if(count < numCols) getline(fin, junk);
+            if (count < numCols) getline(fin, junk);
         }
         data->chr = lc(data->chr);
         data->chr = checkChrName(data->chr);
@@ -1197,14 +1070,16 @@ vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_p
 
 void scanIndData3(string filename, int &numInd, string &popName) {
     igzstream fin;
-    cerr << "Scanning " << filename << "...\n";
     fin.open(filename.c_str());
 
     if (fin.fail())
     {
         cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
+
+    cerr << "Reading " << filename << "...\n";
 
     map<string, int> indList;
 
@@ -1222,6 +1097,10 @@ void scanIndData3(string filename, int &numInd, string &popName) {
         {
             cerr << "ERROR: line " << nind << " of " << filename << " has " << current_cols
                  << ", but expected at least " << min_cols << ".\n";
+            LOG.err("ERROR: Line", nind, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" has", current_cols, false);
+            LOG.err(", but expected at least", min_cols);
             throw 0;
         }
         //stringstream ss;
@@ -1230,6 +1109,8 @@ void scanIndData3(string filename, int &numInd, string &popName) {
         if (indList.count(ind) > 0)
         {
             cerr << "ERROR: Found duplicate individual ID (" << ind << ") in " << filename << endl;
+            LOG.err("ERROR: Found duplicate individual ID ( ", ind, false);
+            LOG.err(" ) in", filename);
             throw 0;
         }
         else indList[ind] = 1;
@@ -1241,6 +1122,9 @@ void scanIndData3(string filename, int &numInd, string &popName) {
         else if (pop.compare(popName) != 0) {
             cerr << "ERROR: Found multiple population IDs (" << pop << ", " << popName << ") in " << filename << endl;
             cerr << "\tGARLIC must be given only a single population at a time.\n";
+            LOG.err("ERROR: Found multiple population IDs ( ", pop, false);
+            LOG.err(",", popName, false);
+            LOG.err(" ) in", filename);
             throw 0;
         }
         ss.clear();
@@ -1257,14 +1141,16 @@ void scanIndData3(string filename, int &numInd, string &popName) {
 IndData *readIndData3(string filename, int numInd)
 {
     igzstream fin;
-    cerr << "Loading IDs...\n";
     fin.open(filename.c_str());
 
     if (fin.fail())
     {
         cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
+
+    cerr << "Loading individual IDs\n";
 
     IndData *indData = initIndData(numInd);
 
@@ -1289,6 +1175,7 @@ IndData *initIndData(int nind)
     if (nind < 1)
     {
         cerr << "ERROR: number of individuals (" << nind << ") must be positive.\n";
+        LOG.err("ERROR: Number of individuals must be positive:", nind);
         throw 0;
     }
 
@@ -1320,7 +1207,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr)
     int ncols = 0;
     int nrows = 0;
     DoubleData *rawWinData;
-    for (int chr = 0; chr < winDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         for (int ind = 0; ind < winDataByChr->at(chr)->nind; ind++)
         {
@@ -1336,7 +1223,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr)
     rawWinData = initDoubleData(ncols * nrows - nmiss);
 
     int i = 0;
-    for (int chr = 0; chr < winDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         for (int ind = 0; ind < winDataByChr->at(chr)->nind; ind++)
         {
@@ -1385,7 +1272,7 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, i
     int ncols = 0;
     int nrows = 0;
 
-    for (int chr = 0; chr < winDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         for (int ind = 0; ind < nind; ind++)
         {
@@ -1401,7 +1288,7 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, i
     rawWinData = initDoubleData(ncols * nrows - nmiss);
 
     int i = 0;
-    for (int chr = 0; chr < winDataByChr->size(); chr++)
+    for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         for (int ind = 0; ind < nind; ind++)
         {
@@ -1433,7 +1320,7 @@ void releaseDoubleData(DoubleData *data)
 
 void releaseDoubleData(vector < DoubleData * > *rawWinDataByPop)
 {
-    for (int pop = 0; pop < rawWinDataByPop->size(); pop++)
+    for (unsigned int pop = 0; pop < rawWinDataByPop->size(); pop++)
     {
         releaseDoubleData(rawWinDataByPop->at(pop));
     }

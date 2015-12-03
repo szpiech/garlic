@@ -17,8 +17,8 @@ void calcLOD(IndData *indData, MapData *mapData,
     int nloci = hapData->nloci;
     int nind = hapData->nind;
     int *physicalPos = mapData->physicalPos;
-    double *geneticPos = mapData->geneticPos;
-    string *locusName = mapData->locusName;
+    //double *geneticPos = mapData->geneticPos;
+    //string *locusName = mapData->locusName;
     double *freq = freqData->freq;
     int start = 0;
     int stop = mapData->nloci;
@@ -117,7 +117,7 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
 {
     vector< WinData * > *winDataByChr = initWinData(mapDataByChr, indData);
 
-    for (int chr = 0; chr < winDataByChr->size(); chr++) {
+    for (unsigned int chr = 0; chr < winDataByChr->size(); chr++) {
         calcLOD(indData, mapDataByChr->at(chr),
                 hapDataByChr->at(chr), freqDataByChr->at(chr),
                 winDataByChr->at(chr), centro,
@@ -192,7 +192,7 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
         ROHData *rohData = rohDataByInd->at(ind);
         rohData->indID = indData->indID[ind];
 
-        for (int chr = 0; chr < winDataByChr->size(); chr++)
+        for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
         {
             WinData *winData = winDataByChr->at(chr);
             MapData *mapData = mapDataByChr->at(chr);
@@ -257,7 +257,7 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
     }
 
     ROHLength *rohLengths = initROHLength(lengths.size(), indData->pop);
-    for (int i = 0; i < lengths.size(); i++)
+    for (unsigned int i = 0; i < lengths.size(); i++)
     {
         rohLengths->length[i] = lengths[i];
     }
@@ -284,7 +284,7 @@ void releaseROHLength(ROHLength *rohLength)
 
 void releaseROHLength(vector< ROHLength * > *rohLengthByPop)
 {
-    for (int pop = 0; pop < rohLengthByPop->size(); pop++)
+    for (unsigned int pop = 0; pop < rohLengthByPop->size(); pop++)
     {
         releaseROHLength(rohLengthByPop->at(pop));
     }
@@ -304,17 +304,18 @@ void writeROHData(string outfile,
     if (out.fail())
     {
         cerr << "ERROR: Failed to open " << outfile << " for writing.\n";
+        LOG.err("ERROR: Failed to open", outfile);
         throw 0;
     }
 
-    for (int ind = 0; ind < rohDataByInd->size(); ind++)
+    for (unsigned int ind = 0; ind < rohDataByInd->size(); ind++)
     {
         ROHData *rohData = rohDataByInd->at(ind);
         out << "track name=\"Ind: " + rohData->indID + " Pop:" + popName +
             " ROH\" description=\"Ind: " + rohData->indID + " Pop:" + popName +
             " ROH from GARLIC v" + version + "\" visibility=2 itemRgb=\"On\"\n";
 
-        for (int roh = 0; roh < rohData->chr.size(); roh++)
+        for (unsigned int roh = 0; roh < rohData->chr.size(); roh++)
         {
             int size = (rohData->stop[roh] - rohData->start[roh]);
             char sizeClass = 'C';
@@ -333,7 +334,7 @@ void writeROHData(string outfile,
                 << "\t" << sizeClass << "\t" << size << "\t.\t0\t0\t" << color << endl;
         }
     }
-
+    LOG.log("ROH calls:", outfile);
     out.close();
     return;
 }
@@ -342,6 +343,259 @@ string makeROHFilename(string outfile)
 {
     outfile += ".roh.bed";
     return outfile;
+}
+
+double selectLODCutoff(vector< WinData * > *winDataByChr, int KDE_SUBSAMPLE, string kdeoutfile)
+{
+    //Format the LOD window data into a single array per pop with no missing data
+    //Prepped for KDE
+    DoubleData *rawWinData;
+    double LOD_CUTOFF;
+
+    if (KDE_SUBSAMPLE <= 0) rawWinData = convertWinData2DoubleData(winDataByChr);
+    else rawWinData = convertSubsetWinData2DoubleData(winDataByChr, KDE_SUBSAMPLE);
+
+    //Compute KDE of LOD score distribution
+    cerr << "Estimating distribution of raw LOD score windows:\n";
+    KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+    releaseDoubleData(rawWinData);
+
+    //Output kde points
+    try { writeKDEResult(kdeResult, kdeoutfile); }
+    catch (...) { return -1; }
+
+    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512); }
+    catch (...)
+    {
+        cerr << "ERROR: Failed to find the minimum between modes in the LOD score density.\n";
+        cerr << "\tResults from density estimation have been written to file for inspection.\n";
+        cerr << "\tA cutoff can be manually specified on the command line with " << ARG_LOD_CUTOFF << ".\n";
+        LOG.err("ERROR: Failed to find the minimum between modes in the LOD score density.");
+        LOG.err("\tResults from density estimation have been written to file for inspection.");
+        LOG.err("\tA cutoff can be manually specified on the command line with", ARG_LOD_CUTOFF);
+        return -1;
+    }
+
+    releaseKDEResult(kdeResult);
+    return LOD_CUTOFF;
+}
+
+void exploreWinsizes(vector< HapData * > *hapDataByChr,
+                     vector< FreqData * > *freqDataByChr,
+                     vector< MapData * > *mapDataByChr,
+                     IndData *indData,
+                     centromere *centro,
+                     vector<int> &multiWinsizes,
+                     double error,
+                     int MAX_GAP, int KDE_SUBSAMPLE, string outfile)
+{
+    vector< WinData * > *winDataByChr;
+    //This could be paralellized
+    for (unsigned int i = 0; i < multiWinsizes.size(); i++)
+    {
+        //Since we are not proceeding with the full ROH calling
+        //procedure, we only calculate LOD scores for a random
+        //subset of individuals as governed by --kde-subsample
+        if (KDE_SUBSAMPLE <= 0)
+        {
+            winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
+                                          indData, centro, multiWinsizes[i],
+                                          error, MAX_GAP);
+        }
+        else
+        {
+            vector< HapData * > *subsetHapDataByChr;
+            IndData *subsetIndData;
+            subsetData(hapDataByChr, indData, &subsetHapDataByChr, &subsetIndData, KDE_SUBSAMPLE);
+            winDataByChr = calcLODWindows(subsetHapDataByChr, freqDataByChr, mapDataByChr,
+                                          subsetIndData, centro, multiWinsizes[i],
+                                          error, MAX_GAP);
+            releaseHapData(subsetHapDataByChr);
+            releaseIndData(subsetIndData);
+        }
+
+        //Format the LOD window data into a single array per pop with no missing data
+        //Prepped for KDE
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
+
+        //Compute KDE of LOD score distribution
+        cerr << "Estimating distribution of raw LOD score windows:\n";
+        KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+        releaseDoubleData(rawWinData);
+
+        //Output kde points
+        try { writeKDEResult(kdeResult, makeKDEFilename(outfile, multiWinsizes[i])); }
+        catch (...) { throw 0; }
+
+        releaseWinData(winDataByChr);
+    }
+    return;
+}
+
+int selectWinsize(vector< HapData * > *hapDataByChr,
+                  vector< FreqData * > *freqDataByChr,
+                  vector< MapData * > *mapDataByChr,
+                  IndData *indData, centromere *centro,
+                  int winsize, double error,
+                  int MAX_GAP, int KDE_SUBSAMPLE)
+{
+    vector< WinData * > *winDataByChr;
+    double AUTO_WINSIZE_THRESHOLD = 0.05;
+    int winsizeQuery = winsize - 10;
+
+    vector< HapData * > *subsetHapDataByChr;
+    IndData *subsetIndData;
+    if (KDE_SUBSAMPLE > 0) {
+        subsetData(hapDataByChr, indData, &subsetHapDataByChr, &subsetIndData, KDE_SUBSAMPLE);
+    }
+
+    cerr << "Searching for acceptable window size:\n\
+        winsize\tsummse\n";
+
+    double prev = 1, curr = 1;
+    bool finished = false;
+    while (!finished)
+    {
+        //Since we are not proceeding with the full ROH calling
+        //procedure, we only calculate LOD scores for a random
+        //subset of individuals as governed by --kde-subsample
+        if (KDE_SUBSAMPLE <= 0)
+        {
+            winDataByChr = calcLODWindows(hapDataByChr,
+                                          freqDataByChr,
+                                          mapDataByChr,
+                                          indData,
+                                          centro,
+                                          winsizeQuery,
+                                          error,
+                                          MAX_GAP);
+
+        }
+        else
+        {
+            winDataByChr = calcLODWindows(subsetHapDataByChr,
+                                          freqDataByChr,
+                                          mapDataByChr,
+                                          subsetIndData,
+                                          centro,
+                                          winsizeQuery,
+                                          error,
+                                          MAX_GAP);
+        }
+
+        //Format the LOD window data into a single array per pop with no missing data
+        //Prepped for KDE
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
+
+        //Compute KDE of LOD score distribution
+        cerr << "Estimating distribution of raw LOD score windows:\n";
+        KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+        releaseDoubleData(rawWinData);
+
+        curr = calculateWiggle(kdeResult);
+        if (winsizeQuery >= winsize) cerr << winsizeQuery << "\t" << (prev - curr) / prev << "\n";
+        if (winsizeQuery >= winsize && (prev - curr) / prev <= AUTO_WINSIZE_THRESHOLD) finished = true;
+        else {
+            winsizeQuery += 10;
+            prev = curr;
+        }
+        releaseWinData(winDataByChr);
+    }
+
+    if (KDE_SUBSAMPLE > 0) {
+        releaseHapData(subsetHapDataByChr);
+        releaseIndData(subsetIndData);
+    }
+    return winsizeQuery;
+}
+
+int_pair_t selectSizeClasses(ROHLength *rohLength)
+{
+    int_pair_t bounds;
+    size_t *sortIndex;
+
+    int ngaussians = 3;
+    size_t maxIter = 1000;
+    double tolerance = 1e-8;
+    double * W;
+    double * Mu;
+    double * Sigma;
+
+    W = new double[ngaussians];
+    Mu = new double[ngaussians];
+    Sigma = new double[ngaussians];
+    sortIndex = new size_t[ngaussians];
+
+    //calculate mean and var for the population size distribution to use for initial guess
+    double var = gsl_stats_variance(rohLength->length, 1, rohLength->size);
+    double mu = gsl_stats_mean(rohLength->length, 1, rohLength->size);
+    for (int n = 0; n < ngaussians; n++)
+    {
+        W[n] = 1.0 / double(ngaussians);
+        Mu[n] = mu * double(n + 1) / double(ngaussians + 1);
+        Sigma[n] = var * (n + 1) / double(ngaussians);
+    }
+
+    GMM gmm(ngaussians, W, Mu, Sigma, maxIter, tolerance, false);
+
+    gmm.estimate(rohLength->length, rohLength->size);
+
+    for (int n = 0; n < ngaussians; n++)
+    {
+        W[n] = gmm.getMixCoefficient(n);
+        Mu[n] = gmm.getMean(n);
+        Sigma[n] = gmm.getVar(n);
+        sortIndex[n] = n;
+    }
+
+    gsl_sort_index(sortIndex, Mu, 1, ngaussians);
+
+    cerr << "Gaussian class A ( mixture, mean, std ) = ( "
+         << W[sortIndex[0]] << ", " << Mu[sortIndex[0]] << ", " << Sigma[sortIndex[0]] << " )\n";
+    LOG.log("Gaussian class A ( mixture, mean, std ) = (", W[sortIndex[0]], false);
+    LOG.log(",", Mu[sortIndex[0]], false);
+    LOG.log(",", Sigma[sortIndex[0]], false);
+    LOG.log(" )");
+
+    cerr << "Gaussian class B ( mixture, mean, std ) = ( "
+         << W[sortIndex[1]] << ", " << Mu[sortIndex[1]] << ", " << Sigma[sortIndex[1]] << " )\n";
+    LOG.log("Gaussian class B ( mixture, mean, std ) = (", W[sortIndex[1]], false);
+    LOG.log(",", Mu[sortIndex[1]], false);
+    LOG.log(",", Sigma[sortIndex[1]], false);
+    LOG.log(" )");
+
+    cerr << "Gaussian class C ( mixture, mean, std ) = ( "
+         << W[sortIndex[2]] << ", " << Mu[sortIndex[2]] << ", " << Sigma[sortIndex[2]] << " )\n";
+    LOG.log("Gaussian class C ( mixture, mean, std ) = (", W[sortIndex[2]], false);
+    LOG.log(",", Mu[sortIndex[2]], false);
+    LOG.log(",", Sigma[sortIndex[2]], false);
+    LOG.log(" )");
+
+    //Find boundaries, there are ngaussians-1 of them, but for the moment this is defined to be 2
+    //This finds the 'first' root of the difference between two gaussians
+    BoundFinder SM(Mu[sortIndex[0]],
+                   Sigma[sortIndex[0]],
+                   W[sortIndex[0]],
+                   Mu[sortIndex[1]],
+                   Sigma[sortIndex[1]],
+                   W[sortIndex[1]],
+                   1000, 1e-4, false);
+    bounds.first = SM.findBoundary();
+
+    BoundFinder ML(Mu[sortIndex[1]],
+                   Sigma[sortIndex[1]],
+                   W[sortIndex[1]],
+                   Mu[sortIndex[2]],
+                   Sigma[sortIndex[2]],
+                   W[sortIndex[2]],
+                   1000, 1e-4, false);
+    bounds.second = ML.findBoundary();
+
+    delete [] W;
+    delete [] Mu;
+    delete [] Sigma;
+
+    return bounds;
 }
 
 

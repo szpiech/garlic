@@ -24,6 +24,7 @@
 #define __BOUNDFINDER_H__
 
 #include "gsl/gsl_roots.h"
+#include "garlic-errlog.h"
 
 class BoundFinder
 {

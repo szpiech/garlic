@@ -1,4 +1,4 @@
- #ifndef __GARLIC_DATA_H__
+#ifndef __GARLIC_DATA_H__
 #define __GARLIC_DATA_H__
 #include <string>
 #include <iostream>
@@ -12,6 +12,7 @@
 #include "gzstream.h"
 #include "gsl/gsl_rng.h"
 #include "gsl/gsl_randist.h"
+#include "garlic-errlog.h"
 
 using namespace std;
 
@@ -72,7 +73,7 @@ string getPost(int num);
 bool goodDouble(string str);
 
 //map<string, double> readLODCutoff(string lodCutoffFile, map<string, int> &pop2size);
-void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<string, double> &pop2MLbound, map<string, int> &pop2size);
+//void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<string, double> &pop2MLbound, map<string, int> &pop2size);
 
 FreqData *initFreqData(int nloci);
 void releaseFreqData(FreqData *data);
@@ -138,11 +139,8 @@ void writeWinData(vector< WinData * > *winDataByChr,
                   string outfile);
 
 DoubleData *initDoubleData(int n);
-
 DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr);
-
 DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, int subsample);
-
 void releaseDoubleData(DoubleData *data);
 void writeDoubleData(vector < DoubleData * > *rawWinDataByPop, vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);
 

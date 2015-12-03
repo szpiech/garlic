@@ -4,6 +4,7 @@
 #include <string>
 #include "gzstream.h"
 #include <iostream>
+#include "garlic-errlog.h"
 
 using namespace std;
 

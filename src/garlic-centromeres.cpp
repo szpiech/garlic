@@ -44,6 +44,7 @@ void centromere::readCustomCentromeres(string filename) {
 	fin.open(filename.c_str());
 	if (fin.fail()) {
 		cerr << "ERROR: Could not open " << filename << " for reading.\n";
+		LOG.err("ERROR: Could not open", filename);
 		throw - 1;
 	}
 
@@ -54,7 +55,8 @@ void centromere::readCustomCentromeres(string filename) {
 		numChr++;
 		curCols = countFields(line);
 		if (curCols != 3) {
-			cerr << "ERORR: Custom centromere file requires three columns.  Found " << curCols << ".\n";
+			cerr << "ERROR: Custom centromere file requires three columns.  Found " << curCols << ".\n";
+			LOG.err("ERROR: Custom centromere file requires three columns.  Found", curCols);
 		}
 	}
 	fin.close();

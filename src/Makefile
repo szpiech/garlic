@@ -3,8 +3,8 @@
 CC = g++
 #CC = clang++
 
-#G++FLAG = -g -Wall
-G++FLAG = -fast -m64 -mmmx -msse -msse2
+G++FLAG = -g -Wall
+#G++FLAG = -fast -m64 -mmmx -msse -msse2
 I_PATH = ../include
 
 #osx
@@ -22,8 +22,8 @@ LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_
 
 all : garlic
 
-garlic : garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o garlic-cli.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o
-	$(CC) -o garlic garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o garlic-cli.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
+garlic : garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o garlic-cli.o garlic-errlog.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o
+	$(CC) -o garlic garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o garlic-cli.o garlic-errlog.o gmm.o BoundFinder.o gzstream.o garlic-centromeres.o -lz -pthread $(LINK_OPTS) -L$(L_PATH)
 
 garlic-main.o : garlic-main.cpp garlic-cli.h
 	$(CC) $(G++FLAG) -c garlic-main.cpp -I$(I_PATH)
@@ -39,6 +39,9 @@ garlic-kde.o : garlic-kde.cpp garlic-kde.h
 
 garlic-cli.o : garlic-cli.cpp garlic-cli.h
 	$(CC) $(G++FLAG) -c garlic-cli.cpp -I$(I_PATH)
+
+garlic-errlog.o : garlic-errlog.cpp garlic-errlog.h
+	$(CC) $(G++FLAG) -c garlic-errlog.cpp -I$(I_PATH)
 
 garlic-centromeres.o : garlic-centromeres.cpp garlic-centromeres.h
 	$(CC) $(G++FLAG) -c garlic-centromeres.cpp -I$(I_PATH)
