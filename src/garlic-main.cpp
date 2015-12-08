@@ -1,10 +1,10 @@
+#include "garlic-errlog.h"
+#include "garlic-cli.h"
 #include <iostream>
 #include <cstdio>
 #include <fstream>
 #include <cmath>
 #include <pthread.h>
-#include "garlic-errlog.h"
-#include "garlic-cli.h"
 #include "garlic-data.h"
 #include "garlic-roh.h"
 #include "garlic-kde.h"
@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
 {
 //++++++++++CLI handling++++++++++
     param_t *params = getCLI(argc, argv);
-    if (params == NULL) return 0;
+    if (params == NULL) delete params; return 0;
 
     string outfile = params->getStringFlag(ARG_OUTFILE);
     LOG.init(outfile);
@@ -111,6 +111,8 @@ int main(int argc, char *argv[])
     bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
     LOG.log("Output raw LOD scores:", RAW_LOD);
 
+    double AUTO_WINSIZE_THRESHOLD = 0.5;
+
 //++++++++++Datafile reading++++++++++
     centromere *centro;
     centro = new centromere(BUILD, centromereFile, DEFAULT_CENTROMERE_FILE);
@@ -123,7 +125,7 @@ int main(int argc, char *argv[])
     vector< HapData * > *hapDataByChr;
     vector< FreqData * > *freqDataByChr;
     vector< WinData * > *winDataByChr;
-
+    KDEResult *kdeResult;
     try
     {
         chrCoordList = scanTPEDMapData(tpedfile, numLoci, numCols);
@@ -144,7 +146,7 @@ int main(int argc, char *argv[])
 //++++++++++Allele frequencies++++++++++
     if (AUTO_FREQ)
     {
-        cerr << "Calculating allele frequencies\n";
+        cout << "Calculating allele frequencies\n";
         freqDataByChr = calcFreqData2(hapDataByChr, nresample);
 
         string freqOutfile = outfile;
@@ -166,19 +168,33 @@ int main(int argc, char *argv[])
     //Calcuate LOD scores for a range of window sizes
     //Calculate KDE for these LOD scores
     //Output results to file and exit
-    if (WINSIZE_EXPLORE)
+    if (WINSIZE_EXPLORE && AUTO_WINSIZE)
     {
+
+    }
+    else if (WINSIZE_EXPLORE)
+    {
+        KDEWinsizeReport *winsizeReport =  calculateLODOverWinsizeRange(hapDataByChr, freqDataByChr,
+                                           mapDataByChr, indData, centro, &multiWinsizes, error, MAX_GAP,
+                                           KDE_SUBSAMPLE, numThreads, WINSIZE_EXPLORE, outfile);
+        releaseKDEWinsizeReport(winsizeReport);
+        /*
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
                         MAX_GAP, KDE_SUBSAMPLE, outfile);
+        */
         return 0;
     }
-
-    if (AUTO_WINSIZE)
+    else if (AUTO_WINSIZE)
     {
+        /*
         winsize = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
                                 indData, centro, winsize, error,
                                 MAX_GAP, KDE_SUBSAMPLE);
+        */
+        kdeResult = automaticallyChooseWindowSize(hapDataByChr, freqDataByChr, mapDataByChr,
+                    indData, centro, winsize, error, MAX_GAP, KDE_SUBSAMPLE, numThreads,
+                    WINSIZE_EXPLORE, AUTO_WINSIZE_THRESHOLD, outfile);
         LOG.log("Selected window size:", winsize);
     }
 
@@ -214,6 +230,8 @@ int main(int argc, char *argv[])
     vector< ROHData * > *rohDataByInd = assembleROHWindows(winDataByChr, mapDataByChr, indData,
                                         centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP);
 
+    releaseWinData(winDataByChr);
+    delete centro;
     int_pair_t bounds;
 
     if (AUTO_BOUNDS)
@@ -235,7 +253,15 @@ int main(int argc, char *argv[])
 
     //Output ROH calls to file, one for each individual
     //includes A/B/C size classifications
-    cerr << "Writing ROH tracts...";
+    cerr << "Writing ROH tracts.\n";
     writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, bounds, popName, VERSION);
+
+    releaseIndData(indData);
+    releaseROHLength(rohLength);
+    releaseROHData(rohDataByInd);
+    releaseKDEResult(kdeResult);
+    releaseMapData(mapDataByChr);
+    delete params;
+    cerr << "Finished.\n";
     return 0;
 }

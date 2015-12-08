@@ -143,7 +143,7 @@ void writeFreqData(string freqOutfile, string popName,
                  << freqDataByChr->at(chr)->freq[locus] << "\n";
         }
     }
-    cerr << "Wrote allele frequency data to " << freqOutfile << endl;
+    cout << "Wrote allele frequency data to " << freqOutfile << endl;
     fout.close();
     return;
 }
@@ -521,7 +521,7 @@ vector< HapData * > *readTPEDHapData3(string filename,
         throw 0;
     }
 
-    cerr << "Loading genotypes from " << filename << "\n";
+    cout << "Loading genotypes from " << filename << "\n";
 
     //int fileStart = fin.tellg();
     string line;
@@ -933,7 +933,7 @@ vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci, int &numCol
         throw 0;
     }
 
-    cerr << "Reading " << filename << "\n";
+    cout << "Reading " << filename << "\n";
 
     vector< int_pair_t > *chrStartStop = new vector< int_pair_t >;
     stringstream ss;
@@ -1021,7 +1021,7 @@ vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_p
         throw 0;
     }
 
-    cerr << "Loading map from " << filename << "\n";
+    cout << "Loading map from " << filename << "\n";
 
     string junk;
     char oneAllele;
@@ -1058,7 +1058,7 @@ vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_p
         }
         data->chr = lc(data->chr);
         data->chr = checkChrName(data->chr);
-        cerr << size << " loci on chromosome " << data->chr << endl;
+        cout << size << " loci on chromosome " << data->chr << endl;
         mapDataByChr->push_back(data);
     }
 
@@ -1079,7 +1079,7 @@ void scanIndData3(string filename, int &numInd, string &popName) {
         throw 0;
     }
 
-    cerr << "Reading " << filename << "...\n";
+    cout << "Reading " << filename << "\n";
 
     map<string, int> indList;
 
@@ -1150,7 +1150,7 @@ IndData *readIndData3(string filename, int numInd)
         throw 0;
     }
 
-    cerr << "Loading individual IDs\n";
+    cout << "Loading individual IDs\n";
 
     IndData *indData = initIndData(numInd);
 

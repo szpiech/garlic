@@ -32,9 +32,16 @@ struct KDEWork
 	vector < KDEResult * > *kdeResultByPop;
 };
 
+struct KDEWinsizeReport
+{
+  map<int, KDEResult * > *kdeResultByWinsize;
+  map<int, double> *win2mse;
+};
+
 double nrd0(double *data, const int n);
 
 KDEResult *computeKDE(double *data, int size);
+KDEResult *cloneKDEResult(KDEResult *data);
 void releaseKDEResult(KDEResult *data);
 void writeKDEResult(KDEResult *kdeResult, string outfile);
 string makeKDEFilename(string basename, int winsize);
@@ -44,6 +51,9 @@ int get_arg_min(double *nums, int size);
 double get_min_btw_modes(double *x, double *y, int size);
 double slope(double x0, double y0, double x1, double y1);
 
-double calculateWiggle(KDEResult *kdeResultByPop, int size = 20);
+double calculateWiggle(KDEResult *kdeResult, int size = 20);
+
+KDEWinsizeReport *initKDEWinsizeReport();
+void releaseKDEWinsizeReport(KDEWinsizeReport *winsizeReport);
 
 #endif

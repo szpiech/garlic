@@ -1,5 +1,27 @@
 #include "garlic-kde.h"
 
+KDEWinsizeReport *initKDEWinsizeReport()
+{
+    KDEWinsizeReport *winsizeReport = new KDEWinsizeReport;
+    winsizeReport->kdeResultByWinsize = new map<int, KDEResult * >;
+    winsizeReport->win2mse = new map<int, double>;
+    return winsizeReport;
+}
+
+void releaseKDEWinsizeReport(KDEWinsizeReport *winsizeReport)
+{
+    map<int, KDEResult * >::iterator it;
+    for (it = winsizeReport->kdeResultByWinsize->begin(); it != winsizeReport->kdeResultByWinsize->end(); it++)
+    {
+        releaseKDEResult(it->second);
+    }
+    winsizeReport->win2mse->clear();
+    winsizeReport->kdeResultByWinsize->clear();
+    delete winsizeReport->kdeResultByWinsize;
+    delete winsizeReport->win2mse;
+    delete winsizeReport;
+}
+
 double calculateWiggle(KDEResult *kdeResult, int winsize) {
     double tot = 0;
     for (int i = 0; i < kdeResult->size; i++) kdeResult->y[i] = kdeResult->y[i] * 100;
@@ -10,7 +32,6 @@ double calculateWiggle(KDEResult *kdeResult, int winsize) {
     }
     return tot;
 }
-
 
 KDEResult *computeKDE(double *data, int size)
 {
@@ -94,6 +115,22 @@ KDEResult *computeKDE(double *data, int size)
     kdeResult->y = kde_points;
     kdeResult->size = M;
 
+    return kdeResult;
+}
+
+
+KDEResult *cloneKDEResult(KDEResult *data)
+{
+    KDEResult *kdeResult = new KDEResult;
+    kdeResult->size = data->size;
+    kdeResult->x = new double[kdeResult->size];
+    kdeResult->y = new double[kdeResult->size];
+
+    for (int i = 0; i < kdeResult->size; i++)
+    {
+        kdeResult->x[i] = data->x[i];
+        kdeResult->y[i] = data->y[i];
+    }
     return kdeResult;
 }
 

@@ -16,10 +16,10 @@
    Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 */
 #include "param_t.h"
-#include <cstdlib>
-#include <cstdio>
 
 using namespace std;
+
+const string ARG_HELP = "--help";
 
 bool param_t::addFlag(string flag, bool value, string label, string description)
 {
@@ -47,7 +47,7 @@ bool param_t::addFlag(string flag, double value, string label, string descriptio
     {
         string buffer;
         char charBuffer[100];
-        sprintf(charBuffer, "%.2f", value);
+        sprintf(charBuffer, "%e", value);
         buffer = charBuffer;
         argd[flag] = value;
         help[flag] = "<double>: " + description + "\n\tDefault: " + buffer;

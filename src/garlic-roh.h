@@ -13,31 +13,25 @@
 #include "gsl/gsl_statistics.h"
 #include "gsl/gsl_sort.h"
 #include "BoundFinder.h"
+#include <limits>
 
 using namespace std;
 
 struct work_order_t
 {
   int id;
-  int first_index;
-  int last_index;
-
-  int* winsize;
   double error;
   int MAX_GAP;
-
-  vector<int_pair_t> *popChrPairs;
-
-  vector< IndData * > *indDataByPop;
+  int numThreads;
+  vector<int> *multiWinsizes;
+  IndData *indData;
   vector< MapData * > *mapDataByChr;
-
-  vector< vector< HapData * >* > *hapDataByPopByChr;
-  vector< vector< FreqData * >* > *freqDataByPopByChr;
-
-  vector< vector< WinData * >* > *winDataByPopByChr;
-
+  vector< HapData * > *hapDataByChr;
+  vector< FreqData * > *freqDataByChr;
+  KDEWinsizeReport *winsizeReport;
   centromere *centro;
-
+  bool WINSIZE_EXPLORE;
+  string outfile;
 };
 
 struct ROHData
@@ -55,13 +49,22 @@ struct ROHLength
   int size;
 };
 
-
 void calcLOD(IndData *indData, MapData *mapData,
              HapData *hapData, FreqData *freqData,
              WinData *winData, centromere *centro,
              int winsize, double error, int MAX_GAP);
 
 double lod(const short &genotype, const double &freq, const double &error);
+
+KDEResult *automaticallyChooseWindowSize(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,
+    vector< MapData * > *mapDataByChr, IndData *indData,
+    centromere *centro, int &winsize, double error, int MAX_GAP,
+    int KDE_SUBSAMPLE, int numThreads, bool WINSIZE_EXPLORE, double AUTO_WINSIZE_THRESHOLD, string outfile);
+
+KDEWinsizeReport *calculateLODOverWinsizeRange(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,
+    vector< MapData * > *mapDataByChr, IndData *indData,
+    centromere *centro, vector<int> *multiWinsizes, double error, int MAX_GAP,
+    int KDE_SUBSAMPLE, int numThreads, bool WINSIZE_EXPLORE, string outfile);
 
 vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< FreqData * > *freqDataByChr,
@@ -81,7 +84,6 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
 
 ROHLength *initROHLength(int size, string pop);
 void releaseROHLength(ROHLength *rohLength);
-void releaseROHLength(vector< ROHLength * > *rohLengthByPop);
 
 vector< ROHData * > *initROHData(IndData *indData);
 void writeROHData(string outfile,
@@ -90,6 +92,7 @@ void writeROHData(string outfile,
                   int_pair_t bounds,
                   string popName,
                   string version);
+void releaseROHData(vector< ROHData * > *rohDataByInd);
 
 string makeROHFilename(string outfile);
 
@@ -110,11 +113,17 @@ int selectWinsize(vector< HapData * > *hapDataByChr,
                   int winsize, double error,
                   int MAX_GAP, int KDE_SUBSAMPLE);
 
+int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD);
+
+vector<int> *getWinsizeList(int lastWinsize, int stepSize, int numThreads);
+
 bool inGap(int qStart, int qEnd, int targetStart, int targetEnd);
 
 int_pair_t selectSizeClasses(ROHLength *rohLength);
 
-extern pthread_mutex_t cerr_mutex;
+void compute(void *order);
+
+extern pthread_mutex_t io_mutex;
 
 /*
 vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,

@@ -1,8 +1,9 @@
 #include "garlic-roh.h"
 
-pthread_mutex_t cerr_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t io_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-bool inGap(int qStart, int qEnd, int targetStart, int targetEnd) {
+bool inGap(int qStart, int qEnd, int targetStart, int targetEnd)
+{
     return ( (targetStart <= qStart && targetEnd >= qStart) ||
              (targetStart <= qEnd && targetEnd >= qEnd) ||
              (targetStart >= qStart && targetEnd <= qEnd) );
@@ -118,11 +119,17 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
     vector< WinData * > *winDataByChr = initWinData(mapDataByChr, indData);
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++) {
+        pthread_mutex_lock(&io_mutex);
+        cerr << chr << " ";
+        pthread_mutex_unlock(&io_mutex);
         calcLOD(indData, mapDataByChr->at(chr),
                 hapDataByChr->at(chr), freqDataByChr->at(chr),
                 winDataByChr->at(chr), centro,
                 winsize, error, MAX_GAP);
     }
+    pthread_mutex_lock(&io_mutex);
+        cerr << endl;
+        pthread_mutex_unlock(&io_mutex);
     return winDataByChr;
 }
 
@@ -173,6 +180,16 @@ vector< ROHData * > *initROHData(IndData *indData)
         rohDataByInd->push_back(rohData);
     }
     return rohDataByInd;
+}
+
+void releaseROHData(vector< ROHData * > *rohDataByInd)
+{
+    for (unsigned int ind = 0; ind < rohDataByInd->size(); ind++)
+    {
+        delete rohDataByInd->at(ind);
+    }
+    rohDataByInd->clear();
+    delete rohDataByInd;
 }
 
 vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
@@ -380,6 +397,198 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, int KDE_SUBSAMPLE, str
     return LOD_CUTOFF;
 }
 
+void winsizeExplore(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,
+                    vector< MapData * > *mapDataByChr, IndData *indData,
+                    centromere *centro, vector<int> *multiWinsizes,
+                    KDEWinsizeReport *winsizeReport, double error, int MAX_GAP,
+                    int KDE_SUBSAMPLE, int numThreads, bool WINSIZE_EXPLORE, string outfile)
+{
+
+}
+
+KDEResult *automaticallyChooseWindowSizeFromCustomList();
+
+KDEResult *automaticallyChooseWindowSize(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,
+        vector< MapData * > *mapDataByChr, IndData *indData,
+        centromere *centro, int &winsize, double error, int MAX_GAP,
+        int KDE_SUBSAMPLE, int numThreads, bool WINSIZE_EXPLORE, double AUTO_WINSIZE_THRESHOLD, string outfile)
+{
+    KDEWinsizeReport *winsizeReport;
+    KDEResult *kdeResult;
+    int selectedWinsize = -1;
+    int stepSize = 10;
+    int lastWinsize = winsize - stepSize;
+    vector<int> *multiWinsizes;
+    bool finished = false;
+    do
+    {
+        multiWinsizes = getWinsizeList(lastWinsize, stepSize, numThreads);
+        cerr << "before.\n";
+        winsizeReport = calculateLODOverWinsizeRange(hapDataByChr, freqDataByChr,
+                        mapDataByChr, indData, centro, multiWinsizes, error, MAX_GAP,
+                        KDE_SUBSAMPLE, numThreads, WINSIZE_EXPLORE, outfile);
+        cerr << "end\n";
+        lastWinsize = multiWinsizes->at(multiWinsizes->size() - 1);
+        multiWinsizes->clear();
+        delete multiWinsizes;
+
+        selectedWinsize = selectWinsize(winsizeReport, AUTO_WINSIZE_THRESHOLD);
+        if (selectedWinsize > 0)
+        {
+            winsize = selectedWinsize;
+            kdeResult = cloneKDEResult(winsizeReport->kdeResultByWinsize->at(selectedWinsize));
+            finished = true;
+        }
+        releaseKDEWinsizeReport(winsizeReport);
+
+    } while (!finished);
+
+    return kdeResult;
+}
+
+vector<int> *getWinsizeList(int lastWinsize, int stepSize, int numThreads)
+{
+    vector<int> *winsizeList = new vector<int>;
+    for (int i = 1; i <= numThreads; i++)
+    {
+        winsizeList->push_back(lastWinsize + (i * stepSize));
+        //cerr << lastWinsize + (i * stepSize) << " ";
+    }
+    //cerr << endl;
+    return winsizeList;
+}
+
+int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD)
+{
+    map<int, double>::iterator it;
+    int winsize = -1;
+    double diff = numeric_limits<double>::max();
+    for (it = winsizeReport->win2mse->begin(); it != winsizeReport->win2mse->end(); it++)
+    {
+        if (it->second < AUTO_WINSIZE_THRESHOLD && (AUTO_WINSIZE_THRESHOLD - it->second) < diff)
+        {
+            winsize = it->first;
+            diff = AUTO_WINSIZE_THRESHOLD - it->second;
+        }
+    }
+    return winsize;
+}
+
+KDEWinsizeReport *calculateLODOverWinsizeRange(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,
+        vector< MapData * > *mapDataByChr, IndData *indData,
+        centromere *centro, vector<int> *multiWinsizes, double error, int MAX_GAP,
+        int KDE_SUBSAMPLE, int numThreads, bool WINSIZE_EXPLORE, string outfile)
+{
+    vector< HapData * > *hapDataByChrToCalc;
+    IndData *indDataToCalc;
+
+    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, indData, &hapDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE);
+    else
+    {
+        hapDataByChrToCalc = hapDataByChr;
+        indDataToCalc = indData;
+    }
+
+    KDEWinsizeReport *winsizeReport = initKDEWinsizeReport();
+    work_order_t *order;
+    vector< work_order_t * > orderList;
+    pthread_t *peer = new pthread_t[numThreads];
+    for (int i = 0; i < numThreads; i++)
+    {
+        cerr << i << endl;
+        order = new work_order_t;
+        order->multiWinsizes = multiWinsizes;
+        order->error = error;
+        order->MAX_GAP = MAX_GAP;
+
+        order->indData = indDataToCalc;
+        order->mapDataByChr = mapDataByChr;
+        order->hapDataByChr = hapDataByChrToCalc;
+        order->freqDataByChr = freqDataByChr;
+        order->winsizeReport = winsizeReport;
+        order->centro = centro;
+        order->numThreads = numThreads;
+        order->WINSIZE_EXPLORE = WINSIZE_EXPLORE;
+        order->winsizeReport = winsizeReport;
+        order->outfile = outfile;
+        order->id = i;
+        orderList.push_back(order);
+        pthread_create(&(peer[i]),
+                       NULL,
+                       (void *(*)(void *))compute,
+                       (void *)order);
+        order = NULL;
+    }
+
+    for (int i = 0; i < numThreads; i++)
+    {
+        pthread_join(peer[i], NULL);
+        delete orderList[i];
+        cerr << "ended " << i << endl;
+    }
+
+    delete [] peer;
+
+    if (KDE_SUBSAMPLE > 0) {
+        releaseHapData(hapDataByChrToCalc);
+        releaseIndData(indDataToCalc);
+    }
+
+    hapDataByChrToCalc = NULL;
+    indDataToCalc = NULL;
+
+    return winsizeReport;
+}
+
+
+void compute(void *order)
+{
+    work_order_t *w = (work_order_t *)order;
+    int id = w->id;
+    IndData *indData = w->indData;
+    vector< MapData * > *mapDataByChr = w->mapDataByChr;
+    vector< HapData * > *hapDataByChr = w->hapDataByChr;
+    vector< FreqData * > *freqDataByChr = w->freqDataByChr;
+    KDEWinsizeReport *winsizeReport = w->winsizeReport;
+    vector<int> *multiWinsizes = w->multiWinsizes;
+    double error = w->error;
+    int MAX_GAP = w->MAX_GAP;
+    centromere *centro = w->centro;
+    int numThreads = w->numThreads;
+    bool WINSIZE_EXPLORE = w->WINSIZE_EXPLORE;
+    string outfile = w->outfile;
+
+    vector< WinData * > *winDataByChr;
+    for (unsigned int i = id; i < multiWinsizes->size(); i += numThreads)
+    {
+
+        winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
+                                      indData, centro, multiWinsizes->at(i),
+                                      error, MAX_GAP);
+pthread_mutex_lock(&io_mutex);
+        cerr << id << endl;
+        pthread_mutex_unlock(&io_mutex);
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
+        releaseWinData(winDataByChr);
+
+        KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+        releaseDoubleData(rawWinData);
+
+        pthread_mutex_lock(&io_mutex);
+        winsizeReport->kdeResultByWinsize->operator[](multiWinsizes->at(i)) = kdeResult;
+        winsizeReport->win2mse->operator[](multiWinsizes->at(i)) = calculateWiggle(kdeResult);
+        try { if (WINSIZE_EXPLORE) writeKDEResult(kdeResult, makeKDEFilename(outfile, multiWinsizes->at(i))); }
+        catch (...) { throw 0; }
+        pthread_mutex_unlock(&io_mutex);
+    }
+
+    return;
+}
+
+
+
+
+
 void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< FreqData * > *freqDataByChr,
                      vector< MapData * > *mapDataByChr,
@@ -390,45 +599,40 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile)
 {
     vector< WinData * > *winDataByChr;
+    vector< HapData * > *hapDataByChrToCalc;
+    IndData *indDataToCalc;
+
+    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, indData, &hapDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE);
+    else
+    {
+        hapDataByChrToCalc = hapDataByChr;
+        indDataToCalc = indData;
+    }
+
     //This could be paralellized
     for (unsigned int i = 0; i < multiWinsizes.size(); i++)
     {
-        //Since we are not proceeding with the full ROH calling
-        //procedure, we only calculate LOD scores for a random
-        //subset of individuals as governed by --kde-subsample
-        if (KDE_SUBSAMPLE <= 0)
-        {
-            winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
-                                          indData, centro, multiWinsizes[i],
-                                          error, MAX_GAP);
-        }
-        else
-        {
-            vector< HapData * > *subsetHapDataByChr;
-            IndData *subsetIndData;
-            subsetData(hapDataByChr, indData, &subsetHapDataByChr, &subsetIndData, KDE_SUBSAMPLE);
-            winDataByChr = calcLODWindows(subsetHapDataByChr, freqDataByChr, mapDataByChr,
-                                          subsetIndData, centro, multiWinsizes[i],
-                                          error, MAX_GAP);
-            releaseHapData(subsetHapDataByChr);
-            releaseIndData(subsetIndData);
-        }
+        winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
+                                      indDataToCalc, centro, multiWinsizes[i],
+                                      error, MAX_GAP);
 
-        //Format the LOD window data into a single array per pop with no missing data
-        //Prepped for KDE
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
+        releaseWinData(winDataByChr);
 
-        //Compute KDE of LOD score distribution
-        cerr << "Estimating distribution of raw LOD score windows:\n";
         KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
         releaseDoubleData(rawWinData);
 
-        //Output kde points
         try { writeKDEResult(kdeResult, makeKDEFilename(outfile, multiWinsizes[i])); }
         catch (...) { throw 0; }
-
-        releaseWinData(winDataByChr);
     }
+
+    if (KDE_SUBSAMPLE > 0) {
+        releaseHapData(hapDataByChrToCalc);
+        releaseIndData(indDataToCalc);
+    }
+
+    hapDataByChrToCalc = NULL;
+    indDataToCalc = NULL;
     return;
 }
 
@@ -440,72 +644,51 @@ int selectWinsize(vector< HapData * > *hapDataByChr,
                   int MAX_GAP, int KDE_SUBSAMPLE)
 {
     vector< WinData * > *winDataByChr;
-    double AUTO_WINSIZE_THRESHOLD = 0.05;
-    int winsizeQuery = winsize - 10;
+    vector< HapData * > *hapDataByChrToCalc;
+    IndData *indDataToCalc;
 
-    vector< HapData * > *subsetHapDataByChr;
-    IndData *subsetIndData;
-    if (KDE_SUBSAMPLE > 0) {
-        subsetData(hapDataByChr, indData, &subsetHapDataByChr, &subsetIndData, KDE_SUBSAMPLE);
+    //subset of individuals as given by --kde-subsample
+    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, indData, &hapDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE);
+    else
+    {
+        hapDataByChrToCalc = hapDataByChr;
+        indDataToCalc = indData;
     }
 
-    cerr << "Searching for acceptable window size:\n\
-        winsize\tsummse\n";
+    cerr << "Searching for acceptable window size:\n"
+         << "winsize\tsummse\n";
 
-    double prev = 1, curr = 1;
+    double AUTO_WINSIZE_THRESHOLD = 0.5;
+    int winsizeQuery = winsize;
+    double mse;
     bool finished = false;
     while (!finished)
     {
-        //Since we are not proceeding with the full ROH calling
-        //procedure, we only calculate LOD scores for a random
-        //subset of individuals as governed by --kde-subsample
-        if (KDE_SUBSAMPLE <= 0)
-        {
-            winDataByChr = calcLODWindows(hapDataByChr,
-                                          freqDataByChr,
-                                          mapDataByChr,
-                                          indData,
-                                          centro,
-                                          winsizeQuery,
-                                          error,
-                                          MAX_GAP);
+        winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
+                                      indDataToCalc, centro, winsizeQuery,
+                                      error, MAX_GAP);
 
-        }
-        else
-        {
-            winDataByChr = calcLODWindows(subsetHapDataByChr,
-                                          freqDataByChr,
-                                          mapDataByChr,
-                                          subsetIndData,
-                                          centro,
-                                          winsizeQuery,
-                                          error,
-                                          MAX_GAP);
-        }
-
-        //Format the LOD window data into a single array per pop with no missing data
-        //Prepped for KDE
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
+        releaseWinData(winDataByChr);
 
-        //Compute KDE of LOD score distribution
-        cerr << "Estimating distribution of raw LOD score windows:\n";
         KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
         releaseDoubleData(rawWinData);
 
-        curr = calculateWiggle(kdeResult);
-        if (winsizeQuery >= winsize) cerr << winsizeQuery << "\t" << (prev - curr) / prev << "\n";
-        if (winsizeQuery >= winsize && (prev - curr) / prev <= AUTO_WINSIZE_THRESHOLD) finished = true;
-        else {
-            winsizeQuery += 10;
-            prev = curr;
-        }
-        releaseWinData(winDataByChr);
+        mse = calculateWiggle(kdeResult);
+        cerr << winsizeQuery << "\t" << mse << "\n";
+
+        if (mse <= AUTO_WINSIZE_THRESHOLD) finished = true;
+        else winsizeQuery += 10;
     }
 
     if (KDE_SUBSAMPLE > 0) {
-        releaseHapData(subsetHapDataByChr);
-        releaseIndData(subsetIndData);
+        releaseHapData(hapDataByChrToCalc);
+        releaseIndData(indDataToCalc);
     }
+
+    hapDataByChrToCalc = NULL;
+    indDataToCalc = NULL;
+
     return winsizeQuery;
 }
 
@@ -594,7 +777,7 @@ int_pair_t selectSizeClasses(ROHLength *rohLength)
     delete [] W;
     delete [] Mu;
     delete [] Sigma;
-
+    delete [] sortIndex;
     return bounds;
 }
 
