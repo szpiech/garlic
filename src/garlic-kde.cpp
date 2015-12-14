@@ -1,5 +1,7 @@
 #include "garlic-kde.h"
 
+pthread_mutex_t kde_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 KDEWinsizeReport *initKDEWinsizeReport()
 {
     KDEWinsizeReport *winsizeReport = new KDEWinsizeReport;
@@ -75,12 +77,13 @@ KDEResult *computeKDE(double *data, int size)
     //Create target array
     double *targets = new double [M];
 
-    memset(kde_points, 0, sizeof(double)*M);
-    memset(targets, 0, sizeof(double)*M);
+    //memset(kde_points, 0, sizeof(double)*M);
+    //memset(targets, 0, sizeof(double)*M);
 
     //Initialize the equally spaced target points
     for (int i = 0; i < M; i++)
     {
+        kde_points[i] = 0;
         double obs = (double(i + 1) / double(M)) * ( max - min ) + min;
         targets[i] = obs;
         //cout << obs << " " << kde(data,obs,n,h) << endl;
@@ -95,7 +98,10 @@ KDEResult *computeKDE(double *data, int size)
         q[i] = 1.0 / double(n);
     }
 
+    //this kills any real benefit from multithreading
+    pthread_mutex_lock(&kde_mutex);
     figtree( d, n, M, W, data, h, q, targets, epsilon, kde_points );
+    pthread_mutex_unlock(&kde_mutex);
 
     delete [] q;
 
@@ -221,7 +227,6 @@ void writeKDEResult(KDEResult *kdeResult, string outfile)
     fout.open(outfile.c_str());
     if (fout.fail())
     {
-        cerr << "ERROR: Failed to open " << outfile << " for writing.\n";
         LOG.err("ERROR: Failed to open", outfile);
         throw - 1;
     }
@@ -230,7 +235,7 @@ void writeKDEResult(KDEResult *kdeResult, string outfile)
     {
         fout << kdeResult->x[i] << " " << kdeResult->y[i] << endl;
     }
-    cerr << "Wrote KDE results to " << outfile << endl;
+    LOG.log("Wrote KDE results to", outfile);
     fout.close();
 
     return;

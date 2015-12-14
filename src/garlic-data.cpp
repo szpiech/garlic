@@ -1241,7 +1241,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr)
     return rawWinData;
 }
 
-DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, int subsample)
+DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample)
 {
     const gsl_rng_type *T;
     gsl_rng *r;
@@ -1266,6 +1266,16 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, i
         delete [] indIndex;
         nind = subsample;
     }
+
+    cout << "Individuals used for KDE: ";
+    LOG.logn("Individuals used for KDE: ");
+    for (int ind = 0; ind < nind; ind++) {
+        cout << indData->indID[randInd[ind]] << " ";
+        LOG.logn(indData->indID[randInd[ind]]);
+        LOG.logn(" ");
+    }
+    cout << "\n";
+    LOG.logn("\n");
 
     DoubleData *rawWinData;
     int nmiss = 0;
@@ -1362,9 +1372,13 @@ void subsetData(vector< HapData * > *hapDataByChr,
     IndData *newIndData = initIndData(nind);
     newIndData->pop = indData->pop;
 
+    cout << "Individuals used for KDE: ";
     for (int ind = 0; ind < nind; ind++) {
         newIndData->indID[ind] = indData->indID[randInd[ind]];
+        cout << newIndData->indID[ind] << " ";
     }
+    cout << "\n";
+    LOG.loga("Individuals used for KDE:", newIndData->indID, nind);
 
     vector< HapData * > *newHapDataByChr = new vector< HapData * >;
 

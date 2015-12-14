@@ -4,7 +4,7 @@
 #include "garlic-data.h"
 #include "garlic-centromeres.h"
 #include "param_t.h"
-#include <pthread.h>
+//#include <pthread.h>
 #include <cmath>
 #include <iostream>
 #include "garlic-errlog.h"
@@ -96,7 +96,9 @@ void releaseROHData(vector< ROHData * > *rohDataByInd);
 
 string makeROHFilename(string outfile);
 
-double selectLODCutoff(vector< WinData * > *winDataByChr, int KDE_SUBSAMPLE, string kdeoutfile);
+double selectLODCutoff(KDEResult *kdeResult);
+double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile);
+
 void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< FreqData * > *freqDataByChr,
                      vector< MapData * > *mapDataByChr,
@@ -106,14 +108,21 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      double error,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
 
-int selectWinsize(vector< HapData * > *hapDataByChr,
+KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                   vector< FreqData * > *freqDataByChr,
                   vector< MapData * > *mapDataByChr,
                   IndData *indData, centromere *centro,
-                  int winsize, double error,
-                  int MAX_GAP, int KDE_SUBSAMPLE);
+                  vector<int> *multiWinsizes, int &winsize, double error,
+                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
 
-int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD);
+KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
+                  vector< FreqData * > *freqDataByChr,
+                  vector< MapData * > *mapDataByChr,
+                  IndData *indData, centromere *centro,
+                  int &winsize, double error,
+                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
+
+//int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD);
 
 vector<int> *getWinsizeList(int lastWinsize, int stepSize, int numThreads);
 
@@ -123,7 +132,7 @@ int_pair_t selectSizeClasses(ROHLength *rohLength);
 
 void compute(void *order);
 
-extern pthread_mutex_t io_mutex;
+//extern pthread_mutex_t io_mutex;
 
 /*
 vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,

@@ -140,7 +140,7 @@ void writeWinData(vector< WinData * > *winDataByChr,
 
 DoubleData *initDoubleData(int n);
 DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr);
-DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, int subsample);
+DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample);
 void releaseDoubleData(DoubleData *data);
 void writeDoubleData(vector < DoubleData * > *rawWinDataByPop, vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);
 

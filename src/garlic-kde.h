@@ -7,7 +7,7 @@
 #include <string>
 #include <cstring>
 #include <limits>
-#include <pthread.h>
+//#include <pthread.h>
 #include <gsl/gsl_statistics.h>
 #include <gsl/gsl_sort.h>
 #include <gsl/gsl_math.h>
@@ -55,5 +55,7 @@ double calculateWiggle(KDEResult *kdeResult, int size = 20);
 
 KDEWinsizeReport *initKDEWinsizeReport();
 void releaseKDEWinsizeReport(KDEWinsizeReport *winsizeReport);
+
+//extern pthread_mutex_t io_mutex;
 
 #endif

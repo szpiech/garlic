@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <fstream>
 #include <cmath>
-#include <pthread.h>
+//#include <pthread.h>
 #include "garlic-data.h"
 #include "garlic-roh.h"
 #include "garlic-kde.h"
@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
 {
 //++++++++++CLI handling++++++++++
     param_t *params = getCLI(argc, argv);
-    if (params == NULL) delete params; return 0;
+    if (params == NULL) return 0;
 
     string outfile = params->getStringFlag(ARG_OUTFILE);
     LOG.init(outfile);
@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
     bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
     LOG.log("Output raw LOD scores:", RAW_LOD);
 
-    double AUTO_WINSIZE_THRESHOLD = 0.5;
+    //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
 //++++++++++Datafile reading++++++++++
     centromere *centro;
@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
     }
     else //(!AUTO_FREQ)
     {
-        cerr << "Loading user provided allele frequencies from " << freqfile << "\n";
+        cout << "Loading user provided allele frequencies from " << freqfile << "\n";
         try { freqDataByChr = readFreqData(freqfile, popName, chrCoordList, mapDataByChr); }
         catch (...) { return -1; }
     }
@@ -165,40 +165,48 @@ int main(int argc, char *argv[])
     delete chrCoordList;
 
 //++++++++++Pipeline begins++++++++++
-    //Calcuate LOD scores for a range of window sizes
-    //Calculate KDE for these LOD scores
-    //Output results to file and exit
     if (WINSIZE_EXPLORE && AUTO_WINSIZE)
     {
-
+        kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
+                                          indData, centro, &multiWinsizes, winsize, error,
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile);
     }
     else if (WINSIZE_EXPLORE)
     {
+        /*
         KDEWinsizeReport *winsizeReport =  calculateLODOverWinsizeRange(hapDataByChr, freqDataByChr,
                                            mapDataByChr, indData, centro, &multiWinsizes, error, MAX_GAP,
                                            KDE_SUBSAMPLE, numThreads, WINSIZE_EXPLORE, outfile);
         releaseKDEWinsizeReport(winsizeReport);
-        /*
+        */
+
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
                         MAX_GAP, KDE_SUBSAMPLE, outfile);
-        */
+
         return 0;
     }
     else if (AUTO_WINSIZE)
     {
+        try
+        {
+            kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
+                                      indData, centro, winsize, error,
+                                      MAX_GAP, KDE_SUBSAMPLE, outfile);
+        }
+        catch (...)
+        {
+            return 1;
+        }
         /*
-        winsize = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
-                                indData, centro, winsize, error,
-                                MAX_GAP, KDE_SUBSAMPLE);
-        */
         kdeResult = automaticallyChooseWindowSize(hapDataByChr, freqDataByChr, mapDataByChr,
                     indData, centro, winsize, error, MAX_GAP, KDE_SUBSAMPLE, numThreads,
                     WINSIZE_EXPLORE, AUTO_WINSIZE_THRESHOLD, outfile);
+                    */
         LOG.log("Selected window size:", winsize);
     }
 
-    cerr << "Window size: " << winsize << endl;
+    cout << "Window size: " << winsize << endl;
 
     winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
                                   indData, centro, winsize, error, MAX_GAP);
@@ -215,16 +223,23 @@ int main(int argc, char *argv[])
 
     if (AUTO_CUTOFF)
     {
-        LOD_CUTOFF = selectLODCutoff(winDataByChr, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize));
+        if (!AUTO_WINSIZE && !WINSIZE_EXPLORE)
+        {
+            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize));
+        }
+        else
+        {
+            LOD_CUTOFF = selectLODCutoff(kdeResult);
+        }
         LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
-        cerr << "Selected LOD score cutoff: " << LOD_CUTOFF << endl;
+        cout << "Selected LOD score cutoff: " << LOD_CUTOFF << endl;
     }
     else
     {
-        cerr << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
+        cout << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
     }
 
-    cerr << "Assembling ROH windows\n";
+    cout << "Assembling ROH windows\n";
     //Assemble ROH for each individual in each pop
     ROHLength *rohLength;
     vector< ROHData * > *rohDataByInd = assembleROHWindows(winDataByChr, mapDataByChr, indData,
@@ -236,7 +251,7 @@ int main(int argc, char *argv[])
 
     if (AUTO_BOUNDS)
     {
-        cerr << "Fitting 3-component GMM for size classification\n";
+        cout << "Fitting 3-component GMM for size classification\n";
         bounds = selectSizeClasses(rohLength);
         LOG.log("Selected ROH size boundaries ( A/B, B/C ) = ( ", bounds.first, false);
         LOG.log(",", bounds.second, false);
@@ -246,14 +261,14 @@ int main(int argc, char *argv[])
     {
         bounds.first = boundSizes[0];
         bounds.second = boundSizes[1];
-        cerr << "User provided size boundaries.\n";
+        cout << "User provided size boundaries.\n";
     }
 
-    cerr << "ROH size boundaries ( A/B, B/C ) = ( " << bounds.first << ", " << bounds.second << " )\n";
+    cout << "ROH size boundaries ( A/B, B/C ) = ( " << bounds.first << ", " << bounds.second << " )\n";
 
     //Output ROH calls to file, one for each individual
     //includes A/B/C size classifications
-    cerr << "Writing ROH tracts.\n";
+    cout << "Writing ROH tracts.\n";
     writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, bounds, popName, VERSION);
 
     releaseIndData(indData);
@@ -262,6 +277,6 @@ int main(int argc, char *argv[])
     releaseKDEResult(kdeResult);
     releaseMapData(mapDataByChr);
     delete params;
-    cerr << "Finished.\n";
+    cout << "Finished.\n";
     return 0;
 }

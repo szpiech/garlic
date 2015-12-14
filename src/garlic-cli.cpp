@@ -96,7 +96,7 @@ const string ARG_CENTROMERE_FILE = "--centromere";
 const string DEFAULT_CENTROMERE_FILE = "none";
 const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
 
-param_t *getCLI(int argc, char *argv[]) 
+param_t *getCLI(int argc, char *argv[])
 {
 	param_t *params = new param_t;
 	params->addFlag(ARG_OUTFILE, DEFAULT_OUTFILE, "", HELP_OUTFILE);
@@ -124,8 +124,13 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);
 	params->addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
 
-	if (!params->parseCommandLine(argc, argv)) return NULL;
+	params->setPreamble("Garlic v" + VERSION);
 
+	if (!params->parseCommandLine(argc, argv))
+	{
+		delete params; 
+		return NULL;
+	}
 	return params;
 }
 
