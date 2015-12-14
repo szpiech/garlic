@@ -1,6 +1,6 @@
 #include "garlic-kde.h"
 
-pthread_mutex_t kde_mutex = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t kde_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 KDEWinsizeReport *initKDEWinsizeReport()
 {
@@ -99,9 +99,9 @@ KDEResult *computeKDE(double *data, int size)
     }
 
     //this kills any real benefit from multithreading
-    pthread_mutex_lock(&kde_mutex);
+    //pthread_mutex_lock(&kde_mutex);
     figtree( d, n, M, W, data, h, q, targets, epsilon, kde_points );
-    pthread_mutex_unlock(&kde_mutex);
+    //pthread_mutex_unlock(&kde_mutex);
 
     delete [] q;
 
