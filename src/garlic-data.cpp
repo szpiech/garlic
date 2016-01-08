@@ -1,5 +1,157 @@
 #include "garlic-data.h"
 
+int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
+                           vector< HapData * > **hapDataByChr,
+                           vector< FreqData * > **freqDataByChr)
+{
+    vector< MapData * > *mapDataByChr2 = new vector< MapData * >;
+    vector< HapData * > *hapDataByChr2 = new vector< HapData * >;
+    vector< FreqData * > *freqDataByChr2 = new vector< FreqData * >;
+
+    int numLoci = 0;
+    for (int i = 0; i < (*mapDataByChr)->size(); i++) {
+        int newLoci = 0;
+        MapData *mapData2 = filterMonomorphicSites((*mapDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
+        HapData *hapData2 = filterMonomorphicSites((*hapDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
+        FreqData *freqData2 = filterMonomorphicSites((*freqDataByChr)->at(i), newLoci);
+        mapDataByChr2->push_back(mapData2);
+        hapDataByChr2->push_back(hapData2);
+        freqDataByChr2->push_back(freqData2);
+        numLoci += newLoci;
+    }
+    
+    releaseMapData(*mapDataByChr);
+    releaseHapData(*hapDataByChr);
+    releaseFreqData(*freqDataByChr);
+
+    *mapDataByChr = mapDataByChr2;
+    *hapDataByChr = hapDataByChr2;
+    *freqDataByChr = freqDataByChr2;
+
+    return numLoci;
+}
+
+MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLoci)
+{
+    if (newLoci <= 0) {
+        newLoci = 0;
+        for (int i = 0; i < freqData->nloci; i++)
+            if (freqData->freq[i] > 0 && freqData->freq[i] < 1)
+                newLoci++;
+    }
+
+    MapData *mapData2 = initMapData(newLoci);
+    mapData2->chr = mapData->chr;
+    int index = 0;
+    for (int i = 0; i < freqData->nloci; i++)
+    {
+        if (freqData->freq[i] > 0 && freqData->freq[i] < 1)
+        {
+            mapData2->physicalPos[index] = mapData->physicalPos[i];
+            mapData2->geneticPos[index] = mapData->geneticPos[i];
+            mapData2->locusName[index] = mapData->physicalPos[i];
+            mapData2->allele[index] = mapData->allele[i];
+            index++;
+        }
+    }
+
+    return mapData2;
+}
+
+HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci)
+{
+    if (newLoci <= 0) {
+        newLoci = 0;
+        for (int i = 0; i < freqData->nloci; i++)
+            if (freqData->freq[i] > 0 && freqData->freq[i] < 1)
+                newLoci++;
+    }
+
+    HapData *hapData2 = initHapData(hapData->nind, newLoci);
+    int index = 0;
+    for (int i = 0; i < freqData->nloci; i++)
+    {
+        if (freqData->freq[i] > 0 && freqData->freq[i] < 1)
+        {
+            for (int j = 0; j < hapData->nind; j++)
+            {
+                hapData2->data[index][j] = hapData->data[i][j];
+            }
+            index++;
+        }
+    }
+
+    return hapData2;
+}
+
+FreqData *filterMonomorphicSites(FreqData *freqData, int &newLoci)
+{
+    if (newLoci <= 0) {
+        newLoci = 0;
+        for (int i = 0; i < freqData->nloci; i++)
+            if (freqData->freq[i] > 0 && freqData->freq[i] < 1)
+                newLoci++;
+    }
+
+    FreqData *freqData2 = initFreqData(newLoci);
+    int index = 0;
+    for (int i = 0; i < freqData->nloci; i++)
+    {
+        if (freqData->freq[i] > 0 && freqData->freq[i] < 1)
+        {
+            freqData2->freq[index] = freqData->freq[i];
+            index++;
+        }
+    }
+
+    return freqData2;
+}
+/*
+int filterMonomorphicSites(MapData &mapData,
+                           HapData &hapData,
+                           FreqData &freqData)
+{
+    int newLoci = 0;
+    for (int i = 0; i < freqData.nloci; i++)
+        if (freqData.freq[i] > 0 && freqData.freq[i] < 1)
+            newLoci++;
+
+    MapData *mapData2 = initMapData(newLoci);
+    mapData2->chr = mapData.chr;
+    HapData *hapData2 = initHapData(hapData.nind, newLoci);
+    FreqData *freqData2 = initFreqData(newLoci);
+
+    int index = 0;
+    for (int i = 0; i < freqData.nloci; i++)
+    {
+        if (freqData.freq[i] > 0 && freqData.freq[i] < 1)
+        {
+            mapData2->physicalPos[index] = mapData.physicalPos[i];
+            mapData2->geneticPos[index] = mapData.geneticPos[i];
+            mapData2->locusName[index] = mapData.physicalPos[i];
+            mapData2->allele[index] = mapData.allele[i];
+
+            for (int j = 0; j < hapData.nind; j++)
+            {
+                hapData2->data[j][index] = hapData.data[j][i];
+            }
+
+            freqData2->freq[index] = freqData.freq[i];
+
+            index++;
+        }
+    }
+
+    releaseFreqData(&freqData);
+    freqData = freqData2;
+    releaseMapData(&mapData);
+    mapData = mapData2;
+    releaseHapData(&hapData);
+    hapData = hapData2;
+
+    return newLoci;
+}
+*/
 bool goodDouble(string str)
 {
     string::iterator it;

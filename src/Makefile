@@ -3,24 +3,24 @@
 CC = g++
 #CC = clang++
 
-#G++FLAG = -g -Wall
+G++FLAG = -g -Wall
 #G++FLAG = -fast -m64 -mmmx -msse -msse2
-G++FLAG = -O3 -m64 -mmmx -msse -msse2
+#G++FLAG = -O3 -m64 -mmmx -msse -msse2
 I_PATH = ../include
 
 #osx
-#L_PATH = ../lib/osx
+L_PATH = ../lib/osx
 
 #linux
-L_PATH = ../lib/linux
+#L_PATH = ../lib/linux
 
 #For static linking
-#LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
+LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
 
 #-pthread 
 
 #For static linking on linux boxes
-LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a -static
+#LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a -static
 
 
 all : garlic

@@ -98,7 +98,7 @@ KDEResult *computeKDE(double *data, int size)
         q[i] = 1.0 / double(n);
     }
 
-    //this kills any real benefit from multithreading
+    //figtree not thread safe due to dependent libraries using global vars somewhere
     //pthread_mutex_lock(&kde_mutex);
     figtree( d, n, M, W, data, h, q, targets, epsilon, kde_points );
     //pthread_mutex_unlock(&kde_mutex);

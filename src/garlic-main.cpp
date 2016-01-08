@@ -164,6 +164,20 @@ int main(int argc, char *argv[])
     chrCoordList->clear();
     delete chrCoordList;
 
+
+//Filter data based on frequency data.
+//Remove all monomorphic sites.
+//If a frequency file is provided that reports
+//a frequency in (0,1) the site will be retained
+//even if it appears monomorphic in the sample.
+    int newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr);
+
+    LOG.log("Monomorphic loci filtered:", numLoci - newLoci);
+    LOG.log("Total loci used for analysis:", newLoci);
+
+    numLoci = newLoci;
+
+
 //++++++++++Pipeline begins++++++++++
     if (WINSIZE_EXPLORE && AUTO_WINSIZE)
     {
@@ -271,12 +285,12 @@ int main(int argc, char *argv[])
     cout << "Writing ROH tracts.\n";
     writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, bounds, popName, VERSION);
 
-    releaseIndData(indData);
-    releaseROHLength(rohLength);
-    releaseROHData(rohDataByInd);
-    releaseKDEResult(kdeResult);
-    releaseMapData(mapDataByChr);
-    delete params;
+    //releaseIndData(indData);
+    //releaseROHLength(rohLength);
+    //releaseROHData(rohDataByInd);
+    //releaseKDEResult(kdeResult);
+    //releaseMapData(mapDataByChr);
+    //delete params;
     cout << "Finished.\n";
     return 0;
 }

@@ -69,6 +69,14 @@ struct DoubleData
     int size;
 };
 
+int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
+                           vector< HapData * > **hapDataByChr,
+                           vector< FreqData * > **freqDataByChr);
+
+MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLoci);
+HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci);
+FreqData *filterMonomorphicSites(FreqData *freqData, int &newLoci);
+
 string getPost(int num);
 bool goodDouble(string str);
 
@@ -87,8 +95,8 @@ void writeFreqData(string freqOutfile, string popName,
                    IndData *indData);
 
 vector< FreqData * > *readFreqData(string freqfile, string popName,
-        vector< int_pair_t > *chrCoordList,
-        vector< MapData * > *mapDataByChr);
+                                   vector< int_pair_t > *chrCoordList,
+                                   vector< MapData * > *mapDataByChr);
 
 vector< int_pair_t > *scanTFAMData(string filename, int &numInd);
 vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoordList);
@@ -104,10 +112,10 @@ void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<s
 */
 
 vector< HapData * > *readTPEDHapData3(string filename,
-        int expectedLoci,
-        int expectedInd,
-        char TPED_MISSING,
-        vector< MapData * > *mapDataByChr);
+                                      int expectedLoci,
+                                      int expectedInd,
+                                      char TPED_MISSING,
+                                      vector< MapData * > *mapDataByChr);
 
 MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);
