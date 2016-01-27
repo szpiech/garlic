@@ -86,6 +86,10 @@ extern const string ARG_CENTROMERE_FILE;
 extern const string DEFAULT_CENTROMERE_FILE;
 extern const string HELP_CENTROMERE_FILE;
 
+extern const string ARG_WLOD;
+extern const bool DEFAULT_WLOD;
+extern const string HELP_WLOD;
+
 param_t *getCLI(int argc, char *argv[]);
 bool checkBuild(string BUILD);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE);

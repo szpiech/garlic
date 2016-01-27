@@ -1,7 +1,7 @@
 #include "garlic-cli.h"
 #include <iostream>
 
-const string VERSION = "1.0.0";
+const string VERSION = "1.1.0";
 
 const string ARG_OUTFILE = "--out";
 const string DEFAULT_OUTFILE = "outfile";
@@ -96,6 +96,10 @@ const string ARG_CENTROMERE_FILE = "--centromere";
 const string DEFAULT_CENTROMERE_FILE = "none";
 const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
 
+const string ARG_WLOD = "--wlod";
+const string DEFAULT_WLOD = false;
+const string HELP_WLOD = "Calculate wLOD scores.  This requires a genetic map.\n";
+
 param_t *getCLI(int argc, char *argv[])
 {
 	param_t *params = new param_t;
@@ -123,6 +127,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_AUTO_WINSIZE, DEFAULT_AUTO_WINSIZE, "", HELP_AUTO_WINSIZE);
 	params->addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);
 	params->addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
+	params->addFlag(ARG_WLOD, DEFAULT_WLOD, "", HELP_WLOD);
 
 	params->setPreamble("Garlic v" + VERSION);
 
