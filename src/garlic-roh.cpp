@@ -790,7 +790,7 @@ int_pair_t selectSizeClasses(ROHLength *rohLength)
 
     int ngaussians = 3;
     size_t maxIter = 1000;
-    double tolerance = 1e-8;
+    double tolerance = 1e-5;
     double * W;
     double * Mu;
     double * Sigma;
@@ -810,7 +810,7 @@ int_pair_t selectSizeClasses(ROHLength *rohLength)
         Sigma[n] = var * (n + 1) / double(ngaussians);
     }
 
-    GMM gmm(ngaussians, W, Mu, Sigma, maxIter, tolerance, false);
+    GMM gmm(ngaussians, W, Mu, Sigma, maxIter, tolerance, true);
 
     gmm.estimate(rohLength->length, rohLength->size);
 

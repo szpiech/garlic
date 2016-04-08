@@ -95,6 +95,21 @@ const string HELP_BUILD = "Choose which genome build to use for centromere locat
 const string ARG_CENTROMERE_FILE = "--centromere";
 const string DEFAULT_CENTROMERE_FILE = "none";
 const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
+/*
+const string ARG_FEATURE_TPED = "--tped-counting";
+const string DEFAULT_FEATURE_TPED = "_none";
+const string HELP_FEATURE_TPED = "A TPED formatted file containing genotypes that are classified in the feature file.\n\
+Sites not in the feature file are ignored.";
+
+const string ARG_FEATURE_TFAM = "--tfam-counting";
+const string DEFAULT_FEATURE_TFAM = "_none";
+const string HELP_FEATURE_TFAM = "A TFAM formatted file containing individuals listed in the corresponding TPED file.\n\
+Individuals without ROH calls are ignored.";
+
+const string ARG_FEATURES = "--features";
+const string DEFAULT_FEATURES = "_none";
+const string HELP_FEATURES = "A feature file giving classifications";
+*/
 
 param_t *getCLI(int argc, char *argv[])
 {

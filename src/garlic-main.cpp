@@ -246,7 +246,7 @@ int main(int argc, char *argv[])
             LOD_CUTOFF = selectLODCutoff(kdeResult);
         }
         LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
-        cout << "Selected LOD score cutoff: " << LOD_CUTOFF << endl;
+        //cout << "Selected LOD score cutoff: " << LOD_CUTOFF << endl;
     }
     else
     {
@@ -267,7 +267,7 @@ int main(int argc, char *argv[])
     {
         cout << "Fitting 3-component GMM for size classification\n";
         bounds = selectSizeClasses(rohLength);
-        LOG.log("Selected ROH size boundaries ( A/B, B/C ) = ( ", bounds.first, false);
+        LOG.log("Selected ROH size boundaries ( A/B, B/C ) = (", bounds.first, false);
         LOG.log(",", bounds.second, false);
         LOG.log(" )");
     }

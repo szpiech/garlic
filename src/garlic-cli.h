@@ -86,6 +86,19 @@ extern const string ARG_CENTROMERE_FILE;
 extern const string DEFAULT_CENTROMERE_FILE;
 extern const string HELP_CENTROMERE_FILE;
 
+extern const string ARG_FEATURE_TPED;
+extern const string DEFAULT_FEATURE_TPED;
+extern const string HELP_FEATURE_TPED;
+
+extern const string ARG_FEATURE_TFAM;
+extern const string DEFAULT_FEATURE_TFAM;
+extern const string HELP_FEATURE_TFAM;
+
+extern const string ARG_FEATURES;
+extern const string DEFAULT_FEATURES;
+extern const string HELP_FEATURES;
+
+
 param_t *getCLI(int argc, char *argv[]);
 bool checkBuild(string BUILD);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE);
