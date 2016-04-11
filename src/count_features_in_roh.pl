@@ -99,7 +99,7 @@ while ( defined( my $rohline = <ROH> ) ) {
         $ind = $1;
         $pop = $2;
 
-        #		$ind2pop{$ind} = $pop;
+        #       $ind2pop{$ind} = $pop;
     }
     else {
         my ( $chr, $start, $end, $class, $size, $junk )
@@ -158,7 +158,7 @@ if ( $FILETYPE eq "VCF" ) {
     close(FIN);
 }
 ##Otherwise TPED/TFAM
-elsif ($FILETYPE eq "TPED") {
+elsif ( $FILETYPE eq "TPED" ) {
     my $tempfile = $TFAMFILE;
     if ($ISZIP) {
         open( FIN, "gunzip -c $tempfile |" ) or die "$tempfile $!";
@@ -166,6 +166,12 @@ elsif ($FILETYPE eq "TPED") {
     else {
         open( FIN, "<", $tempfile ) or die "$tempfile $!";
     }
+    while ( defined( my $line = <FIN> ) ) {
+        chomp $line;
+        my ( $fid, $iid, $junk ) = split( /\s+/, $line, 3 );
+        push( @indlist, $iid );
+    }
+    close(FIN);
 }
 
 for ( my $chr = $startchr; $chr <= $numchr; $chr++ ) {
@@ -174,60 +180,100 @@ for ( my $chr = $startchr; $chr <= $numchr; $chr++ ) {
     open( FIN, "<", $file ) or die $!;
     print STDERR "${chrstr}\n";
     my $count = 0;
-    while ( my $line = <FIN> ) {
-        chomp $line;
-        if ( $line =~ m/^#/ ) {
-            next;
-        }
-
-        my ( $c, $pos, $rsid, $ref, $alt, $q, $info, $format, @genotypes )
-            = split( /\s+/, $line );
-
-        if ( $count % 100000 == 0 ) {
-            print STDERR "$chrstr $pos\n";
-        }
-        $count++;
-
-        if ( exists $effect{$chrstr}{$pos} ) {
-
-            my $functionalAllele;
-            my $functionalAlleleATCG;
-            if ( exists $effect{$chrstr}{$pos}{$ref} ) {
-                $functionalAllele     = 0;
-                $functionalAlleleATCG = $ref;
-            }
-            elsif ( exists $effect{$chrstr}{$pos}{$alt} ) {
-                $functionalAllele     = 1;
-                $functionalAlleleATCG = $alt;
-            }
-            else {
-                print STDERR
-                    "Neither $ref nor $alt are in the feature file, but $chrstr:${pos} is.";
+    if ( $FILETYPE eq "VCF" ) {
+        while ( my $line = <FIN> ) {
+            chomp $line;
+            if ( $line =~ m/^#/ ) {
                 next;
             }
 
-            #print STDERR "$chr $pos ", join(' ',@genotypes), "\n";
-            for ( my $i = 0; $i <= $#indlist; $i++ ) {
-                my ( $a1, $a2 ) = split( /\//, $genotypes[$i] );
-                if ( $a1 eq '.' ) {
+            my ($c, $pos,  $rsid,   $ref, $alt,
+                $q, $pass, $info, $format, @genotypes
+            ) = split( /\s+/, $line );
+
+            if ( $count % 100000 == 0 ) {
+                print STDERR "$chrstr $pos\n";
+            }
+            $count++;
+
+            if ( exists $effect{$chrstr}{$pos} ) {
+
+                my $functionalAllele;
+                my $functionalAlleleATCG;
+                if ( exists $effect{$chrstr}{$pos}{$ref} ) {
+                    $functionalAllele     = 0;
+                    $functionalAlleleATCG = $ref;
+                }
+                elsif ( exists $effect{$chrstr}{$pos}{$alt} ) {
+                    $functionalAllele     = 1;
+                    $functionalAlleleATCG = $alt;
+                }
+                else {
+                    print STDERR
+                        "Neither $ref nor $alt are in the feature file, but $chrstr:${pos} is.";
                     next;
                 }
-                if ( $a1 eq $functionalAllele and $a1 eq $a2 ) {
-                    my $class
-                        = hitsInterval( \@{ $ROH{ $indlist[$i] }{$chrstr} },
-                        $pos );
 
-                    #print STDERR "$class\n";
-                    my $effect
-                        = $effect{$chrstr}{$pos}{$functionalAlleleATCG};
-
-                    if ( $class eq '0' ) {
-                        $counts{ $indlist[$i] }{'NONE'}{$effect}++;
+                #print STDERR "$chr $pos ", join(' ',@genotypes), "\n";
+                for ( my $i = 0; $i <= $#indlist; $i++ ) {
+                    my ( $a1, $a2 ) = split( /\//, $genotypes[$i] );
+                    if ( $a1 eq '.' ) {
+                        next;
                     }
-                    else {
-                        $counts{ $indlist[$i] }{$class}{$effect}++;
-                    }
+                    if ( $a1 eq $functionalAllele and $a1 eq $a2 ) {
+                        my $class
+                            = hitsInterval(
+                            \@{ $ROH{ $indlist[$i] }{$chrstr} }, $pos );
 
+                        #print STDERR "$class\n";
+                        my $effect
+                            = $effect{$chrstr}{$pos}{$functionalAlleleATCG};
+
+                        if ( $class eq '0' ) {
+                            $counts{ $indlist[$i] }{'NONE'}{$effect}++;
+                        }
+                        else {
+                            $counts{ $indlist[$i] }{$class}{$effect}++;
+                        }
+
+                    }
+                }
+            }
+        }
+    }
+    elsif ( $FILETYPE eq "TPED" ) {
+        while ( my $line = <FIN> ) {
+            chomp $line;
+            my ( $c, $rsid, $gpos, $pos, @genotypes ) = split( /\s+/, $line );
+            if ( $count % 100000 == 0 ) {
+                print STDERR "$chrstr $pos\n";
+            }
+            $count++;
+
+            if ( exists $effect{$chrstr}{$pos} ) {
+
+                for ( my $i = 0; $i <= $#indlist; $i++ ) {
+                    my ( $a1, $a2 )
+                        = ( $genotypes[ 2 * $i ], $genotypes[ 2 * $i + 1 ] );
+                    if ( $a1 eq '0' ) {
+                        next;
+                    }
+                    if ( exists $effect{$chrstr}{$pos}{$a1} and $a1 eq $a2 ) {
+                        my $class
+                            = hitsInterval(
+                            \@{ $ROH{ $indlist[$i] }{$chrstr} }, $pos );
+
+                        #print STDERR "$class\n";
+                        my $effect = $effect{$chrstr}{$pos}{$a1};
+
+                        if ( $class eq '0' ) {
+                            $counts{ $indlist[$i] }{'NONE'}{$effect}++;
+                        }
+                        else {
+                            $counts{ $indlist[$i] }{$class}{$effect}++;
+                        }
+
+                    }
                 }
             }
         }
@@ -247,8 +293,8 @@ print FOUT "\n";
 
 for my $ind (@indlist) {
 
-    #	if(exists $ind2pop{$ind}){
-    #		my $pop = $ind2pop{$ind};
+    #   if(exists $ind2pop{$ind}){
+    #       my $pop = $ind2pop{$ind};
     print FOUT "$ind";
     for my $f (@effectList) {
         for my $class (@ROHSizeClasses) {
