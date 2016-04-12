@@ -166,11 +166,22 @@ elsif ( $FILETYPE eq "TPED" ) {
     else {
         open( FIN, "<", $tempfile ) or die "$tempfile $!";
     }
+
     while ( defined( my $line = <FIN> ) ) {
         chomp $line;
         my ( $fid, $iid, $junk ) = split( /\s+/, $line, 3 );
         push( @indlist, $iid );
     }
+
+    for my $ind (@indlist) {
+        for my $f (@effectList) {
+            $counts{$ind}{'A'}{$f}    = 0;
+            $counts{$ind}{'B'}{$f}    = 0;
+            $counts{$ind}{'C'}{$f}    = 0;
+            $counts{$ind}{'NONE'}{$f} = 0;
+        }
+    }
+
     close(FIN);
 }
 
@@ -187,7 +198,7 @@ for ( my $chr = $startchr; $chr <= $numchr; $chr++ ) {
                 next;
             }
 
-            my ($c, $pos,  $rsid,   $ref, $alt,
+            my ($c, $pos,  $rsid, $ref,    $alt,
                 $q, $pass, $info, $format, @genotypes
             ) = split( /\s+/, $line );
 
@@ -284,7 +295,7 @@ for ( my $chr = $startchr; $chr <= $numchr; $chr++ ) {
 open( FOUT, ">", $OUTFILE ) or die $!;
 my @ROHSizeClasses = ( "A", "B", "C", "NONE" );
 
-for my $f (@effectList) {
+for my $f (sort @effectList) {
     for my $class (@ROHSizeClasses) {
         print FOUT "${f}${class} ";
     }
@@ -296,7 +307,7 @@ for my $ind (@indlist) {
     #   if(exists $ind2pop{$ind}){
     #       my $pop = $ind2pop{$ind};
     print FOUT "$ind";
-    for my $f (@effectList) {
+    for my $f (sort @effectList) {
         for my $class (@ROHSizeClasses) {
             print FOUT " ", $counts{$ind}{$class}{$f};
         }
