@@ -1,6 +1,6 @@
 #include "garlic-roh.h"
 
-pthread_mutex_t io_mutex = PTHREAD_MUTEX_INITIALIZER;
+//pthread_mutex_t io_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 bool inGap(int qStart, int qEnd, int targetStart, int targetEnd)
 {
