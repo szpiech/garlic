@@ -23,7 +23,7 @@ I_PATH2 = -I ../include/win32
 L_PATH = ../lib/win32
 G++FLAG = -O3
 #For static linking
-LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a $(L_PATH)/libz.a -static-libgcc -static-libstdc++
+LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/ann_figtree_version.lib $(L_PATH)/figtree.lib $(L_PATH)/libz.a -static-libgcc -static-libstdc++
 
 
 all : garlic
