@@ -1,24 +1,97 @@
-garlic is a program for calling runs of homozygosity in genotype data.  It implements the ROH calling method of Pemberton et al. AJHG (2012).
+GARLIC is a program for calling runs of homozygosity in genotype data.  It implements the ROH calling method of Pemberton et al. AJHG (2012).
 
 This ROH calling pipeline has four phases.
 
 I.		Window-based LOD score calculation
-
-	For each individual in a population in a sliding window of M SNPs, we sum the log-of-odds of autozygosity for each genotype.
 II.		Kernel Density Estimation of LOD score distribution
 III.	Assembly of ROH
 IV.		Gaussian Mixture Modeling of ROH size distribution
 
-
+GARLIC depends on the following libraries.
 
 GNU GSL: http://www.gnu.org/software/gsl/ 
-
 FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
+zlib: http://zlib.net/
 
-./garlic --hap <haplotypes> --map <mapfile> --ind <individual file> --out <outfile basename>
+Garlic v1.0.0
+----------Command Line Arguments----------
 
-FEB2014 -- Pipeline completed.  Binaries available are alpha software.
+--auto-winsize <bool>: Initiates an ad hoc method for automatically selecting the # of SNPs in which to
+	calculate LOD scores. Starts at the value specified by --winsize and increases
+	by 10 SNPs until finished.
+	Default: false
 
-15OCT2013 -- Major updates to the C++ binary.  In its current form, it does not write any useful information to file, but this is easily modifiable.  The program now supports passing an arbitrary number of chromosomes and populations in a single file.  garlic will automatically identify populations and chromosomes (from the .ind and .map files, respectively) and partition the LOD score calculations across threads.  These windows are passed to the KDE module, where the density is estimated.  This is where the program currently ends.
+--build <string>: Choose which genome build to use for centromere locations (hg18, hg19, or hg38).
 
-DEC2013 -- More Updates to the C++ binary.  KDE is working for the LOD scores; LOD score cutoff discovery is working (although will need a fail-safe in the extremely rare case that it might fail); ROH window assembly is done, although this information is not yet output to any files.
+	Default: none
+
+--centromere <string>: Provide custom centromere boundaries. Format <chr> <start> <end>.
+
+	Default: none
+
+--error <double>: The assumed genotyping error rate.
+	Default: 1.000000e-03
+
+--freq-file <string>: A file specifying allele frequencies for
+	each population for all variants. File format:
+	SNP	ALLELE	<pop1 ID> <pop2 ID> ...
+	<locus ID> <allele> <pop1 freq> <pop2 freq> ...
+	By default, this is calculated automatically
+	from the provided data.
+	Default: none
+
+--freq-only <bool>: If set, calculates a freq file from provided data and then exits.
+	Default: false
+
+--help <bool>: Prints this help dialog.
+	Default: false
+
+--kde-subsample <int>: The number of individuals to randomly sample for LOD score KDE. If there
+	are fewer individuals in the population all are used.
+Set <= 0 to use all individuals (may use large amounts of RAM).
+	Default: 10
+
+--lod-cutoff <double>: For LOD based ROH calling, specify a single LOD score cutoff
+	above which ROH are called in all populations.  By default, this is chosen
+	automatically with KDE.
+	Default: -9.999990e+05
+
+--max-gap <int>: A LOD score window is not calculated if the gap (in bps)
+	between two loci is greater than this value.
+	Default: 200000
+
+--out <string>: The base name for all output files.
+	Default: outfile
+
+--raw-lod <bool>: If set, LOD scores will be output to gzip compressed files.
+	Default: false
+
+--resample <int>: Number of resamples for estimating allele frequencies.
+	When set to 0 (default), garlic will use allele
+	frequencies as calculated from the data.
+	Default: 0
+
+--size-bounds <double1> ... <doubleN>: Specify the short/medium and medium/long
+	ROH boundaries.  By default, this is chosen automatically
+	with a 3-component GMM.  Must provide 2 numbers.
+	Default: -1.000000
+
+--tfam <string>: A tfam formatted file containing population and individual IDs.
+	Default: none
+
+--threads <int>: The number of threads to spawn during calculations.
+	Default: 1
+
+--tped <string>: A tped formatted file containing map and genotype information.
+	Default: none
+
+--tped-missing <char>: Single character missing data code for TPED files.
+	Default: 0
+
+--winsize <int>: The window size in # of SNPs in which to calculate LOD scores.
+	Default: 10
+
+--winsize-multi <int1> ... <intN>: Provide several window sizes (in # of SNPs) to calculate LOD scores.
+	LOD score KDEs for each window size will be output for inspection.
+	Default: -1
+
