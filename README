@@ -20,8 +20,11 @@ Garlic v1.0.0
 
 --auto-winsize <bool>: Initiates an ad hoc method for automatically selecting the # of SNPs in which to
 	calculate LOD scores. Starts at the value specified by --winsize and increases
-	by 10 SNPs until finished.
+	by <step size> SNPs until finished.
 	Default: false
+
+--auto-winsize-step <int>: Step size for automatic window selection algorithm.
+	Default: 10
 
 --build <string>: Choose which genome build to use for centromere locations (hg18, hg19, or hg38).
 
@@ -32,7 +35,7 @@ Garlic v1.0.0
 	Default: none
 
 --error <double>: The assumed genotyping error rate.
-	Default: 1.000000e-03
+	Default: -1.000000e+00
 
 --freq-file <string>: A file specifying allele frequencies for
 	each population for all variants. File format:
@@ -80,9 +83,6 @@ Set <= 0 to use all individuals (may use large amounts of RAM).
 
 --tfam <string>: A tfam formatted file containing population and individual IDs.
 	Default: none
-
---threads <int>: The number of threads to spawn during calculations.
-	Default: 1
 
 --tped <string>: A tped formatted file containing map and genotype information.
 	Default: none
