@@ -74,6 +74,10 @@ int main(int argc, char *argv[])
     argerr = checkAutoWinsize(WINSIZE_EXPLORE, AUTO_WINSIZE);
     LOG.log("Automatic window size:", AUTO_WINSIZE);
 
+    int AUTO_WINSIZE_STEP = params->getIntFlag(ARG_AUTO_WINSIZE_STEP);
+    argerr = checkAutoWinsizeStep(AUTO_WINSIZE_STEP);
+    LOG.log("Automatic window step size:", AUTO_WINSIZE_STEP);
+
     int winsize = params->getIntFlag(ARG_WINSIZE);
     argerr = checkWinsize(winsize);
     if (!WINSIZE_EXPLORE && !AUTO_WINSIZE) LOG.log("User defined window size:", winsize);
@@ -90,10 +94,11 @@ int main(int argc, char *argv[])
     LOG.log("Choose ROH class thresholds automatically:", AUTO_BOUNDS);
     if (!AUTO_BOUNDS) LOG.logv("User defined ROH class thresholds:", boundSizes);
 
+/*
     int numThreads = params->getIntFlag(ARG_THREADS);
     argerr = checkThreads(numThreads);
     LOG.log("Threads:", numThreads);
-
+*/
     double error = params->getDoubleFlag(ARG_ERROR);
     argerr = checkError(error);
     LOG.log("Genotyping error:", error);
@@ -205,7 +210,7 @@ int main(int argc, char *argv[])
         try
         {
             kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
-                                      indData, centro, winsize, error,
+                                      indData, centro, winsize, AUTO_WINSIZE_STEP, error,
                                       MAX_GAP, KDE_SUBSAMPLE, outfile);
         }
         catch (...)

@@ -655,7 +655,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          vector< FreqData * > *freqDataByChr,
                          vector< MapData * > *mapDataByChr,
                          IndData *indData, centromere *centro,
-                         int &winsize, double error,
+                         int &winsize, int step, double error,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile)
 {
     double AUTO_WINSIZE_THRESHOLD = 0.5;
@@ -703,7 +703,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
             try { writeKDEResult(selectedKDEResult, makeKDEFilename(outfile, winsize)); }
             catch (...) { throw 0; }
         }
-        else winsizeQuery += 10;
+        else winsizeQuery += step;
         releaseKDEResult(kdeResult);
     }
 

@@ -7,12 +7,14 @@ const string ARG_OUTFILE = "--out";
 const string DEFAULT_OUTFILE = "outfile";
 const string HELP_OUTFILE = "The base name for all output files.";
 
+/*
 const string ARG_THREADS = "--threads";
 const int DEFAULT_THREADS = 1;
 const string HELP_THREADS = "The number of threads to spawn during calculations.";
+*/
 
 const string ARG_ERROR = "--error";
-const double DEFAULT_ERROR = 0.001;
+const double DEFAULT_ERROR = -1;
 const string HELP_ERROR = "The assumed genotyping error rate.";
 
 const string ARG_WINSIZE = "--winsize";
@@ -28,7 +30,11 @@ const string ARG_AUTO_WINSIZE = "--auto-winsize";
 const bool DEFAULT_AUTO_WINSIZE = false;
 const string HELP_AUTO_WINSIZE = "Initiates an ad hoc method for automatically selecting the # of SNPs in which to\n\
 \tcalculate LOD scores. Starts at the value specified by --winsize and increases\n\
-\tby 10 SNPs until finished.";
+\tby <step size> SNPs until finished.";
+
+const string ARG_AUTO_WINSIZE_STEP = "--auto-winsize-step";
+const int DEFAULT_AUTO_WINSIZE_STEP = 10;
+const string HELP_AUTO_WINSIZE_STEP = "Step size for automatic window selection algorithm.";
 
 const string ARG_MAX_GAP = "--max-gap";
 const int DEFAULT_MAX_GAP = 200000;
@@ -115,7 +121,7 @@ param_t *getCLI(int argc, char *argv[])
 {
 	param_t *params = new param_t;
 	params->addFlag(ARG_OUTFILE, DEFAULT_OUTFILE, "", HELP_OUTFILE);
-	params->addFlag(ARG_THREADS, DEFAULT_THREADS, "", HELP_THREADS);
+	//params->addFlag(ARG_THREADS, DEFAULT_THREADS, "", HELP_THREADS);
 	params->addFlag(ARG_ERROR, DEFAULT_ERROR, "", HELP_ERROR);
 	params->addFlag(ARG_WINSIZE, DEFAULT_WINSIZE, "", HELP_WINSIZE);
 	//params->addFlag(ARG_POINTS, DEFAULT_POINTS, "", HELP_POINTS);
@@ -136,6 +142,7 @@ param_t *getCLI(int argc, char *argv[])
 	//params->addFlag(ARG_POP_SPLIT, DEFAULT_POP_SPLIT , "", HELP_POP_SPLIT);
 	params->addFlag(ARG_KDE_SUBSAMPLE, DEFAULT_KDE_SUBSAMPLE , "", HELP_KDE_SUBSAMPLE);
 	params->addFlag(ARG_AUTO_WINSIZE, DEFAULT_AUTO_WINSIZE, "", HELP_AUTO_WINSIZE);
+	params->addFlag(ARG_AUTO_WINSIZE_SIZE, DEFAULT_AUTO_WINSIZE_SIZE, "", HELP_AUTO_WINSIZE_SIZE);
 	params->addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);
 	params->addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
 
@@ -155,7 +162,7 @@ bool checkBuild(string BUILD)
 	        BUILD.compare("hg19") != 0 &&
 	        BUILD.compare("hg38") != 0 &&
 	        BUILD.compare(DEFAULT_BUILD) != 0) {
-		cerr << "ERROR: Must choose hg18/hg19/hg38/none for build version.\n";
+		//cerr << "ERROR: Must choose hg18/hg19/hg38/none for build version.\n";
 		LOG.err("ERROR: Must choose hg18/hg19/hg38/none for build version.");
 		return true;
 	}
@@ -170,7 +177,7 @@ bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE)
 		{
 			if (multiWinsizes[i] <= 0)
 			{
-				cerr << "ERROR: SNP window sizes must be > 1.\n";
+				//cerr << "ERROR: SNP window sizes must be > 1.\n";
 				LOG.err("ERROR: SNP window sizes must be > 1.");
 				return true;
 			}
@@ -187,12 +194,20 @@ bool checkAutoFreq(string freqfile, bool FREQ_ONLY, bool &AUTO_FREQ)
 		AUTO_FREQ = false;
 		if (FREQ_ONLY)
 		{
-			cerr << "ERROR: Specifying both " << ARG_FREQ_ONLY << " and " << ARG_FREQ_FILE << " accomplishes nothing useful.\n";
+			//cerr << "ERROR: Specifying both " << ARG_FREQ_ONLY << " and " << ARG_FREQ_FILE << " accomplishes nothing useful.\n";
 			LOG.err("ERROR: Specifying both", ARG_FREQ_ONLY, false);
 			LOG.err(" and", ARG_FREQ_FILE, false);
 			LOG.err(" accomplishes nothing useful.");
 			return true;
 		}
+	}
+	return false;
+}
+
+bool checkAutoWinsizeStep(int auto_winsize_step){
+	if(auto_winsize_step <= 0){
+		LOG.err("ERROR: Step size for automatic window selection must be positive.");
+		return true;
 	}
 	return false;
 }
@@ -203,7 +218,7 @@ bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE)
 	//If so, exit with error.
 	if (WINSIZE_EXPLORE && AUTO_WINSIZE)
 	{
-		cerr << "ERROR: Must set only one of " << ARG_WINSIZE_MULTI << " and " << ARG_AUTO_WINSIZE << ".\n";
+		//cerr << "ERROR: Must set only one of " << ARG_WINSIZE_MULTI << " and " << ARG_AUTO_WINSIZE << ".\n";
 		LOG.err("ERROR: Must set only one of", ARG_WINSIZE_MULTI, false);
 		LOG.err(" and", ARG_AUTO_WINSIZE);
 		return true;
@@ -222,7 +237,7 @@ bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF)
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS)
 {
 	if (boundSizes[0] != DEFAULT_BOUND_SIZE && boundSizes.size() != 2) {
-		cerr << "ERROR: Must provide two bounds to " << ARG_BOUND_SIZE << endl;
+		//cerr << "ERROR: Must provide two bounds to " << ARG_BOUND_SIZE << endl;
 		LOG.err("ERROR: Must provide two bounds to", ARG_BOUND_SIZE);
 		return true;
 	}
@@ -232,7 +247,7 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS)
 		AUTO_BOUNDS = false;
 		if (boundSizes[0] <= 0 || boundSizes[1] <= 0)
 		{
-			cerr << "ERROR: User provided size boundaries must be positive.\n";
+			//cerr << "ERROR: User provided size boundaries must be positive.\n";
 			LOG.err("ERROR: User provided size boundaries must be positive.");
 			return true;
 		}
@@ -244,7 +259,7 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS)
 		}
 		else if (boundSizes[0] == boundSizes[1])
 		{
-			cerr << "ERROR: Size boundaries must be different.\n";
+			//cerr << "ERROR: Size boundaries must be different.\n";
 			LOG.err("ERROR: Size boundaries must be different.");
 			return true;
 		}
@@ -256,7 +271,7 @@ bool checkRequiredFiles(string tpedfile, string tfamfile)
 {
 	if (tpedfile.compare(DEFAULT_TPED) == 0 || tfamfile.compare(DEFAULT_TFAM) == 0)
 	{
-		cerr << "ERROR: Must provide both a tped and a tfam file.\n";
+		//cerr << "ERROR: Must provide both a tped and a tfam file.\n";
 		LOG.err("ERROR: Must provide both a tped and a tfam file.");
 		return true;
 	}

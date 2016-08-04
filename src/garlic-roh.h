@@ -119,7 +119,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                   vector< FreqData * > *freqDataByChr,
                   vector< MapData * > *mapDataByChr,
                   IndData *indData, centromere *centro,
-                  int &winsize, double error,
+                  int &winsize, int step, double error,
                   int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
 
 //int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD);

@@ -14,9 +14,11 @@ extern const string ARG_OUTFILE;
 extern const string DEFAULT_OUTFILE;
 extern const string HELP_OUTFILE;
 
+/*
 extern const string ARG_THREADS;
 extern const int DEFAULT_THREADS;
 extern const string HELP_THREADS;
+*/
 
 extern const string ARG_ERROR;
 extern const double DEFAULT_ERROR;
@@ -33,6 +35,10 @@ extern const string HELP_WINSIZE_MULTI;
 extern const string ARG_AUTO_WINSIZE;
 extern const bool DEFAULT_AUTO_WINSIZE;
 extern const string HELP_AUTO_WINSIZE;
+
+extern const string ARG_AUTO_WINSIZE_STEP;
+extern const int DEFAULT_AUTO_WINSIZE_STEP;
+extern const string HELP_AUTO_WINSIZE_STEP;
 
 extern const string ARG_MAX_GAP;
 extern const int DEFAULT_MAX_GAP;
@@ -103,6 +109,7 @@ param_t *getCLI(int argc, char *argv[]);
 bool checkBuild(string BUILD);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE);
 bool checkAutoFreq(string freqfile, bool FREQ_ONLY, bool &AUTO_FREQ);
+bool checkAutoWinsizeStep(int auto_winsize_step);
 bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE);
 bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF);
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS);
