@@ -107,6 +107,7 @@ extern const string HELP_FEATURES;
 
 param_t *getCLI(int argc, char *argv[]);
 bool checkBuild(string BUILD);
+bool checkBuildAndCentromereFile(string BUILD, string centromereFile);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE);
 bool checkAutoFreq(string freqfile, bool FREQ_ONLY, bool &AUTO_FREQ);
 bool checkAutoWinsizeStep(int auto_winsize_step);

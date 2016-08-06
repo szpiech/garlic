@@ -163,7 +163,15 @@ bool checkBuild(string BUILD)
 	        BUILD.compare("hg38") != 0 &&
 	        BUILD.compare(DEFAULT_BUILD) != 0) {
 		//cerr << "ERROR: Must choose hg18/hg19/hg38/none for build version.\n";
-		LOG.err("ERROR: Must choose hg18/hg19/hg38/none for build version.");
+		LOG.err("ERROR: Must choose hg18/hg19/hg38 for build version or provide a custom centromere file.");
+		return true;
+	}
+	return false;
+}
+
+bool checkBuildAndCentromereFile(string BUILD, string centromereFile){
+	if(BUILD.compare(DEFAULT_BUILD) == 0 && centromereFile.compare(DEFAULT_CENTROMERE_FILE) == 0){
+		LOG.err("ERROR: Must choose hg18/hg19/hg38 for build version or provide a custom centromere file.");
 		return true;
 	}
 	return false;
@@ -282,7 +290,7 @@ bool checkThreads(int numThreads)
 {
 	if (numThreads <= 0)
 	{
-		cerr << "ERROR: Number of threads must be > 0.\n";
+		//cerr << "ERROR: Number of threads must be > 0.\n";
 		LOG.err("ERROR: Number of threads must be > 0.");
 		return true;
 	}
@@ -293,7 +301,7 @@ bool checkError(double error)
 {
 	if (error <= 0 || error >= 1)
 	{
-		cerr << "ERROR: Genotype error rate must be > 0 and < 1.\n";
+		//cerr << "ERROR: Genotype error rate must be > 0 and < 1.\n";
 		LOG.err("ERROR: Genotype error rate must be > 0 and < 1.");
 		return true;
 	}
@@ -304,7 +312,7 @@ bool checkWinsize(int winsize)
 {
 	if (winsize <= 1)
 	{
-		cerr << "ERROR: SNP window size must be > 1.\n";
+		//cerr << "ERROR: SNP window size must be > 1.\n";
 		LOG.err("ERROR: SNP window size must be > 1.");
 		return true;
 	}
@@ -315,14 +323,14 @@ bool checkMaxGap(int MAX_GAP)
 {
 	if (MAX_GAP < 0)
 	{
-		cerr << "ERROR: Max gap must be > 0.\n";
+		//cerr << "ERROR: Max gap must be > 0.\n";
 		LOG.err("ERROR: Max gap must be > 0.");
 		return true;
 	}
 	else if (MAX_GAP < 10000)
 	{
-		cerr << "WARNING: max gap set very low: " << MAX_GAP << endl;
-		LOG.err("WARNING: max gap set very low:", MAX_GAP);
+		//cerr << "WARNING: max gap set very low: " << MAX_GAP << endl;
+		//LOG.err("WARNING: max gap set very low:", MAX_GAP);
 		LOG.err("WARNING: max gap set very low:", MAX_GAP);
 	}
 	return false;
