@@ -51,8 +51,9 @@ struct ROHLength
 
 void calcLOD(IndData *indData, MapData *mapData,
              HapData *hapData, FreqData *freqData,
+             GenoLikeData *GLData,
              WinData *winData, centromere *centro,
-             int winsize, double error, int MAX_GAP);
+             int winsize, double error, int MAX_GAP, bool USE_GL);
 
 double lod(const short &genotype, const double &freq, const double &error);
 
@@ -69,9 +70,11 @@ KDEWinsizeReport *calculateLODOverWinsizeRange(vector< HapData * > *hapDataByChr
 vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< FreqData * > *freqDataByChr,
                                     vector< MapData * > *mapDataByChr,
+                                    vector< GenoLikeData * > *GLDataByChr,
                                     IndData *indData,
                                     centromere *centro,
-                                    int winsize, double error, int MAX_GAP);
+                                    int winsize, double error,
+                                    int MAX_GAP, bool USE_GL);
 
 vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         vector< MapData * > *mapDataByChr,
@@ -106,21 +109,24 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      centromere *centro,
                      vector<int> &multiWinsizes,
                      double error,
+                     vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
 
 KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
-                  vector< FreqData * > *freqDataByChr,
-                  vector< MapData * > *mapDataByChr,
-                  IndData *indData, centromere *centro,
-                  vector<int> *multiWinsizes, int &winsize, double error,
-                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
+                                 vector< FreqData * > *freqDataByChr,
+                                 vector< MapData * > *mapDataByChr,
+                                 IndData *indData, centromere *centro,
+                                 vector<int> *multiWinsizes, int &winsize, double error,
+                                 vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
+                                 int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
 
 KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
-                  vector< FreqData * > *freqDataByChr,
-                  vector< MapData * > *mapDataByChr,
-                  IndData *indData, centromere *centro,
-                  int &winsize, int step, double error,
-                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
+                         vector< FreqData * > *freqDataByChr,
+                         vector< MapData * > *mapDataByChr,
+                         IndData *indData, centromere *centro,
+                         int &winsize, int step, double error,
+                         vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
+                         int MAX_GAP, int KDE_SUBSAMPLE, string outfile);
 
 //int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD);
 

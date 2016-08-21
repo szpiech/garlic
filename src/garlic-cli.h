@@ -56,6 +56,10 @@ extern const string ARG_TFAM;
 extern const string DEFAULT_TFAM;
 extern const string HELP_TFAM;
 
+extern const string ARG_TGLS;
+extern const string DEFAULT_TGLS;
+extern const string HELP_TGLS;
+
 extern const string ARG_RAW_LOD;
 extern const bool DEFAULT_RAW_LOD;
 extern const string HELP_RAW_LOD;
@@ -92,6 +96,7 @@ extern const string ARG_CENTROMERE_FILE;
 extern const string DEFAULT_CENTROMERE_FILE;
 extern const string HELP_CENTROMERE_FILE;
 
+/*
 extern const string ARG_FEATURE_TPED;
 extern const string DEFAULT_FEATURE_TPED;
 extern const string HELP_FEATURE_TPED;
@@ -103,7 +108,7 @@ extern const string HELP_FEATURE_TFAM;
 extern const string ARG_FEATURES;
 extern const string DEFAULT_FEATURES;
 extern const string HELP_FEATURES;
-
+*/
 
 param_t *getCLI(int argc, char *argv[]);
 bool checkBuild(string BUILD);
@@ -116,7 +121,7 @@ bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF);
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS);
 bool checkRequiredFiles(string tpedfile, string tfamfile);
 bool checkThreads(int numThreads);
-bool checkError(double error);
+bool checkError(double error, string tglsfile);
 bool checkWinsize(int winsize);
 bool checkMaxGap(int MAX_GAP);
 

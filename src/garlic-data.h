@@ -63,6 +63,15 @@ struct WinData
     //int nmiss;
 };
 
+struct GenoLikeData
+{
+    double **data;
+    int nind;
+    int nloci;
+    //int nmiss;
+};
+
+
 struct DoubleData
 {
     double *data;
@@ -71,10 +80,12 @@ struct DoubleData
 
 int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
                            vector< HapData * > **hapDataByChr,
-                           vector< FreqData * > **freqDataByChr);
+                           vector< FreqData * > **freqDataByChr,
+                           vector< GenoLikeData * > **GLDataByChr);
 
 MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLoci);
 HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci);
+GenoLikeData *filterMonomorphicSites(GenoLikeData *GLData, FreqData *freqData, int &newLoci);
 FreqData *filterMonomorphicSites(FreqData *freqData, int &newLoci);
 
 string getPost(int num);
@@ -117,6 +128,11 @@ vector< HapData * > *readTPEDHapData3(string filename,
                                       char TPED_MISSING,
                                       vector< MapData * > *mapDataByChr);
 
+vector< GenoLikeData * > *readTGLSData(string filename,
+                                      int expectedLoci,
+                                      int expectedInd,
+                                      vector< MapData * > *mapDataByChr);
+
 MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);
 void releaseMapData(vector< MapData * > *mapDataByChr);
@@ -130,11 +146,17 @@ HapData *initHapData(unsigned int nind, unsigned int nloci);
 void releaseHapData(HapData *data);
 void releaseHapData(vector< HapData * > *hapDataByChr);
 
+GenoLikeData *initGLData(unsigned int nind, unsigned int nloci);
+void releaseGLData(GenoLikeData *data);
+void releaseGLData(vector< GenoLikeData * > *GLDataByChr);
+
 void subsetData(vector< HapData * > *hapDataByChr,
+                vector< GenoLikeData *> *GLDataByChr,
                 IndData *indData,
                 vector< HapData * > **subsetHapDataByChr,
+                vector< GenoLikeData *> **subsetGLDataByChr,
                 IndData **subsetIndData,
-                int subsample);
+                int subsample, bool USE_GL);
 
 
 WinData *initWinData(unsigned int nind, unsigned int nloci);

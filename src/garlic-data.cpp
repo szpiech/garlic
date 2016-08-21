@@ -2,31 +2,43 @@
 
 int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
                            vector< HapData * > **hapDataByChr,
-                           vector< FreqData * > **freqDataByChr)
+                           vector< FreqData * > **freqDataByChr,
+                           vector< GenoLikeData * > **GLDataByChr)
 {
+    cerr << "CHECKA\n";
+
     vector< MapData * > *mapDataByChr2 = new vector< MapData * >;
     vector< HapData * > *hapDataByChr2 = new vector< HapData * >;
     vector< FreqData * > *freqDataByChr2 = new vector< FreqData * >;
+    vector< GenoLikeData * > *GLDataByChr2 = new vector< GenoLikeData * >;
+    cerr << "CHECKB\n";
 
     int numLoci = 0;
     for (int i = 0; i < (*mapDataByChr)->size(); i++) {
         int newLoci = 0;
         MapData *mapData2 = filterMonomorphicSites((*mapDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
         HapData *hapData2 = filterMonomorphicSites((*hapDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
+        GenoLikeData *GLData2 = filterMonomorphicSites((*GLDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
         FreqData *freqData2 = filterMonomorphicSites((*freqDataByChr)->at(i), newLoci);
         mapDataByChr2->push_back(mapData2);
         hapDataByChr2->push_back(hapData2);
+        GLDataByChr2->push_back(GLData2);
         freqDataByChr2->push_back(freqData2);
         numLoci += newLoci;
     }
-    
+    cerr << "CHECKC\n";
+
     releaseMapData(*mapDataByChr);
     releaseHapData(*hapDataByChr);
     releaseFreqData(*freqDataByChr);
+    releaseGLData(*GLDataByChr);
+    cerr << "CHECKD\n";
 
     *mapDataByChr = mapDataByChr2;
     *hapDataByChr = hapDataByChr2;
+    *GLDataByChr = GLDataByChr2;
     *freqDataByChr = freqDataByChr2;
+    cerr << "CHECKE\n";
 
     return numLoci;
 }
@@ -83,6 +95,33 @@ HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLo
 
     return hapData2;
 }
+
+GenoLikeData *filterMonomorphicSites(GenoLikeData *GLData, FreqData *freqData, int &newLoci)
+{
+    if (newLoci <= 0) {
+        newLoci = 0;
+        for (int i = 0; i < freqData->nloci; i++)
+            if (freqData->freq[i] > 0 && freqData->freq[i] < 1)
+                newLoci++;
+    }
+
+    GenoLikeData *GLData2 = initGLData(GLData->nind, newLoci);
+    int index = 0;
+    for (int i = 0; i < freqData->nloci; i++)
+    {
+        if (freqData->freq[i] > 0 && freqData->freq[i] < 1)
+        {
+            for (int j = 0; j < GLData->nind; j++)
+            {
+                GLData2->data[index][j] = GLData->data[i][j];
+            }
+            index++;
+        }
+    }
+
+    return GLData2;
+}
+
 
 FreqData *filterMonomorphicSites(FreqData *freqData, int &newLoci)
 {
@@ -279,7 +318,7 @@ void writeFreqData(string freqOutfile, string popName,
 
     if (fout.fail())
     {
-        cerr << "ERROR: Failed to open " << freqOutfile << " for writing.\n";
+        //cerr << "ERROR: Failed to open " << freqOutfile << " for writing.\n";
         LOG.err("ERROR: Failed to open", freqOutfile);
         throw 0;
     }
@@ -761,6 +800,103 @@ vector< HapData * > *readTPEDHapData3(string filename,
     return hapDataByChr;
 }
 
+vector< GenoLikeData * > *readTGLSData(string filename,
+                                  int expectedLoci,
+                                  int expectedInd,
+                                  vector< MapData * > *mapDataByChr)
+{
+    //int expectedHaps = 2 * expectedInd;
+    igzstream fin;
+    //cerr << "Checking " << filename << "...\n";
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        //cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        LOG.err("ERROR: Failed to open", filename);
+        throw 0;
+    }
+
+    cout << "Loading genotype likelihoods from " << filename << "\n";
+
+    //int fileStart = fin.tellg();
+    string line;
+    int nhaps = -1;
+    int nloci = 0;
+    while (getline(fin, line))
+    {
+        nloci++;
+        nhaps = countFields(line);
+        //cout << "nhaps: " << current_nhaps << endl;
+        if (nhaps != expectedInd + 4)
+        {
+            /*
+            cerr << "ERROR: line " << nloci << " of " << filename << " has " << nhaps
+                 << " columns, but expected " << expectedInd + 4 << ".\n";
+            */
+            LOG.err("ERROR: line", nloci, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" has", nhaps, false);
+            LOG.err(" columns, but expected", expectedInd);
+            throw 0;
+        }
+    }
+    if (nloci != expectedLoci)
+    {
+        /*
+        cerr << "ERROR: " << filename << " has " << nloci
+             << " loci, but expected " << expectedLoci << ".\n";
+        */
+        LOG.err("ERROR:", filename, false);
+        LOG.err(" has", nloci, false);
+        LOG.err(" loci, but expected", expectedLoci);
+        throw 0;
+    }
+
+    fin.close();
+    fin.clear();
+
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        //cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        LOG.err("ERROR: Failed to open", filename);
+        throw 0;
+    }
+
+    vector< GenoLikeData * > *GLDataByChr = new vector< GenoLikeData * >;
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+    {
+        GenoLikeData *data = initGLData(expectedInd, mapDataByChr->at(chr)->nloci);
+        GLDataByChr->push_back(data);
+    }
+
+    //string alleleStr1, alleleStr2;
+    string junk;//, oneAllele;
+    double gl;
+    //For each chromosome
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+    {
+        //For each locus on the chromosome
+        for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
+        {
+            fin >> junk;
+            fin >> junk;
+            fin >> junk;
+            fin >> junk;
+            for (int ind = 0; ind < expectedInd; ind++)
+            {
+                fin >> gl;
+                GLDataByChr->at(chr)->data[locus][ind] = 1 + gl;
+            }
+        }
+    }
+
+    fin.close();
+    return GLDataByChr;
+}
+
 /*
 void writeTPEDDataByPop(string outfile, vector< vector< HapData * >* > *hapDataByPopByChr, vector< MapData * > *mapDataByChr, map<string, int> &pop2index)
 {
@@ -1007,9 +1143,6 @@ HapData *initHapData(unsigned int nind, unsigned int nloci)
 {
     if (nind < 1 || nloci < 1)
     {
-        cerr << "ERROR: Can not allocate HapData object.  Number of haplotypes (" << nind
-             << ") and number of loci (" << nloci
-             << ") must be positive.\n";
         LOG.err("ERROR: Can not allocate HapData object. Number of haplotypes (", int(nind), false);
         LOG.err(" ) and number of loci (", int(nloci), false);
         LOG.err(" ) must be positive.");
@@ -1049,6 +1182,56 @@ void releaseHapData(HapData *data)
     delete data;
     data = NULL;
     return;
+}
+
+GenoLikeData *initGLData(unsigned int nind, unsigned int nloci) {
+    if (nind < 1 || nloci < 1)
+    {
+        LOG.err("ERROR: Can not allocate GenoLikeData object. Number of individuals (", int(nind), false);
+        LOG.err(" ) and number of loci (", int(nloci), false);
+        LOG.err(" ) must be positive.");
+        throw 0;
+    }
+
+    GenoLikeData *data = new GenoLikeData;
+    data->nind = nind;
+    data->nloci = nloci;
+
+    data->data = new double*[nloci];
+    for (unsigned int i = 0; i < nloci; i++)
+    {
+        data->data[i] = new double[nind];
+        for (unsigned int j = 0; j < nind; j++)
+        {
+            data->data[i][j] = 1;
+        }
+    }
+
+    return data;
+}
+void releaseGLData(GenoLikeData *data){
+    if (data == NULL) return;
+    for (int i = 0; i < data->nloci; i++)
+    {
+        delete [] data->data[i];
+    }
+
+    delete [] data->data;
+
+    data->data = NULL;
+    data->nind = -9;
+    data->nloci = -9;
+    delete data;
+    data = NULL;
+    return;
+}
+void releaseGLData(vector< GenoLikeData * > *GLDataByChr){
+     for (unsigned int chr = 0; chr < GLDataByChr->size(); chr++)
+    {
+        releaseGLData(GLDataByChr->at(chr));
+    }
+    GLDataByChr->clear();
+    delete GLDataByChr;
 }
 
 int countFields(const string &str)
@@ -1493,10 +1676,12 @@ void releaseDoubleData(vector < DoubleData * > *rawWinDataByPop)
 }
 
 void subsetData(vector< HapData * > *hapDataByChr,
+                vector< GenoLikeData *> *GLDataByChr,
                 IndData *indData,
                 vector< HapData * > **subsetHapDataByChr,
+                vector< GenoLikeData *> **subsetGLDataByChr,
                 IndData **subsetIndData,
-                int subsample)
+                int subsample, bool USE_GL)
 {
     const gsl_rng_type *T;
     gsl_rng *r;
@@ -1524,36 +1709,41 @@ void subsetData(vector< HapData * > *hapDataByChr,
     IndData *newIndData = initIndData(nind);
     newIndData->pop = indData->pop;
 
-    cout << "Individuals used for KDE: ";
     for (int ind = 0; ind < nind; ind++) {
         newIndData->indID[ind] = indData->indID[randInd[ind]];
-        cout << newIndData->indID[ind] << " ";
     }
-    cout << "\n";
     LOG.loga("Individuals used for KDE:", newIndData->indID, nind);
 
     vector< HapData * > *newHapDataByChr = new vector< HapData * >;
+    vector< GenoLikeData * > *newGLDataByChr;
+    if(USE_GL) newGLDataByChr = new vector< GenoLikeData * >;
 
     int nchr = hapDataByChr->size();
     HapData *hapData;
+    GenoLikeData *GLData;
     for (int chr = 0; chr < nchr; chr++)
     {
         int nloci = hapDataByChr->at(chr)->nloci;
         hapData = initHapData(nind, nloci);
+        GLData = initGLData(nind, nloci);
 
         for (int locus = 0; locus < nloci; locus++)
         {
             for (int ind = 0; ind < nind; ind++)
             {
                 hapData->data[locus][ind] = hapDataByChr->at(chr)->data[locus][randInd[ind]];
+                if(USE_GL) GLData->data[locus][ind] = GLDataByChr->at(chr)->data[locus][randInd[ind]];
             }
         }
         newHapDataByChr->push_back(hapData);
         hapData = NULL;
+        if(USE_GL) newGLDataByChr->push_back(GLData);
+        GLData = NULL;
     }
     delete [] randInd;
 
     *(subsetHapDataByChr) = newHapDataByChr;
+    *(subsetGLDataByChr) = newGLDataByChr;
     *(subsetIndData) = newIndData;
     gsl_rng_free(r);
     return;

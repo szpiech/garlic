@@ -55,6 +55,10 @@ const string ARG_TFAM = "--tfam";
 const string DEFAULT_TFAM = "none";
 const string HELP_TFAM = "A tfam formatted file containing population and individual IDs.";
 
+const string ARG_TGLS = "--tgls";
+const string DEFAULT_TGLS = "none";
+const string HELP_TGLS = "A tgls file containing per-genotype likelihoods.";
+
 const string ARG_RAW_LOD = "--raw-lod";
 const bool DEFAULT_RAW_LOD = false;
 const string HELP_RAW_LOD = "If set, LOD scores will be output to gzip compressed files.";
@@ -130,6 +134,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_RESAMPLE, DEFAULT_RESAMPLE, "", HELP_RESAMPLE);
 	params->addFlag(ARG_TPED, DEFAULT_TPED, "", HELP_TPED);
 	params->addFlag(ARG_TFAM, DEFAULT_TFAM, "", HELP_TFAM);
+	params->addFlag(ARG_TGLS, DEFAULT_TGLS, "", HELP_TGLS);
 	params->addFlag(ARG_RAW_LOD, DEFAULT_RAW_LOD, "", HELP_RAW_LOD);
 	params->addListFlag(ARG_BOUND_SIZE, DEFAULT_BOUND_SIZE, "", HELP_BOUND_SIZE);
 	params->addFlag(ARG_LOD_CUTOFF, DEFAULT_LOD_CUTOFF, "", HELP_LOD_CUTOFF);
@@ -297,13 +302,14 @@ bool checkThreads(int numThreads)
 	return false;
 }
 
-bool checkError(double error)
+bool checkError(double error, string tglsfile)
 {
 	if (error <= 0 || error >= 1)
 	{
-		//cerr << "ERROR: Genotype error rate must be > 0 and < 1.\n";
-		LOG.err("ERROR: Genotype error rate must be > 0 and < 1.");
-		return true;
+		if(tglsfile.compare(DEFAULT_TGLS) == 0){
+			LOG.err("ERROR: Genotype error rate must be > 0 and < 1, or a TGLS file must be provided.");
+			return true;
+		}
 	}
 	return false;
 }

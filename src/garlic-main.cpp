@@ -37,11 +37,13 @@ int main(int argc, char *argv[])
 
     string tpedfile = params->getStringFlag(ARG_TPED);
     string tfamfile = params->getStringFlag(ARG_TFAM);
+    string tglsfile = params->getStringFlag(ARG_TGLS);
     argerr = argerr || checkRequiredFiles(tpedfile, tfamfile);
     LOG.log("TPED file:", tpedfile);
     char TPED_MISSING = params->getCharFlag(ARG_TPED_MISSING);
     LOG.log("TPED missing data code:", TPED_MISSING);
     LOG.log("TFAM file:", tfamfile);
+    LOG.log("TGLS file:", tglsfile);
 
     string BUILD = params->getStringFlag(ARG_BUILD);
     argerr = argerr || checkBuild(BUILD);
@@ -95,13 +97,14 @@ int main(int argc, char *argv[])
     LOG.log("Choose ROH class thresholds automatically:", AUTO_BOUNDS);
     if (!AUTO_BOUNDS) LOG.logv("User defined ROH class thresholds:", boundSizes);
 
-/*
-    int numThreads = params->getIntFlag(ARG_THREADS);
-    argerr = argerr || checkThreads(numThreads);
-    LOG.log("Threads:", numThreads);
-*/
+    /*
+        int numThreads = params->getIntFlag(ARG_THREADS);
+        argerr = argerr || checkThreads(numThreads);
+        LOG.log("Threads:", numThreads);
+    */
+
     double error = params->getDoubleFlag(ARG_ERROR);
-    argerr = argerr || checkError(error);
+    argerr = argerr || checkError(error, tglsfile);
     LOG.log("Genotyping error:", error);
 
     int MAX_GAP = params->getIntFlag(ARG_MAX_GAP);
@@ -133,7 +136,9 @@ int main(int argc, char *argv[])
     vector< HapData * > *hapDataByChr;
     vector< FreqData * > *freqDataByChr;
     vector< WinData * > *winDataByChr;
+    vector< GenoLikeData * > *GLDataByChr;
     KDEResult *kdeResult;
+    bool USE_GL = false;
     try
     {
         chrCoordList = scanTPEDMapData(tpedfile, numLoci, numCols);
@@ -148,6 +153,11 @@ int main(int argc, char *argv[])
         LOG.log("Total diploid individuals:", numInd);
 
         hapDataByChr = readTPEDHapData3(tpedfile, numLoci, numInd, TPED_MISSING, mapDataByChr);
+
+        if (tglsfile.compare(DEFAULT_TGLS) != 0) {
+            GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr);
+            USE_GL = true;
+        }
     }
     catch (...) { return 1; }
 
@@ -172,25 +182,25 @@ int main(int argc, char *argv[])
     chrCoordList->clear();
     delete chrCoordList;
 
-
 //Filter data based on frequency data.
 //Remove all monomorphic sites.
 //If a frequency file is provided that reports
 //a frequency in (0,1) the site will be retained
 //even if it appears monomorphic in the sample.
-    int newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr);
+
+    int newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr);
 
     LOG.log("Monomorphic loci filtered:", numLoci - newLoci);
     LOG.log("Total loci used for analysis:", newLoci);
 
     numLoci = newLoci;
 
-
 //++++++++++Pipeline begins++++++++++
     if (WINSIZE_EXPLORE && AUTO_WINSIZE)
     {
         kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, &multiWinsizes, winsize, error,
+                                          GLDataByChr, USE_GL,
                                           MAX_GAP, KDE_SUBSAMPLE, outfile);
     }
     else if (WINSIZE_EXPLORE)
@@ -204,6 +214,7 @@ int main(int argc, char *argv[])
 
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
+                        GLDataByChr, USE_GL,
                         MAX_GAP, KDE_SUBSAMPLE, outfile);
 
         return 0;
@@ -214,6 +225,7 @@ int main(int argc, char *argv[])
         {
             kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
                                       indData, centro, winsize, AUTO_WINSIZE_STEP, error,
+                                      GLDataByChr, USE_GL,
                                       MAX_GAP, KDE_SUBSAMPLE, outfile);
         }
         catch (...)
@@ -231,10 +243,13 @@ int main(int argc, char *argv[])
     cout << "Window size: " << winsize << endl;
 
     winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
-                                  indData, centro, winsize, error, MAX_GAP);
+                                  GLDataByChr,
+                                  indData, centro, winsize, error,
+                                  MAX_GAP, USE_GL);
 
     releaseHapData(hapDataByChr);
     releaseFreqData(freqDataByChr);
+    if (USE_GL) releaseGLData(GLDataByChr);
 
     if (RAW_LOD)
     {
