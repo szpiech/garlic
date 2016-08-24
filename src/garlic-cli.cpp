@@ -59,6 +59,11 @@ const string ARG_TGLS = "--tgls";
 const string DEFAULT_TGLS = "none";
 const string HELP_TGLS = "A tgls file containing per-genotype likelihoods.";
 
+const string ARG_GL_TYPE = "--gl-type";
+const string DEFAULT_GL_TYPE = "GL";
+const string HELP_GL_TYPE = "Specify the form of the genotype likelihood data: GL or PL, as defined\n\
+in VCFv4.2 documentation.";
+
 const string ARG_RAW_LOD = "--raw-lod";
 const bool DEFAULT_RAW_LOD = false;
 const string HELP_RAW_LOD = "If set, LOD scores will be output to gzip compressed files.";
@@ -135,6 +140,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_TPED, DEFAULT_TPED, "", HELP_TPED);
 	params->addFlag(ARG_TFAM, DEFAULT_TFAM, "", HELP_TFAM);
 	params->addFlag(ARG_TGLS, DEFAULT_TGLS, "", HELP_TGLS);
+	params->addFlag(ARG_GL_TYPE, DEFAULT_GL_TYPE, "", HELP_GL_TYPE);
 	params->addFlag(ARG_RAW_LOD, DEFAULT_RAW_LOD, "", HELP_RAW_LOD);
 	params->addListFlag(ARG_BOUND_SIZE, DEFAULT_BOUND_SIZE, "", HELP_BOUND_SIZE);
 	params->addFlag(ARG_LOD_CUTOFF, DEFAULT_LOD_CUTOFF, "", HELP_LOD_CUTOFF);
@@ -155,7 +161,7 @@ param_t *getCLI(int argc, char *argv[])
 
 	if (!params->parseCommandLine(argc, argv))
 	{
-		delete params; 
+		delete params;
 		return NULL;
 	}
 	return params;
@@ -174,8 +180,8 @@ bool checkBuild(string BUILD)
 	return false;
 }
 
-bool checkBuildAndCentromereFile(string BUILD, string centromereFile){
-	if(BUILD.compare(DEFAULT_BUILD) == 0 && centromereFile.compare(DEFAULT_CENTROMERE_FILE) == 0){
+bool checkBuildAndCentromereFile(string BUILD, string centromereFile) {
+	if (BUILD.compare(DEFAULT_BUILD) == 0 && centromereFile.compare(DEFAULT_CENTROMERE_FILE) == 0) {
 		LOG.err("ERROR: Must choose hg18/hg19/hg38 for build version or provide a custom centromere file.");
 		return true;
 	}
@@ -217,8 +223,8 @@ bool checkAutoFreq(string freqfile, bool FREQ_ONLY, bool &AUTO_FREQ)
 	return false;
 }
 
-bool checkAutoWinsizeStep(int auto_winsize_step){
-	if(auto_winsize_step <= 0){
+bool checkAutoWinsizeStep(int auto_winsize_step) {
+	if (auto_winsize_step <= 0) {
 		LOG.err("ERROR: Step size for automatic window selection must be positive.");
 		return true;
 	}
@@ -306,13 +312,23 @@ bool checkError(double error, string tglsfile)
 {
 	if (error <= 0 || error >= 1)
 	{
-		if(tglsfile.compare(DEFAULT_TGLS) == 0){
+		if (tglsfile.compare(DEFAULT_TGLS) == 0) {
 			LOG.err("ERROR: Genotype error rate must be > 0 and < 1, or a TGLS file must be provided.");
 			return true;
 		}
 	}
 	return false;
 }
+
+bool checkGLType(string TYPE)
+{
+	if (TYPE.compare("GL") != 0 && TYPE.compare("PL") != 0 ) {
+		LOG.err("ERROR: Must choose GL/PL for genotype likelihood format or provide a single error rate with --error.");
+		return true;
+	}
+	return false;
+}
+
 
 bool checkWinsize(int winsize)
 {

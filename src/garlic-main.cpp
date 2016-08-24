@@ -44,6 +44,9 @@ int main(int argc, char *argv[])
     LOG.log("TPED missing data code:", TPED_MISSING);
     LOG.log("TFAM file:", tfamfile);
     LOG.log("TGLS file:", tglsfile);
+    string GL_TYPE = params->getStringFlag(ARG_GL_TYPE);
+    argerr = argerr || checkGLType(GL_TYPE);
+    LOG.log("Genotype likelihood format:", GL_TYPE);
 
     string BUILD = params->getStringFlag(ARG_BUILD);
     argerr = argerr || checkBuild(BUILD);
@@ -155,7 +158,7 @@ int main(int argc, char *argv[])
         hapDataByChr = readTPEDHapData3(tpedfile, numLoci, numInd, TPED_MISSING, mapDataByChr);
 
         if (tglsfile.compare(DEFAULT_TGLS) != 0) {
-            GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr);
+            GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr, GL_TYPE);
             USE_GL = true;
         }
     }

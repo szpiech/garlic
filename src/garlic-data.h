@@ -6,6 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <ctime>
+#include <cmath>
 #include <cstdlib>
 #include <cctype>
 #include <map>
@@ -131,7 +132,8 @@ vector< HapData * > *readTPEDHapData3(string filename,
 vector< GenoLikeData * > *readTGLSData(string filename,
                                       int expectedLoci,
                                       int expectedInd,
-                                      vector< MapData * > *mapDataByChr);
+                                      vector< MapData * > *mapDataByChr,
+                                      string GL_TYPE);
 
 MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);

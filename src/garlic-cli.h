@@ -60,6 +60,10 @@ extern const string ARG_TGLS;
 extern const string DEFAULT_TGLS;
 extern const string HELP_TGLS;
 
+extern const string ARG_GL_TYPE;
+extern const string DEFAULT_GL_TYPE;
+extern const string HELP_GL_TYPE;
+
 extern const string ARG_RAW_LOD;
 extern const bool DEFAULT_RAW_LOD;
 extern const string HELP_RAW_LOD;
@@ -122,6 +126,7 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS);
 bool checkRequiredFiles(string tpedfile, string tfamfile);
 bool checkThreads(int numThreads);
 bool checkError(double error, string tglsfile);
+bool checkGLType(string TYPE);
 bool checkWinsize(int winsize);
 bool checkMaxGap(int MAX_GAP);
 

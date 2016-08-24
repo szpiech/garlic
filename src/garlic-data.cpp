@@ -801,9 +801,10 @@ vector< HapData * > *readTPEDHapData3(string filename,
 }
 
 vector< GenoLikeData * > *readTGLSData(string filename,
-                                  int expectedLoci,
-                                  int expectedInd,
-                                  vector< MapData * > *mapDataByChr)
+                                       int expectedLoci,
+                                       int expectedInd,
+                                       vector< MapData * > *mapDataByChr,
+                                       string GL_TYPE)
 {
     //int expectedHaps = 2 * expectedInd;
     igzstream fin;
@@ -888,7 +889,17 @@ vector< GenoLikeData * > *readTGLSData(string filename,
             for (int ind = 0; ind < expectedInd; ind++)
             {
                 fin >> gl;
-                GLDataByChr->at(chr)->data[locus][ind] = 1 + gl;
+                if (GL_TYPE.compare("GL") == 0) {
+                }
+                else if (GL_TYPE.compare("PL") == 0) {
+                    gl = -gl/10;
+                }
+                else{
+                    LOG.err("ERROR: This error should never get triggered. Something really bad happened.");
+                }
+                gl = ( gl > -10 ) ? gl : -10;
+                GLDataByChr->at(chr)->data[locus][ind] = 1 - pow(gl, 10);
+
             }
         }
     }
@@ -1209,7 +1220,7 @@ GenoLikeData *initGLData(unsigned int nind, unsigned int nloci) {
 
     return data;
 }
-void releaseGLData(GenoLikeData *data){
+void releaseGLData(GenoLikeData *data) {
     if (data == NULL) return;
     for (int i = 0; i < data->nloci; i++)
     {
@@ -1225,8 +1236,9 @@ void releaseGLData(GenoLikeData *data){
     data = NULL;
     return;
 }
-void releaseGLData(vector< GenoLikeData * > *GLDataByChr){
-     for (unsigned int chr = 0; chr < GLDataByChr->size(); chr++)
+
+void releaseGLData(vector< GenoLikeData * > *GLDataByChr) {
+    for (unsigned int chr = 0; chr < GLDataByChr->size(); chr++)
     {
         releaseGLData(GLDataByChr->at(chr));
     }
@@ -1716,7 +1728,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
 
     vector< HapData * > *newHapDataByChr = new vector< HapData * >;
     vector< GenoLikeData * > *newGLDataByChr;
-    if(USE_GL) newGLDataByChr = new vector< GenoLikeData * >;
+    if (USE_GL) newGLDataByChr = new vector< GenoLikeData * >;
 
     int nchr = hapDataByChr->size();
     HapData *hapData;
@@ -1732,12 +1744,12 @@ void subsetData(vector< HapData * > *hapDataByChr,
             for (int ind = 0; ind < nind; ind++)
             {
                 hapData->data[locus][ind] = hapDataByChr->at(chr)->data[locus][randInd[ind]];
-                if(USE_GL) GLData->data[locus][ind] = GLDataByChr->at(chr)->data[locus][randInd[ind]];
+                if (USE_GL) GLData->data[locus][ind] = GLDataByChr->at(chr)->data[locus][randInd[ind]];
             }
         }
         newHapDataByChr->push_back(hapData);
         hapData = NULL;
-        if(USE_GL) newGLDataByChr->push_back(GLData);
+        if (USE_GL) newGLDataByChr->push_back(GLData);
         GLData = NULL;
     }
     delete [] randInd;
