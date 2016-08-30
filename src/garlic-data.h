@@ -2,6 +2,7 @@
 #define __GARLIC_DATA_H__
 #include <string>
 #include <iostream>
+#include <sstream>
 #include <fstream>
 #include <vector>
 #include <sstream>
@@ -14,6 +15,7 @@
 #include "gsl/gsl_rng.h"
 #include "gsl/gsl_randist.h"
 #include "garlic-errlog.h"
+#include "garlic-centromeres.h"
 
 using namespace std;
 
@@ -21,73 +23,105 @@ const int MISSING = -9999;
 
 struct int_pair_t
 {
-    int first;
-    int second;
+  int first;
+  int second;
 };
 
 struct HapData
 {
-    short **data;
-    int nind;
-    int nloci;
+  short **data;
+  int nind;
+  int nloci;
+};
+
+struct GenMapScaffold {
+  int *physicalPos;
+  double *geneticPos;
+  map<int, int> ppos2index;
+  int nloci;
+  string chr;
+  int centroStart;
+  int centroEnd;
+  int currentIndex;
 };
 
 struct MapData
 {
-    int *physicalPos;
-    double *geneticPos;
-    string *locusName;
-    char *allele;
-    //char *allele0;
-    int nloci;
-    string chr;
+  int *physicalPos;
+  double *geneticPos;
+  string *locusName;
+  char *allele;
+  //char *allele0;
+  int nloci;
+  string chr;
 };
 
 struct IndData
 {
-    string pop;
-    string *indID;
-    int nind;
+  string pop;
+  string *indID;
+  int nind;
 };
 
 struct FreqData
 {
-    double *freq;
-    int nloci;
+  double *freq;
+  int nloci;
 };
 
 struct WinData
 {
-    double **data;
-    int nind;
-    int nloci;
-    //int nmiss;
+  double **data;
+  int nind;
+  int nloci;
+  //int nmiss;
 };
 
 struct GenoLikeData
 {
-    double **data;
-    int nind;
-    int nloci;
-    //int nmiss;
+  double **data;
+  int nind;
+  int nloci;
+  //int nmiss;
 };
 
 
 struct DoubleData
 {
-    double *data;
-    int size;
+  double *data;
+  int size;
 };
+
+double getMapInfo(int queryPos, GenMapScaffold *scaffold, int &count);
+double interpolate(double x0, double y0, double x1, double y1, double query);
+int interpolateGeneticmap(vector< MapData * > **mapDataByChr, vector< GenMapScaffold * > *scaffoldMapByChr);
+int interpolateGeneticmap(MapData *mapData, GenMapScaffold *scaffold);
+vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro);
+
+GenMapScaffold *initGenMapScaffold(int nloci);
+void releaseGenMapScaffold(GenMapScaffold *scaffoldMap);
+void releaseGenMapScaffold(vector< GenMapScaffold * > *scaffoldMapByChr);
 
 int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
                            vector< HapData * > **hapDataByChr,
                            vector< FreqData * > **freqDataByChr,
                            vector< GenoLikeData * > **GLDataByChr);
 
+int filterMonomorphicAndOOBSites(vector< MapData * > **mapDataByChr,
+                                 vector< HapData * > **hapDataByChr,
+                                 vector< FreqData * > **freqDataByChr,
+                                 vector< GenoLikeData * > **GLDataByChr,
+                                 vector< GenMapScaffold * > *scaffoldMapByChr);
+
 MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLoci);
 HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci);
 GenoLikeData *filterMonomorphicSites(GenoLikeData *GLData, FreqData *freqData, int &newLoci);
 FreqData *filterMonomorphicSites(FreqData *freqData, int &newLoci);
+
+MapData *filterMonomorphicAndOOBSites(MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci);
+HapData *filterMonomorphicAndOOBSites(HapData *hapData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci);
+GenoLikeData *filterMonomorphicAndOOBSites(GenoLikeData *GLData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci);
+FreqData *filterMonomorphicAndOOBSites(FreqData *freqData, MapData *mapData, GenMapScaffold *scaffold, int &newLoci);
 
 string getPost(int num);
 bool goodDouble(string str);
@@ -130,10 +164,10 @@ vector< HapData * > *readTPEDHapData3(string filename,
                                       vector< MapData * > *mapDataByChr);
 
 vector< GenoLikeData * > *readTGLSData(string filename,
-                                      int expectedLoci,
-                                      int expectedInd,
-                                      vector< MapData * > *mapDataByChr,
-                                      string GL_TYPE);
+                                       int expectedLoci,
+                                       int expectedInd,
+                                       vector< MapData * > *mapDataByChr,
+                                       string GL_TYPE);
 
 MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);

@@ -1,17 +1,177 @@
 #include "garlic-data.h"
 
+int interpolateGeneticmap(vector< MapData * > **mapDataByChr, vector< GenMapScaffold * > *scaffoldMapByChr) {
+    int numInterpolated = 0;
+    for (int i = 0; i < (*mapDataByChr)->size(); i++) {
+        numInterpolated += interpolateGeneticmap((*mapDataByChr)->at(i), scaffoldMapByChr->at(i));
+    }
+    return numInterpolated;
+}
+
+int interpolateGeneticmap(MapData *mapData, GenMapScaffold *scaffold) {
+    int numInterpolated = 0;
+    for (int i = 0; i < mapData->nloci; i++) {
+        mapData->geneticPos[i] = getMapInfo(mapData->physicalPos[i], scaffold, numInterpolated);
+    }
+    return numInterpolated;
+}
+
+double getMapInfo(int queryPos, GenMapScaffold *scaffold, int &count) {
+    if (queryPos < scaffold->physicalPos[0])
+    {
+        LOG.err("ERROR: Sites outside of map scaffold should have been filtered out by GARLIC.");
+        throw 0;
+    }
+    else if (queryPos > scaffold->physicalPos[scaffold->nloci - 1])
+    {
+        LOG.err("ERROR: Sites outside of map scaffold should have been filtered out by GARLIC.");
+        throw 0;
+    }
+    else if (scaffold->ppos2index.count(queryPos) > 0)
+    {
+        int index = scaffold->ppos2index[queryPos];
+        return scaffold->geneticPos[index];
+    }
+    else
+    {
+        int startIndex;
+        int endIndex;
+        for (scaffold->currentIndex; scaffold->currentIndex < scaffold->nloci - 1; scaffold->currentIndex++)
+        {
+            if (queryPos > scaffold->physicalPos[scaffold->currentIndex] && queryPos < scaffold->physicalPos[scaffold->currentIndex + 1])
+            {
+                startIndex = scaffold->currentIndex;
+                endIndex = scaffold->currentIndex + 1;
+                break;
+            }
+        }
+        count++;
+        return interpolate(scaffold->physicalPos[startIndex], scaffold->geneticPos[startIndex],
+                           scaffold->physicalPos[endIndex], scaffold->geneticPos[endIndex],
+                           queryPos);
+    }
+}
+
+double interpolate(double x0, double y0, double x1, double y1, double query)
+{
+    return ( ( (y1 - y0) / (x1 - x0) ) * query + ( y0 - ((y1 - y0) / (x1 - x0)) * x0 ) );
+}
+
+
+vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
+    int nchr = 0;
+    ifstream fin;
+    cerr << "Opening " << mapfile << "...\n";
+    fin.open(mapfile.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << mapfile << " for reading.\n";
+        throw 0;
+    }
+
+    int fileStart = fin.tellg();
+    string line;
+    vector<int> nlociByChr;
+    int nloci = 0;
+    int currentLoci = 0;
+    int num_cols = 4;
+    int current_cols = 0;
+    stringstream ss;
+    string currentChr;
+    string chr;
+    while (getline(fin, line))
+    {
+        nloci++;
+        current_cols = countFields(line);
+        if (current_cols != num_cols)
+        {
+            cerr << "ERROR: line " << nloci << " of " << mapfile << " has " << current_cols
+                 << ", but expected " << num_cols << ".\n";
+            throw 0;
+        }
+
+        ss.str(line);
+        ss >> chr;
+
+        if (nloci == 1) {
+            currentChr = chr;
+        }
+
+        if (currentChr.compare(chr) == 0) {
+            currentLoci++;
+        }
+        else {
+            nlociByChr.push_back(currentLoci);
+            currentLoci = 1;
+            currentChr = chr;
+        }
+
+    }
+
+    nlociByChr.push_back(currentLoci);
+
+    fin.clear();
+    fin.seekg(fileStart);
+
+    cerr << "Loading genetic map scaffold for " << nloci << " loci.\n";
+
+    string locusName;
+    vector< GenMapScaffold * > *scaffoldMapByChr = new vector< GenMapScaffold * >;
+
+    for (int chr = 0; chr < nlociByChr.size(); chr++) {
+        GenMapScaffold *scaffold = initGenMapScaffold(nlociByChr.at(chr));
+        for (int locus = 0; locus < nlociByChr.at(chr); locus++)
+        {
+            fin >> scaffold->chr;
+            fin >> locusName;
+            fin >> scaffold->geneticPos[locus];
+            fin >> scaffold->physicalPos[locus];
+            scaffold->ppos2index[scaffold->physicalPos[locus]] = locus;
+        }
+        scaffold->centroStart = centro->centromereStart(scaffold->chr);
+        scaffold->centroEnd = centro->centromereEnd(scaffold->chr);
+        scaffoldMapByChr->push_back(scaffold);
+    }
+
+    fin.close();
+
+    return scaffoldMapByChr;
+}
+
+GenMapScaffold *initGenMapScaffold(int nloci) {
+    GenMapScaffold *scaffoldMap = new GenMapScaffold;
+    scaffoldMap->physicalPos = new int[nloci];
+    scaffoldMap->geneticPos = new double[nloci];
+    scaffoldMap->nloci = nloci;
+    scaffoldMap->currentIndex = 0;
+    return scaffoldMap;
+}
+
+void releaseGenMapScaffold(GenMapScaffold *scaffoldMap) {
+    delete [] scaffoldMap->physicalPos;
+    delete [] scaffoldMap->geneticPos;
+    scaffoldMap->ppos2index.clear();
+    delete scaffoldMap;
+    return;
+}
+void releaseGenMapScaffold(vector< GenMapScaffold * > *scaffoldMapByChr) {
+    for (int i = 0; i <= scaffoldMapByChr->size(); i++) {
+        releaseGenMapScaffold(scaffoldMapByChr->at(i));
+    }
+    delete scaffoldMapByChr;
+    return;
+}
+
 int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
                            vector< HapData * > **hapDataByChr,
                            vector< FreqData * > **freqDataByChr,
                            vector< GenoLikeData * > **GLDataByChr)
 {
-    cerr << "CHECKA\n";
-
     vector< MapData * > *mapDataByChr2 = new vector< MapData * >;
     vector< HapData * > *hapDataByChr2 = new vector< HapData * >;
     vector< FreqData * > *freqDataByChr2 = new vector< FreqData * >;
     vector< GenoLikeData * > *GLDataByChr2 = new vector< GenoLikeData * >;
-    cerr << "CHECKB\n";
 
     int numLoci = 0;
     for (int i = 0; i < (*mapDataByChr)->size(); i++) {
@@ -26,22 +186,59 @@ int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
         freqDataByChr2->push_back(freqData2);
         numLoci += newLoci;
     }
-    cerr << "CHECKC\n";
 
     releaseMapData(*mapDataByChr);
     releaseHapData(*hapDataByChr);
     releaseFreqData(*freqDataByChr);
     releaseGLData(*GLDataByChr);
-    cerr << "CHECKD\n";
 
     *mapDataByChr = mapDataByChr2;
     *hapDataByChr = hapDataByChr2;
     *GLDataByChr = GLDataByChr2;
     *freqDataByChr = freqDataByChr2;
-    cerr << "CHECKE\n";
 
     return numLoci;
 }
+
+int filterMonomorphicAndOOBSites(vector< MapData * > **mapDataByChr,
+                                 vector< HapData * > **hapDataByChr,
+                                 vector< FreqData * > **freqDataByChr,
+                                 vector< GenoLikeData * > **GLDataByChr,
+                                 vector< GenMapScaffold * > *scaffoldMapByChr)
+{
+    vector< MapData * > *mapDataByChr2 = new vector< MapData * >;
+    vector< HapData * > *hapDataByChr2 = new vector< HapData * >;
+    vector< FreqData * > *freqDataByChr2 = new vector< FreqData * >;
+    vector< GenoLikeData * > *GLDataByChr2 = new vector< GenoLikeData * >;
+
+    int numLoci = 0;
+    for (int i = 0; i < (*mapDataByChr)->size(); i++) {
+        int newLoci = 0;
+        MapData *mapData2 = filterMonomorphicAndOOBSites((*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
+        HapData *hapData2 = filterMonomorphicAndOOBSites((*hapDataByChr)->at(i), (*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
+        GenoLikeData *GLData2 = filterMonomorphicAndOOBSites((*GLDataByChr)->at(i), (*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
+        FreqData *freqData2 = filterMonomorphicAndOOBSites((*freqDataByChr)->at(i), (*mapDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
+        mapDataByChr2->push_back(mapData2);
+        hapDataByChr2->push_back(hapData2);
+        GLDataByChr2->push_back(GLData2);
+        freqDataByChr2->push_back(freqData2);
+        numLoci += newLoci;
+    }
+
+    releaseMapData(*mapDataByChr);
+    releaseHapData(*hapDataByChr);
+    releaseFreqData(*freqDataByChr);
+    releaseGLData(*GLDataByChr);
+
+    *mapDataByChr = mapDataByChr2;
+    *hapDataByChr = hapDataByChr2;
+    *GLDataByChr = GLDataByChr2;
+    *freqDataByChr = freqDataByChr2;
+
+    return numLoci;
+
+}
+
 
 MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLoci)
 {
@@ -122,7 +319,6 @@ GenoLikeData *filterMonomorphicSites(GenoLikeData *GLData, FreqData *freqData, i
     return GLData2;
 }
 
-
 FreqData *filterMonomorphicSites(FreqData *freqData, int &newLoci)
 {
     if (newLoci <= 0) {
@@ -145,52 +341,138 @@ FreqData *filterMonomorphicSites(FreqData *freqData, int &newLoci)
 
     return freqData2;
 }
-/*
-int filterMonomorphicSites(MapData &mapData,
-                           HapData &hapData,
-                           FreqData &freqData)
-{
-    int newLoci = 0;
-    for (int i = 0; i < freqData.nloci; i++)
-        if (freqData.freq[i] > 0 && freqData.freq[i] < 1)
-            newLoci++;
+
+MapData *filterMonomorphicAndOOBSites(MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci) {
+    if (newLoci <= 0) {
+        newLoci = 0;
+        for (int i = 0; i < freqData->nloci; i++) {
+            if ((freqData->freq[i] > 0 && freqData->freq[i] < 1) &&
+                    !(mapData->physicalPos[i] < scaffold->physicalPos[0]) &&
+                    !(mapData->physicalPos[i] > scaffold->physicalPos[scaffold->nloci - 1]) &&
+                    !(mapData->physicalPos[i] > scaffold->centroStart && mapData->physicalPos[i] < scaffold->centroEnd)) {
+                newLoci++;
+            }
+        }
+    }
 
     MapData *mapData2 = initMapData(newLoci);
-    mapData2->chr = mapData.chr;
-    HapData *hapData2 = initHapData(hapData.nind, newLoci);
-    FreqData *freqData2 = initFreqData(newLoci);
-
+    mapData2->chr = mapData->chr;
     int index = 0;
-    for (int i = 0; i < freqData.nloci; i++)
+    for (int i = 0; i < freqData->nloci; i++)
     {
-        if (freqData.freq[i] > 0 && freqData.freq[i] < 1)
+        if ((freqData->freq[i] > 0 && freqData->freq[i] < 1) &&
+                !(mapData->physicalPos[i] < scaffold->physicalPos[0]) &&
+                !(mapData->physicalPos[i] > scaffold->physicalPos[scaffold->nloci - 1]) &&
+                !(mapData->physicalPos[i] > scaffold->centroStart && mapData->physicalPos[i] < scaffold->centroEnd))
         {
-            mapData2->physicalPos[index] = mapData.physicalPos[i];
-            mapData2->geneticPos[index] = mapData.geneticPos[i];
-            mapData2->locusName[index] = mapData.physicalPos[i];
-            mapData2->allele[index] = mapData.allele[i];
-
-            for (int j = 0; j < hapData.nind; j++)
-            {
-                hapData2->data[j][index] = hapData.data[j][i];
-            }
-
-            freqData2->freq[index] = freqData.freq[i];
-
+            mapData2->physicalPos[index] = mapData->physicalPos[i];
+            mapData2->geneticPos[index] = mapData->geneticPos[i];
+            mapData2->locusName[index] = mapData->physicalPos[i];
+            mapData2->allele[index] = mapData->allele[i];
             index++;
         }
     }
 
-    releaseFreqData(&freqData);
-    freqData = freqData2;
-    releaseMapData(&mapData);
-    mapData = mapData2;
-    releaseHapData(&hapData);
-    hapData = hapData2;
-
-    return newLoci;
+    return mapData2;
 }
-*/
+
+HapData *filterMonomorphicAndOOBSites(HapData *hapData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci) {
+    if (newLoci <= 0) {
+        newLoci = 0;
+        for (int i = 0; i < freqData->nloci; i++) {
+            if ((freqData->freq[i] > 0 && freqData->freq[i] < 1) &&
+                    !(mapData->physicalPos[i] < scaffold->physicalPos[0]) &&
+                    !(mapData->physicalPos[i] > scaffold->physicalPos[scaffold->nloci - 1]) &&
+                    !(mapData->physicalPos[i] > scaffold->centroStart && mapData->physicalPos[i] < scaffold->centroEnd)) {
+                newLoci++;
+            }
+        }
+    }
+
+    HapData *hapData2 = initHapData(hapData->nind, newLoci);
+    int index = 0;
+    for (int i = 0; i < freqData->nloci; i++)
+    {
+        if ((freqData->freq[i] > 0 && freqData->freq[i] < 1) &&
+                !(mapData->physicalPos[i] < scaffold->physicalPos[0]) &&
+                !(mapData->physicalPos[i] > scaffold->physicalPos[scaffold->nloci - 1]) &&
+                !(mapData->physicalPos[i] > scaffold->centroStart && mapData->physicalPos[i] < scaffold->centroEnd))
+        {
+            for (int j = 0; j < hapData->nind; j++)
+            {
+                hapData2->data[index][j] = hapData->data[i][j];
+            }
+            index++;
+        }
+    }
+
+    return hapData2;
+}
+
+GenoLikeData *filterMonomorphicAndOOBSites(GenoLikeData *GLData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci) {
+    if (newLoci <= 0) {
+        newLoci = 0;
+        for (int i = 0; i < freqData->nloci; i++) {
+            if ((freqData->freq[i] > 0 && freqData->freq[i] < 1) &&
+                    !(mapData->physicalPos[i] < scaffold->physicalPos[0]) &&
+                    !(mapData->physicalPos[i] > scaffold->physicalPos[scaffold->nloci - 1]) &&
+                    !(mapData->physicalPos[i] > scaffold->centroStart && mapData->physicalPos[i] < scaffold->centroEnd)) {
+                newLoci++;
+            }
+        }
+    }
+
+    GenoLikeData *GLData2 = initGLData(GLData->nind, newLoci);
+    int index = 0;
+    for (int i = 0; i < freqData->nloci; i++)
+    {
+        if ((freqData->freq[i] > 0 && freqData->freq[i] < 1) &&
+                !(mapData->physicalPos[i] < scaffold->physicalPos[0]) &&
+                !(mapData->physicalPos[i] > scaffold->physicalPos[scaffold->nloci - 1]) &&
+                !(mapData->physicalPos[i] > scaffold->centroStart && mapData->physicalPos[i] < scaffold->centroEnd))
+        {
+            for (int j = 0; j < GLData->nind; j++)
+            {
+                GLData2->data[index][j] = GLData->data[i][j];
+            }
+            index++;
+        }
+    }
+
+    return GLData2;
+}
+
+FreqData *filterMonomorphicAndOOBSites(FreqData *freqData, MapData *mapData, GenMapScaffold *scaffold, int &newLoci) {
+    if (newLoci <= 0) {
+        newLoci = 0;
+        for (int i = 0; i < freqData->nloci; i++) {
+            if ((freqData->freq[i] > 0 && freqData->freq[i] < 1) &&
+                    !(mapData->physicalPos[i] < scaffold->physicalPos[0]) &&
+                    !(mapData->physicalPos[i] > scaffold->physicalPos[scaffold->nloci - 1]) &&
+                    !(mapData->physicalPos[i] > scaffold->centroStart && mapData->physicalPos[i] < scaffold->centroEnd)) {
+                newLoci++;
+            }
+        }
+    }
+
+    FreqData *freqData2 = initFreqData(newLoci);
+    int index = 0;
+    for (int i = 0; i < freqData->nloci; i++)
+    {
+        if ((freqData->freq[i] > 0 && freqData->freq[i] < 1) &&
+                !(mapData->physicalPos[i] < scaffold->physicalPos[0]) &&
+                !(mapData->physicalPos[i] > scaffold->physicalPos[scaffold->nloci - 1]) &&
+                !(mapData->physicalPos[i] > scaffold->centroStart && mapData->physicalPos[i] < scaffold->centroEnd))
+        {
+            freqData2->freq[index] = freqData->freq[i];
+            index++;
+        }
+    }
+
+    return freqData2;
+}
+
+
 bool goodDouble(string str)
 {
     string::iterator it;
@@ -892,9 +1174,9 @@ vector< GenoLikeData * > *readTGLSData(string filename,
                 if (GL_TYPE.compare("GL") == 0) {
                 }
                 else if (GL_TYPE.compare("PL") == 0) {
-                    gl = -gl/10;
+                    gl = -gl / 10;
                 }
-                else{
+                else {
                     LOG.err("ERROR: This error should never get triggered. Something really bad happened.");
                 }
                 gl = ( gl > -10 ) ? gl : -10;

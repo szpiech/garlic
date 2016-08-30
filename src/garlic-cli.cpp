@@ -64,6 +64,14 @@ const string DEFAULT_GL_TYPE = "GL";
 const string HELP_GL_TYPE = "Specify the form of the genotype likelihood data: GL or PL, as defined\n\
 in VCFv4.2 documentation.";
 
+const string ARG_MAP = "--map";
+const string DEFAULT_MAP = "none";
+const string HELP_MAP = "Genetic map information";
+
+const string ARG_WEIGHTED = "--weighted";
+const bool DEFAULT_WEIGHTED = false;
+const string HELP_WEIGHTED = "Compute LOD scores weighted by LD and probability of mutation.";
+
 const string ARG_RAW_LOD = "--raw-lod";
 const bool DEFAULT_RAW_LOD = false;
 const string HELP_RAW_LOD = "If set, LOD scores will be output to gzip compressed files.";
@@ -141,6 +149,8 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_TFAM, DEFAULT_TFAM, "", HELP_TFAM);
 	params->addFlag(ARG_TGLS, DEFAULT_TGLS, "", HELP_TGLS);
 	params->addFlag(ARG_GL_TYPE, DEFAULT_GL_TYPE, "", HELP_GL_TYPE);
+	params->addFlag(ARG_MAP, DEFAULT_MAP, "", HELP_MAP);
+	params->addFlag(ARG_WEIGHTED, DEFAULT_WEIGHTED, "", HELP_WEIGHTED);
 	params->addFlag(ARG_RAW_LOD, DEFAULT_RAW_LOD, "", HELP_RAW_LOD);
 	params->addListFlag(ARG_BOUND_SIZE, DEFAULT_BOUND_SIZE, "", HELP_BOUND_SIZE);
 	params->addFlag(ARG_LOD_CUTOFF, DEFAULT_LOD_CUTOFF, "", HELP_LOD_CUTOFF);
@@ -292,6 +302,14 @@ bool checkRequiredFiles(string tpedfile, string tfamfile)
 	{
 		//cerr << "ERROR: Must provide both a tped and a tfam file.\n";
 		LOG.err("ERROR: Must provide both a tped and a tfam file.");
+		return true;
+	}
+	return false;
+}
+
+bool checkMapFile(string mapfile, bool WEIGHTED){
+	if(mapfile.compare(DEFAULT_MAP) == 0 && WEIGHTED){
+		LOG.err("ERROR: Weighted LOD score method requires a map file.");
 		return true;
 	}
 	return false;

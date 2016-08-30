@@ -47,6 +47,13 @@ int main(int argc, char *argv[])
     string GL_TYPE = params->getStringFlag(ARG_GL_TYPE);
     argerr = argerr || checkGLType(GL_TYPE);
     LOG.log("Genotype likelihood format:", GL_TYPE);
+    bool WEIGHTED = params->getBoolFlag(ARG_WEIGHTED);
+    string mapfile = params->getStringFlag(ARG_MAP);
+    argerr = argerr || checkMapFile(mapfile, WEIGHTED);
+    LOG.log("Weighted LOD:", WEIGHTED);
+    if (WEIGHTED) {
+        LOG.log("Map file:", mapfile);
+    }
 
     string BUILD = params->getStringFlag(ARG_BUILD);
     argerr = argerr || checkBuild(BUILD);
@@ -132,14 +139,15 @@ int main(int argc, char *argv[])
     centro = new centromere(BUILD, centromereFile, DEFAULT_CENTROMERE_FILE);
 
     int numLoci, numInd, numCols;
-    vector< int_pair_t > *chrCoordList;
-    vector< MapData * > *mapDataByChr;
+    vector< int_pair_t > *chrCoordList = NULL;
+    vector< MapData * > *mapDataByChr = NULL;
     string popName;
-    IndData *indData;
-    vector< HapData * > *hapDataByChr;
-    vector< FreqData * > *freqDataByChr;
-    vector< WinData * > *winDataByChr;
-    vector< GenoLikeData * > *GLDataByChr;
+    IndData *indData = NULL;
+    vector< HapData * > *hapDataByChr = NULL;
+    vector< FreqData * > *freqDataByChr = NULL;
+    vector< WinData * > *winDataByChr = NULL;
+    vector< GenoLikeData * > *GLDataByChr = NULL;
+    vector< GenMapScaffold *> *scaffoldMapByChr = NULL;
     KDEResult *kdeResult;
     bool USE_GL = false;
     try
@@ -161,6 +169,15 @@ int main(int argc, char *argv[])
             GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr, GL_TYPE);
             USE_GL = true;
         }
+
+        if (WEIGHTED) {
+            scaffoldMapByChr = loadMapScaffold(mapfile, centro);
+            if (scaffoldMapByChr->size() != mapDataByChr->size()) {
+                LOG.err("ERROR: Scaffold genetic map does not have the same number of chromosomes as data.");
+                return -1;
+            }
+        }
+
     }
     catch (...) { return 1; }
 
@@ -191,9 +208,20 @@ int main(int argc, char *argv[])
 //a frequency in (0,1) the site will be retained
 //even if it appears monomorphic in the sample.
 
-    int newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr);
+    int newLoci;
 
-    LOG.log("Monomorphic loci filtered:", numLoci - newLoci);
+    if (WEIGHTED) {
+        newLoci = filterMonomorphicAndOOBSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, scaffoldMapByChr);
+        LOG.log("Monomorphic or out of bounds loci filtered:", numLoci - newLoci);
+        int numInterpolated = interpolateGeneticmap(&mapDataByChr, scaffoldMapByChr);
+        LOG.log("Number of genetic map locations interpolated:", numInterpolated);
+        releaseGenMapScaffold(scaffoldMapByChr);
+    }
+    else {
+        newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr);
+        LOG.log("Monomorphic loci filtered:", numLoci - newLoci);
+    }
+
     LOG.log("Total loci used for analysis:", newLoci);
 
     numLoci = newLoci;

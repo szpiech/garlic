@@ -120,6 +120,117 @@ void calcLOD(IndData *indData, MapData *mapData,
     return;
 }
 
+void calcwLOD(IndData *indData, MapData *mapData,
+             HapData *hapData, FreqData *freqData,
+             GenoLikeData *GLData,
+             WinData *winData, centromere *centro,
+             int winsize, double error, int MAX_GAP, bool USE_GL)
+{
+    short **data = hapData->data;
+    int nloci = hapData->nloci;
+    int nind = hapData->nind;
+    int *physicalPos = mapData->physicalPos;
+    //double *geneticPos = mapData->geneticPos;
+    //string *locusName = mapData->locusName;
+    double *freq = freqData->freq;
+    int start = 0;
+    int stop = mapData->nloci;
+    double **win = winData->data;
+    //int nmiss = 0;
+
+    int cStart = centro->centromereStart(mapData->chr);
+    int cEnd = centro->centromereEnd(mapData->chr);
+
+    //Check if the last window would overshoot the last locus in the data
+    if (nloci - stop < winsize) stop = nloci - winsize + 1;
+
+    //For each individual
+    for (int ind = 0; ind < nind; ind++)
+    {
+        //starting locus of the window
+        for (int locus = start; locus < stop; locus++)
+        {
+            win[ind][locus] = 0;
+
+            //First window?  If so we have to calcualte the whole thing
+            if (locus == start)
+            {
+                int prevI = locus;
+                for (int i = locus; i < locus + winsize; i++)
+                {
+                    if (physicalPos[i] - physicalPos[prevI] > MAX_GAP ||
+                            inGap(physicalPos[prevI], physicalPos[i], cStart, cEnd))
+                    {
+                        win[ind][locus] = MISSING;
+                        //nmiss++;
+                        locus = prevI;
+                        break;
+                    }
+                    if (USE_GL) error = GLData->data[i][ind];
+                    win[ind][locus] += lod(data[i][ind], freq[i], error);
+                    prevI = i;
+                }
+
+                //if(skip) continue;
+
+            }
+            else //Otherwise, we can just subtract the locus that falls off and add the new one
+            {
+                //But first we have to check if the previous window was MISSING
+                if (win[ind][locus - 1] != MISSING)
+                {
+                    //If the gap to the next locus is > MAX_GAP then make the window MISSING
+                    if (physicalPos[locus + winsize - 1] - physicalPos[locus + winsize - 2] > MAX_GAP ||
+                            inGap(physicalPos[locus + winsize - 2], physicalPos[locus + winsize - 1], cStart, cEnd))
+                    {
+                        win[ind][locus] = MISSING;
+                        //nmiss++;
+                        locus = locus + winsize - 2;
+                    }
+                    else
+                    {
+                        if (USE_GL) {
+                            win[ind][locus] = win[ind][locus - 1] -
+                                              lod(data[locus - 1][ind], freq[locus - 1], GLData->data[locus - 1][ind]) +
+                                              lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], GLData->data[locus + winsize - 1][ind]);
+
+                        }
+                        else {
+                            win[ind][locus] = win[ind][locus - 1] -
+                                              lod(data[locus - 1][ind], freq[locus - 1], error) +
+                                              lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], error);
+                        }
+                    }
+                }
+                else
+                {
+                    int prevI = locus;
+                    for (int i = locus; i < locus + winsize; i++)
+                    {
+                        if (physicalPos[i] - physicalPos[prevI] > MAX_GAP ||
+                                inGap(physicalPos[prevI], physicalPos[i], cStart, cEnd))
+                        {
+                            win[ind][locus] = MISSING;
+                            //nmiss++;
+                            locus = prevI;
+                            break;
+                        }
+                        if (USE_GL) error = GLData->data[i][ind];
+                        win[ind][locus] += lod(data[i][ind], freq[i], error);
+                        prevI = i;
+                    }
+
+                    //if(skip) continue;
+                }
+            }
+        }
+    }
+
+    //winData->nmiss = nmiss;
+
+    return;
+}
+
 vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< FreqData * > *freqDataByChr,
                                     vector< MapData * > *mapDataByChr,

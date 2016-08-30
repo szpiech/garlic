@@ -64,6 +64,14 @@ extern const string ARG_GL_TYPE;
 extern const string DEFAULT_GL_TYPE;
 extern const string HELP_GL_TYPE;
 
+extern const string ARG_MAP;
+extern const string DEFAULT_MAP;
+extern const string HELP_MAP;
+
+extern const string ARG_WEIGHTED;
+extern const bool DEFAULT_WEIGHTED;
+extern const string HELP_WEIGHTED;
+
 extern const string ARG_RAW_LOD;
 extern const bool DEFAULT_RAW_LOD;
 extern const string HELP_RAW_LOD;
@@ -124,6 +132,7 @@ bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE);
 bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF);
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS);
 bool checkRequiredFiles(string tpedfile, string tfamfile);
+bool checkMapFile(string mapfile, bool WEIGHTED);
 bool checkThreads(int numThreads);
 bool checkError(double error, string tglsfile);
 bool checkGLType(string TYPE);

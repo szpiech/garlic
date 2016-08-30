@@ -22,6 +22,7 @@ public:
 	void makeHG18();
 	void makeHG19();
 	void makeHG38();
+	void makeWarning();
 
 private:
 
@@ -29,6 +30,7 @@ private:
 	map <string, int> gapEnd;
 
 	int countFields(const string &str);
+	map <string, int> chrWarning;
 };
 
 #endif
