@@ -1,5 +1,59 @@
 #include "garlic-data.h"
 
+vector< GenoFreqData * > *calculateGenoFreq(vector <HapData *> *hapDataByChr){
+    vector< GenoFreqData * > *genoFreqDataByChr = new vector< GenoFreqData * >;
+    for(int chr = 0; chr < hapDataByChr->size(); chr++){
+        genoFreqDataByChr->push_back(calculateGenoFreq(hapDataByChr->at(chr)));
+    }
+    return genoFreqDataByChr;
+}
+
+GenoFreqData *calculateGenoFreq(HapData *hapData){
+    GenoFreqData *genoFreqData = initGenoFreq(hapData->nloci);
+    double total, freqHom;
+
+    for (int locus = 0; locus < hapData->nloci; locus++)
+    {
+        total = 0;
+        freqHom = 0;
+        for (int ind = 0; ind < hapData->nind; ind++)
+        {
+            if (hapData->data[locus][ind] != -9)
+            {
+                if(hapData->data[locus][ind] == 2 || hapData->data[locus][ind] == 0) freqHom++;
+                total++;
+            }
+        }
+        freqHom /= total;
+        genoFreqData->homFreq[locus] = freqHom;
+    }
+    return genoFreqData;
+}
+
+GenoFreqData *initGenoFreq(int nloci){
+    GenoFreqData *data = new GenoFreqData;
+    data->homFreq = new double[nloci];
+    data->nloci = nloci;
+    return data;
+}
+void releaseGenoFreq(GenoFreqData *genoFreqData){
+    delete [] genoFreqData->homFreq;
+    delete genoFreqData;
+    return;
+}
+
+void releaseGenoFreq(vector< GenoFreqData * > *genoFreqDataByChr)
+{
+    for (unsigned int chr = 0; chr < genoFreqDataByChr->size(); chr++)
+    {
+        releaseGenoFreq(genoFreqDataByChr->at(chr));
+    }
+    genoFreqDataByChr->clear();
+    delete genoFreqDataByChr;
+    return;
+}
+
+
 int interpolateGeneticmap(vector< MapData * > **mapDataByChr, vector< GenMapScaffold * > *scaffoldMapByChr) {
     int numInterpolated = 0;
     for (int i = 0; i < (*mapDataByChr)->size(); i++) {

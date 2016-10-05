@@ -145,6 +145,7 @@ int main(int argc, char *argv[])
     IndData *indData = NULL;
     vector< HapData * > *hapDataByChr = NULL;
     vector< FreqData * > *freqDataByChr = NULL;
+    vector< GenoFreqData * > *genoFreqDataByChr = NULL;
     vector< WinData * > *winDataByChr = NULL;
     vector< GenoLikeData * > *GLDataByChr = NULL;
     vector< GenMapScaffold *> *scaffoldMapByChr = NULL;
@@ -216,6 +217,7 @@ int main(int argc, char *argv[])
         int numInterpolated = interpolateGeneticmap(&mapDataByChr, scaffoldMapByChr);
         LOG.log("Number of genetic map locations interpolated:", numInterpolated);
         releaseGenMapScaffold(scaffoldMapByChr);
+        genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
     }
     else {
         newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr);
@@ -232,7 +234,7 @@ int main(int argc, char *argv[])
         kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, &multiWinsizes, winsize, error,
                                           GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile);
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr);
     }
     else if (WINSIZE_EXPLORE)
     {
@@ -246,7 +248,7 @@ int main(int argc, char *argv[])
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
                         GLDataByChr, USE_GL,
-                        MAX_GAP, KDE_SUBSAMPLE, outfile);
+                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr);
 
         return 0;
     }
@@ -257,7 +259,7 @@ int main(int argc, char *argv[])
             kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
                                       indData, centro, winsize, AUTO_WINSIZE_STEP, error,
                                       GLDataByChr, USE_GL,
-                                      MAX_GAP, KDE_SUBSAMPLE, outfile);
+                                      MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr);
         }
         catch (...)
         {

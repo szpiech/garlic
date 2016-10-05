@@ -120,17 +120,56 @@ void calcLOD(IndData *indData, MapData *mapData,
     return;
 }
 
+double nomut(double M, double mu, double interval) {
+    return exp(-2.0 * M * mu * interval);
+}
+
+double norec(double M, double interval) {
+    return nomut(M, 1, interval);
+}
+
+double ld(HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end) {
+    double sum = 0;
+    for (int i = start; i <= end; i++) {
+        if (i != site) sum += hr2(hapData, genoFreqData, i, site);
+        else sum += 1;
+    }
+    //sum *= 2.0;
+    return (1.0 / sum);
+}
+
+double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j) {
+    double HA = genoFreqData->homFreq[i];
+    double HB = genoFreqData->homFreq[j];
+    double HAB = 0;
+    double total = 0;
+    for (int ind = 0; ind < hapData->nind; ind++) {
+        if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
+            total++;
+            if (hapData->data[i][ind] != 1 && hapData->data[j][ind] != 1) {
+                HAB++;
+            }
+        }
+    }
+    HAB /= total;
+    double H = HAB - HA * HB;
+    return H * H / (HA * (1 - HA) * HB * (1 - HB));
+}
+
 void calcwLOD(IndData *indData, MapData *mapData,
-             HapData *hapData, FreqData *freqData,
-             GenoLikeData *GLData,
-             WinData *winData, centromere *centro,
-             int winsize, double error, int MAX_GAP, bool USE_GL)
+              HapData *hapData, FreqData *freqData,
+              GenoLikeData *GLData,
+              GenoFreqData *genoFreqData,
+              WinData *winData, centromere *centro,
+              int winsize, double error, int MAX_GAP, bool USE_GL)
 {
+    double mu = 1e-9;
+    int M = 7;
     short **data = hapData->data;
     int nloci = hapData->nloci;
     int nind = hapData->nind;
     int *physicalPos = mapData->physicalPos;
-    //double *geneticPos = mapData->geneticPos;
+    double *geneticPos = mapData->geneticPos;
     //string *locusName = mapData->locusName;
     double *freq = freqData->freq;
     int start = 0;
@@ -167,7 +206,9 @@ void calcwLOD(IndData *indData, MapData *mapData,
                         break;
                     }
                     if (USE_GL) error = GLData->data[i][ind];
-                    win[ind][locus] += lod(data[i][ind], freq[i], error);
+                    double physInterval = ( i > 0 ) ? (physicalPos[i] - physicalPos[i - 1]) : physicalPos[i];
+                    double geneInterval = ( i > 0 ) ? (geneticPos[i] - geneticPos[i - 1]) : geneticPos[i];
+                    win[ind][locus] += lod(data[i][ind], freq[i], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) * ld(hapData, genoFreqData, i, locus, locus + winsize - 1);
                     prevI = i;
                 }
 
@@ -189,16 +230,33 @@ void calcwLOD(IndData *indData, MapData *mapData,
                     }
                     else
                     {
+                        double physIntervalPrev = ( locus - 1 > 0 ) ? (physicalPos[locus - 1] - physicalPos[locus - 2]) : physicalPos[locus - 1];
+                        double geneIntervalPrev = ( locus - 1 > 0 ) ? (geneticPos[locus - 1] - geneticPos[locus - 2]) : geneticPos[locus - 1];
+                        double physInterval = ( locus + winsize - 1 > 0 ) ? (physicalPos[locus + winsize - 1] - physicalPos[locus + winsize - 2]) : physicalPos[locus + winsize - 1];
+                        double geneInterval = ( locus + winsize - 1 > 0 ) ? (geneticPos[locus + winsize - 1] - geneticPos[locus + winsize - 2]) : geneticPos[locus + winsize - 1];
+
                         if (USE_GL) {
                             win[ind][locus] = win[ind][locus - 1] -
-                                              lod(data[locus - 1][ind], freq[locus - 1], GLData->data[locus - 1][ind]) +
-                                              lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], GLData->data[locus + winsize - 1][ind]);
+                                              (lod(data[locus - 1][ind], freq[locus - 1], GLData->data[locus - 1][ind]) *
+                                               nomut(M, mu, physIntervalPrev) *
+                                               norec(M, geneIntervalPrev) *
+                                               ld(hapData, genoFreqData, locus - 1, locus - 1, locus + winsize - 2)) +
+                                              (lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], GLData->data[locus + winsize - 1][ind]) *
+                                               nomut(M, mu, physInterval) *
+                                               norec(M, geneInterval) *
+                                               ld(hapData, genoFreqData, locus + winsize - 1, locus, locus + winsize - 1));
 
                         }
                         else {
                             win[ind][locus] = win[ind][locus - 1] -
-                                              lod(data[locus - 1][ind], freq[locus - 1], error) +
-                                              lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], error);
+                                              (lod(data[locus - 1][ind], freq[locus - 1], error) *
+                                               nomut(M, mu, physIntervalPrev) *
+                                               norec(M, geneIntervalPrev) *
+                                               ld(hapData, genoFreqData, locus - 1, locus - 1, locus + winsize - 2) ) +
+                                              (lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], error) *
+                                               nomut(M, mu, physInterval) *
+                                               norec(M, geneInterval) *
+                                               ld(hapData, genoFreqData, locus + winsize - 1, locus, locus + winsize - 1));
                         }
                     }
                 }
@@ -216,7 +274,12 @@ void calcwLOD(IndData *indData, MapData *mapData,
                             break;
                         }
                         if (USE_GL) error = GLData->data[i][ind];
-                        win[ind][locus] += lod(data[i][ind], freq[i], error);
+                        //win[ind][locus] += lod(data[i][ind], freq[i], error);
+
+                        double physInterval = ( i > 0 ) ? (physicalPos[i] - physicalPos[i - 1]) : physicalPos[i];
+                        double geneInterval = ( i > 0 ) ? (geneticPos[i] - geneticPos[i - 1]) : geneticPos[i];
+                        win[ind][locus] += lod(data[i][ind], freq[i], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) * ld(hapData, genoFreqData, i, locus, locus + winsize - 1);
+
                         prevI = i;
                     }
 
@@ -251,6 +314,30 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
     }
     return winDataByChr;
 }
+
+vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
+                                     vector< FreqData * > *freqDataByChr,
+                                     vector< MapData * > *mapDataByChr,
+                                     vector< GenoLikeData * > *GLDataByChr,
+                                     vector< GenoFreqData * > *genoFreqDataByChr,
+                                     IndData *indData,
+                                     centromere *centro,
+                                     int winsize, double error, int MAX_GAP, bool USE_GL)
+{
+    vector< WinData * > *winDataByChr = initWinData(mapDataByChr, indData);
+
+    for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
+    {
+        calcwLOD(indData, mapDataByChr->at(chr),
+                 hapDataByChr->at(chr), freqDataByChr->at(chr),
+                 GLDataByChr->at(chr),
+                 genoFreqDataByChr->at(chr),
+                 winDataByChr->at(chr), centro,
+                 winsize, error, MAX_GAP, USE_GL);
+    }
+    return winDataByChr;
+}
+
 
 
 /*
@@ -736,7 +823,8 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector<int> &multiWinsizes,
                      double error,
                      vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
-                     int MAX_GAP, int KDE_SUBSAMPLE, string outfile)
+                     int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
+                     bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr)
 {
     vector< WinData * > *winDataByChr;
     vector< HapData * > *hapDataByChrToCalc;
@@ -754,11 +842,19 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
 
     for (unsigned int i = 0; i < multiWinsizes.size(); i++)
     {
-        winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
-                                      GLDataByChrToCalc,
-                                      indDataToCalc, centro, multiWinsizes[i],
-                                      error, MAX_GAP, USE_GL);
-
+        if (WEIGHTED) {
+            winDataByChr = calcwLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
+                                           GLDataByChrToCalc,
+                                           genoFreqDataByChr,
+                                           indDataToCalc, centro, multiWinsizes[i],
+                                           error, MAX_GAP, USE_GL);
+        }
+        else {
+            winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
+                                          GLDataByChrToCalc,
+                                          indDataToCalc, centro, multiWinsizes[i],
+                                          error, MAX_GAP, USE_GL);
+        }
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
         releaseWinData(winDataByChr);
 
@@ -772,7 +868,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
     if (KDE_SUBSAMPLE > 0) {
         releaseHapData(hapDataByChrToCalc);
         releaseIndData(indDataToCalc);
-        if(USE_GL) releaseGLData(GLDataByChrToCalc);
+        if (USE_GL) releaseGLData(GLDataByChrToCalc);
     }
 
     hapDataByChrToCalc = NULL;
@@ -788,7 +884,8 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          IndData *indData, centromere *centro,
                          int &winsize, int step, double error,
                          vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
-                         int MAX_GAP, int KDE_SUBSAMPLE, string outfile)
+                         int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
+                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr)
 {
     double AUTO_WINSIZE_THRESHOLD = 0.5;
     vector< WinData * > *winDataByChr = NULL;
@@ -815,11 +912,19 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
     bool finished = false;
     while (!finished)
     {
-        winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
-                                      GLDataByChrToCalc,
-                                      indDataToCalc, centro, winsizeQuery,
-                                      error, MAX_GAP, USE_GL);
-
+        if (WEIGHTED) {
+            winDataByChr = calcwLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
+                                           GLDataByChrToCalc,
+                                           genoFreqDataByChr,
+                                           indDataToCalc, centro, winsizeQuery,
+                                           error, MAX_GAP, USE_GL);
+        }
+        else {
+            winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
+                                          GLDataByChrToCalc,
+                                          indDataToCalc, centro, winsizeQuery,
+                                          error, MAX_GAP, USE_GL);
+        }
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
         releaseWinData(winDataByChr);
 
@@ -846,7 +951,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
     if (KDE_SUBSAMPLE > 0) {
         releaseHapData(hapDataByChrToCalc);
         releaseIndData(indDataToCalc);
-        if(USE_GL) releaseGLData(GLDataByChrToCalc);
+        if (USE_GL) releaseGLData(GLDataByChrToCalc);
     }
 
     hapDataByChrToCalc = NULL;
@@ -862,7 +967,8 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  IndData *indData, centromere *centro,
                                  vector<int> *multiWinsizes, int &winsize, double error,
                                  vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
-                                 int MAX_GAP, int KDE_SUBSAMPLE, string outfile)
+                                 int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
+                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr)
 {
     double AUTO_WINSIZE_THRESHOLD = 0.5;
     vector< WinData * > *winDataByChr = NULL;
@@ -886,11 +992,19 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
     double mse;
     for (unsigned int i = 0; i < multiWinsizes->size(); i++)
     {
-        winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
-                                      GLDataByChrToCalc,
-                                      indDataToCalc, centro, multiWinsizes->at(i),
-                                      error, MAX_GAP, USE_GL);
-
+        if (WEIGHTED) {
+            winDataByChr = calcwLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
+                                           GLDataByChrToCalc,
+                                           genoFreqDataByChr,
+                                           indDataToCalc, centro, multiWinsizes->at(i),
+                                           error, MAX_GAP, USE_GL);
+        }
+        else {
+            winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
+                                          GLDataByChrToCalc,
+                                          indDataToCalc, centro, multiWinsizes->at(i),
+                                          error, MAX_GAP, USE_GL);
+        }
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
         releaseWinData(winDataByChr);
 
@@ -917,7 +1031,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
     if (KDE_SUBSAMPLE > 0) {
         releaseHapData(hapDataByChrToCalc);
         releaseIndData(indDataToCalc);
-        if(USE_GL) releaseGLData(GLDataByChrToCalc);
+        if (USE_GL) releaseGLData(GLDataByChrToCalc);
     }
 
     hapDataByChrToCalc = NULL;

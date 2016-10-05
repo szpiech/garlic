@@ -69,6 +69,12 @@ struct FreqData
   int nloci;
 };
 
+struct GenoFreqData
+{
+  double *homFreq;
+  int nloci;
+};
+
 struct WinData
 {
   double **data;
@@ -91,6 +97,14 @@ struct DoubleData
   double *data;
   int size;
 };
+
+
+GenoFreqData *initGenoFreq(int nloci);
+void releaseGenoFreq(GenoFreqData *genoFreqData);
+void releaseGenoFreq(vector< GenoFreqData * > *genoFreqDataByChr);
+
+GenoFreqData *calculateGenoFreq(HapData *hapData);
+vector< GenoFreqData * > *calculateGenoFreq(vector <HapData *> *hapDataByChr);
 
 double getMapInfo(int queryPos, GenMapScaffold *scaffold, int &count);
 double interpolate(double x0, double y0, double x1, double y1, double query);
