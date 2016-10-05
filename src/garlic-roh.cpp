@@ -262,6 +262,17 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                     winStart = -1;
                     winStop = -1;
                 }
+                else if (winStart > 0 && w+1 >= mapData->nloci)
+                {
+                    winStop = mapData->physicalPos[w];
+                    int size = winStop - winStart + 1;
+                    lengths.push_back(size);
+                    rohData->chr.push_back(chr);
+                    rohData->start.push_back(winStart);
+                    rohData->stop.push_back(winStop);
+                    winStart = -1;
+                    winStop = -1;
+                }
             }
 
             delete [] inWin;
