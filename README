@@ -15,7 +15,12 @@ GNU GSL: http://www.gnu.org/software/gsl/
 FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
-Garlic v1.0.0
+07OCT2016 - Update to version 1.0.1.  This update fixes a bug where ROH that extended upto the end of the chromosome failed to get assembled and reported.
+This update also introduces a new command-line flag --overlap-frac which is designed to reduce false positive calls by requiring a SNP be covered by at 
+least OVERLAP_FRAC (default 0.05) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
+boundaries of true ROH.
+
+Garlic v1.0.1
 ----------Command Line Arguments----------
 
 --auto-winsize <bool>: Initiates an ad hoc method for automatically selecting the # of SNPs in which to
@@ -68,6 +73,10 @@ Set <= 0 to use all individuals (may use large amounts of RAM).
 --out <string>: The base name for all output files.
 	Default: outfile
 
+--overlap-frac <double>: The minimum fraction of overlapping windows above the LOD cutoff required
+	to begin constructing a run.
+	Default: 5.000000e-02
+
 --raw-lod <bool>: If set, LOD scores will be output to gzip compressed files.
 	Default: false
 
@@ -96,4 +105,3 @@ Set <= 0 to use all individuals (may use large amounts of RAM).
 --winsize-multi <int1> ... <intN>: Provide several window sizes (in # of SNPs) to calculate LOD scores.
 	LOD score KDEs for each window size will be output for inspection.
 	Default: -1
-
