@@ -123,5 +123,6 @@ bool checkThreads(int numThreads);
 bool checkError(double error);
 bool checkWinsize(int winsize);
 bool checkMaxGap(int MAX_GAP);
+bool checkOverlapFrac(double OVERLAP_FRAC);
 
 #endif

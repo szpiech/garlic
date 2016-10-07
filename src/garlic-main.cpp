@@ -108,6 +108,10 @@ int main(int argc, char *argv[])
     argerr = argerr || checkMaxGap(MAX_GAP);
     LOG.log("Max gap:", MAX_GAP);
 
+    double OVERLAP_FRAC = params->getDoubleFlag(ARG_OVERLAP_FRAC);
+    argerr = argerr || checkOverlapFrac(OVERLAP_FRAC);
+    LOG.log("Overlap fraction:", OVERLAP_FRAC);
+
     //cerr << "argerr " << argerr << endl;
 
     if (argerr) return -1;
@@ -265,7 +269,7 @@ int main(int argc, char *argv[])
     //Assemble ROH for each individual in each pop
     ROHLength *rohLength;
     vector< ROHData * > *rohDataByInd = assembleROHWindows(winDataByChr, mapDataByChr, indData,
-                                        centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP);
+                                        centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC);
 
     releaseWinData(winDataByChr);
     delete centro;
