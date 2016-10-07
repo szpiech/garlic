@@ -1,7 +1,12 @@
 #include "garlic-cli.h"
 #include <iostream>
 
-const string VERSION = "1.0.0";
+const string VERSION = "1.0.1";
+
+const string ARG_OVERLAP_FRAC = "--overlap-frac";
+const double DEFAULT_OVERLAP_FRAC = 0.05;
+const string HELP_OVERLAP_FRAC = "The minimum fraction of overlapping windows above the LOD cutoff required\n\
+\tto begin constructing a run.";
 
 const string ARG_OUTFILE = "--out";
 const string DEFAULT_OUTFILE = "outfile";
