@@ -15,7 +15,7 @@ GNU GSL: http://www.gnu.org/software/gsl/
 FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
-07OCT2016 - Update to version 1.0.1.  This update fixes a bug where ROH that extended upto the end of the chromosome failed to get assembled and reported.
+25OCT2016 - Update to version 1.0.1.  This update fixes a bug where ROH that extended upto the end of the chromosome failed to get assembled and reported.
 This update also introduces a new command-line flag --overlap-frac which is designed to reduce false positive calls by requiring a SNP be covered by at 
 least OVERLAP_FRAC (default 0.05) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
