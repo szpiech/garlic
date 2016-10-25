@@ -38,6 +38,7 @@ int main(int argc, char *argv[])
     string tpedfile = params->getStringFlag(ARG_TPED);
     string tfamfile = params->getStringFlag(ARG_TFAM);
     argerr = argerr || checkRequiredFiles(tpedfile, tfamfile);
+    if (argerr) return -1;
     LOG.log("TPED file:", tpedfile);
     char TPED_MISSING = params->getCharFlag(ARG_TPED_MISSING);
     LOG.log("TPED missing data code:", TPED_MISSING);
@@ -45,10 +46,12 @@ int main(int argc, char *argv[])
 
     string BUILD = params->getStringFlag(ARG_BUILD);
     argerr = argerr || checkBuild(BUILD);
+    if (argerr) return -1;
     LOG.log("Genome build:", BUILD);
 
     string centromereFile = params->getStringFlag(ARG_CENTROMERE_FILE);
     argerr = argerr || checkBuildAndCentromereFile(BUILD, centromereFile);
+    if (argerr) return -1;
     LOG.log("User defined centromere file:", centromereFile);
 
     int nresample = params->getIntFlag(ARG_RESAMPLE);
@@ -56,6 +59,7 @@ int main(int argc, char *argv[])
     bool FREQ_ONLY = params->getBoolFlag(ARG_FREQ_ONLY);
     bool AUTO_FREQ = true;
     argerr = argerr || checkAutoFreq(freqfile, FREQ_ONLY, AUTO_FREQ);
+    if (argerr) return -1;
     LOG.log("Calculate allele frequencies only:", FREQ_ONLY);
     LOG.log("Calculate allele frequencies from data:", AUTO_FREQ);
     if (!AUTO_FREQ) LOG.log("Allele frequencies file:", freqfile);
@@ -68,30 +72,36 @@ int main(int argc, char *argv[])
     vector<int> multiWinsizes = params->getIntListFlag(ARG_WINSIZE_MULTI);
     bool WINSIZE_EXPLORE = false;
     argerr = argerr || checkMultiWinsizes(multiWinsizes, WINSIZE_EXPLORE);
+    if (argerr) return -1;
     LOG.log("Explore window sizes:", WINSIZE_EXPLORE);
     if (WINSIZE_EXPLORE) LOG.logv("User defined window sizes:", multiWinsizes);
 
     bool AUTO_WINSIZE = params->getBoolFlag(ARG_AUTO_WINSIZE);
     argerr = argerr || checkAutoWinsize(WINSIZE_EXPLORE, AUTO_WINSIZE);
+    if (argerr) return -1;
     LOG.log("Automatic window size:", AUTO_WINSIZE);
 
     int AUTO_WINSIZE_STEP = params->getIntFlag(ARG_AUTO_WINSIZE_STEP);
     argerr = argerr || checkAutoWinsizeStep(AUTO_WINSIZE_STEP);
+    if (argerr) return -1;
     LOG.log("Automatic window step size:", AUTO_WINSIZE_STEP);
 
     int winsize = params->getIntFlag(ARG_WINSIZE);
     argerr = argerr || checkWinsize(winsize);
+    if (argerr) return -1;
     if (!WINSIZE_EXPLORE && !AUTO_WINSIZE) LOG.log("User defined window size:", winsize);
 
     double LOD_CUTOFF = params->getDoubleFlag(ARG_LOD_CUTOFF);
     bool AUTO_CUTOFF = true;
     argerr = argerr || checkAutoCutoff(LOD_CUTOFF, AUTO_CUTOFF);
+    if (argerr) return -1;
     LOG.log("Choose LOD score cutoff automatically:", AUTO_CUTOFF);
     if (!AUTO_CUTOFF) LOG.log("User defined LOD score cutoff:", LOD_CUTOFF);
 
     vector<double> boundSizes = params->getDoubleListFlag(ARG_BOUND_SIZE);
     bool AUTO_BOUNDS = true;
     argerr = argerr || checkBoundSizes(boundSizes, AUTO_BOUNDS);
+    if (argerr) return -1;
     LOG.log("Choose ROH class thresholds automatically:", AUTO_BOUNDS);
     if (!AUTO_BOUNDS) LOG.logv("User defined ROH class thresholds:", boundSizes);
 
@@ -102,14 +112,17 @@ int main(int argc, char *argv[])
 */
     double error = params->getDoubleFlag(ARG_ERROR);
     argerr = argerr || checkError(error);
+    if (argerr) return -1;
     LOG.log("Genotyping error:", error);
 
     int MAX_GAP = params->getIntFlag(ARG_MAX_GAP);
     argerr = argerr || checkMaxGap(MAX_GAP);
+    if (argerr) return -1;
     LOG.log("Max gap:", MAX_GAP);
 
     double OVERLAP_FRAC = params->getDoubleFlag(ARG_OVERLAP_FRAC);
     argerr = argerr || checkOverlapFrac(OVERLAP_FRAC);
+    if (argerr) return -1;
     LOG.log("Overlap fraction:", OVERLAP_FRAC);
 
     //cerr << "argerr " << argerr << endl;
