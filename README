@@ -17,7 +17,7 @@ zlib: http://zlib.net/
 
 25OCT2016 - Update to version 1.0.1.  This update fixes a bug where ROH that extended upto the end of the chromosome failed to get assembled and reported.
 This update also introduces a new command-line flag --overlap-frac which is designed to reduce false positive calls by requiring a SNP be covered by at 
-least OVERLAP_FRAC (default 0.05) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
+least OVERLAP_FRAC (default 0.25) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
 
 Garlic v1.0.1
@@ -75,7 +75,7 @@ Set <= 0 to use all individuals (may use large amounts of RAM).
 
 --overlap-frac <double>: The minimum fraction of overlapping windows above the LOD cutoff required
 	to begin constructing a run.
-	Default: 5.000000e-02
+	Default: 0.25
 
 --raw-lod <bool>: If set, LOD scores will be output to gzip compressed files.
 	Default: false
