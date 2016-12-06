@@ -4,7 +4,7 @@
 const string VERSION = "1.0.1";
 
 const string ARG_OVERLAP_FRAC = "--overlap-frac";
-const double DEFAULT_OVERLAP_FRAC = 0.30;
+const double DEFAULT_OVERLAP_FRAC = 0.25;
 const string HELP_OVERLAP_FRAC = "The minimum fraction of overlapping windows above the LOD cutoff required\n\
 \tto begin constructing a run.";
 
