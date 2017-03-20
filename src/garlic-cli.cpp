@@ -1,7 +1,12 @@
 #include "garlic-cli.h"
 #include <iostream>
 
-const string VERSION = "1.0.0";
+const string VERSION = "1.0.1";
+
+const string ARG_OVERLAP_FRAC = "--overlap-frac";
+const double DEFAULT_OVERLAP_FRAC = 0.25;
+const string HELP_OVERLAP_FRAC = "The minimum fraction of overlapping windows above the LOD cutoff required\n\
+\tto begin constructing a run.";
 
 const string ARG_OUTFILE = "--out";
 const string DEFAULT_OUTFILE = "outfile";
@@ -137,6 +142,7 @@ const string HELP_FEATURES = "A feature file giving classifications";
 param_t *getCLI(int argc, char *argv[])
 {
 	param_t *params = new param_t;
+	params->addFlag(ARG_OVERLAP_FRAC, DEFAULT_OVERLAP_FRAC, "", HELP_OVERLAP_FRAC);
 	params->addFlag(ARG_OUTFILE, DEFAULT_OUTFILE, "", HELP_OUTFILE);
 	//params->addFlag(ARG_THREADS, DEFAULT_THREADS, "", HELP_THREADS);
 	params->addFlag(ARG_ERROR, DEFAULT_ERROR, "", HELP_ERROR);
@@ -367,11 +373,19 @@ bool checkMaxGap(int MAX_GAP)
 		LOG.err("ERROR: Max gap must be > 0.");
 		return true;
 	}
-	else if (MAX_GAP < 10000)
+	else if (MAX_GAP < 1000)
 	{
 		//cerr << "WARNING: max gap set very low: " << MAX_GAP << endl;
 		//LOG.err("WARNING: max gap set very low:", MAX_GAP);
 		LOG.err("WARNING: max gap set very low:", MAX_GAP);
+	}
+	return false;
+}
+
+bool checkOverlapFrac(double OVERLAP_FRAC){
+	if(OVERLAP_FRAC <= 0 || OVERLAP_FRAC > 1){
+		LOG.err("ERROR: Overlap fraction must be > 0 and <= 1.");
+		return true;
 	}
 	return false;
 }

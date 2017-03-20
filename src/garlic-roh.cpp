@@ -405,10 +405,14 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         double lodScoreCutoff,
                                         ROHLength **rohLength,
                                         int winSize,
-                                        int MAX_GAP)
+                                        int MAX_GAP,
+                                        double OVERLAP_FRAC)
 {
     vector<int> lengths;
     vector< ROHData * > *rohDataByInd = initROHData(indData);
+
+    double OVERLAP_THRESHOLD = OVERLAP_FRAC * winSize;
+    OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD >= 1) ? OVERLAP_THRESHOLD : 1;
 
     for (int ind = 0; ind < indData->nind; ind++)
     {
@@ -426,15 +430,13 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
             //translation of the perl script here###Updated to match trevor's algorithm
             //int winStart = -1;
             //int winStop = -1;
-            bool *inWin = new bool[mapData->nloci];
-            for (int w = 0; w < mapData->nloci; w++) inWin[w] = false;
+            short *inWin = new short[mapData->nloci];
+            for (int w = 0; w < mapData->nloci; w++) inWin[w] = 0;
             for (int w = 0; w < winData->nloci; w++)
             {
                 if (winData->data[ind][w] >= lodScoreCutoff)
                 {
-                    //There is a faster way to do this but I'm lazy right now
-                    //for consecutive w, we obiously don't have to assign true again.
-                    for (int i = 0; i < winSize; i++) inWin[w + i] = true;
+                    for (int i = 0; i < winSize; i++) inWin[w + i]++;
                 }
             }
 
@@ -444,15 +446,15 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
             {
                 //No window being extended and the snp is in ROH
                 //Start the window
-                if (winStart < 0 && inWin[w])
+                if (winStart < 0 && inWin[w] >= OVERLAP_THRESHOLD)
                 {
                     winStart = mapData->physicalPos[w];
                 }
                 //Window being extended and snp is not in ROH
                 //end the window at w-1
                 //reset winStart to -1
-                else if (inWin[w] && (mapData->physicalPos[w] - mapData->physicalPos[w - 1] > MAX_GAP ||
-                                      inGap(mapData->physicalPos[w - 1], mapData->physicalPos[w], cStart, cEnd)) ) {
+                else if (inWin[w] >= OVERLAP_THRESHOLD && (mapData->physicalPos[w] - mapData->physicalPos[w - 1] > MAX_GAP ||
+                         inGap(mapData->physicalPos[w - 1], mapData->physicalPos[w], cStart, cEnd)) ) {
                     winStop = mapData->physicalPos[w - 1];
                     int size = winStop - winStart + 1;
                     lengths.push_back(size);
@@ -462,9 +464,20 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                     winStop = -1;
                     winStart = mapData->physicalPos[w];
                 }
-                else if (winStart > 0 && !inWin[w])
+                else if (winStart > 0 && ! (inWin[w] >= OVERLAP_THRESHOLD) )
                 {
                     winStop = mapData->physicalPos[w - 1];
+                    int size = winStop - winStart + 1;
+                    lengths.push_back(size);
+                    rohData->chr.push_back(chr);
+                    rohData->start.push_back(winStart);
+                    rohData->stop.push_back(winStop);
+                    winStart = -1;
+                    winStop = -1;
+                }
+                else if (winStart > 0 && w + 1 >= mapData->nloci)
+                {
+                    winStop = mapData->physicalPos[w];
                     int size = winStop - winStart + 1;
                     lengths.push_back(size);
                     rohData->chr.push_back(chr);

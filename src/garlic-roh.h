@@ -104,7 +104,8 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         double lodScoreCutoff,
                                         ROHLength **rohLength,
                                         int winSize,
-                                        int MAX_GAP);
+                                        int MAX_GAP,
+                                        double OVERLAP_FRAC);
 
 ROHLength *initROHLength(int size, string pop);
 void releaseROHLength(ROHLength *rohLength);
