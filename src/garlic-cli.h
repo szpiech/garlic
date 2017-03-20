@@ -9,6 +9,7 @@
 using namespace std;
 
 extern const string VERSION;
+extern const string PREAMBLE;
 
 extern const string ARG_OVERLAP_FRAC;
 extern const double DEFAULT_OVERLAP_FRAC;

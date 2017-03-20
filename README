@@ -1,5 +1,10 @@
 GARLIC is a program for calling runs of homozygosity in genotype data.  It implements the ROH calling method of Pemberton et al. AJHG (2012).
 
+Citations:
+
+ZA Szpiech, et al. (2017) Bioinformatics, doi: 10.1093/bioinformatics/btx102.
+TJ Pemberton, et al. (2012) AJHG, 91: 275–292.
+
 **NOTE TO WINDOWS USERS: In order to successfully run GARLIC you must have ann_figtree_version.dll and figtree.dll in the same folder as garlic.exe 
 
 This ROH calling pipeline has four phases.
