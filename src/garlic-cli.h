@@ -127,6 +127,11 @@ extern const string DEFAULT_FEATURES;
 extern const string HELP_FEATURES;
 */
 
+extern const string ARG_WLOD;
+extern const bool DEFAULT_WLOD;
+extern const string HELP_WLOD;
+
+
 param_t *getCLI(int argc, char *argv[]);
 bool checkBuild(string BUILD);
 bool checkBuildAndCentromereFile(string BUILD, string centromereFile);

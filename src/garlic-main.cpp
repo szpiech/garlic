@@ -149,6 +149,9 @@ int main(int argc, char *argv[])
     bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
     LOG.log("Output raw LOD scores:", RAW_LOD);
 
+    bool WLOD = params->getBoolFlag(ARG_WLOD);
+    LOG.log("Compute wLOD:", WLOD);
+
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
 //++++++++++Datafile reading++++++++++

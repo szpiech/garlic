@@ -1,7 +1,7 @@
 #include "garlic-cli.h"
 #include <iostream>
 
-const string VERSION = "1.0.1";
+const string VERSION = "1.1.0";
 
 const string PREAMBLE = "\ngarlic v" + VERSION + " -- a program to call runs of homozygosity in genetic data.\n\
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.\n\
@@ -10,7 +10,6 @@ Citations:\n\
 \n\
 ZA Szpiech, et al. (2017) Bioinformatics, doi: 10.1093/bioinformatics/btx102.\n\
 TJ Pemberton, et al. (2012) AJHG, 91: 275–292.\n";
-
 
 const string ARG_OVERLAP_FRAC = "--overlap-frac";
 const double DEFAULT_OVERLAP_FRAC = 0.25;
@@ -148,6 +147,10 @@ const string DEFAULT_FEATURES = "_none";
 const string HELP_FEATURES = "A feature file giving classifications";
 */
 
+const string ARG_WLOD = "--wlod";
+const string DEFAULT_WLOD = false;
+const string HELP_WLOD = "Calculate wLOD scores.  This requires a genetic map.\n";
+
 param_t *getCLI(int argc, char *argv[])
 {
 	param_t *params = new param_t;
@@ -182,6 +185,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_AUTO_WINSIZE_STEP, DEFAULT_AUTO_WINSIZE_STEP, "", HELP_AUTO_WINSIZE_STEP);
 	params->addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);
 	params->addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
+	params->addFlag(ARG_WLOD, DEFAULT_WLOD, "", HELP_WLOD);
 
 	if (!params->parseCommandLine(argc, argv))
 	{
