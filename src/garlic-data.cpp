@@ -210,7 +210,7 @@ void releaseGenMapScaffold(GenMapScaffold *scaffoldMap) {
     return;
 }
 void releaseGenMapScaffold(vector< GenMapScaffold * > *scaffoldMapByChr) {
-    for (int i = 0; i <= scaffoldMapByChr->size(); i++) {
+    for (int i = 0; i < scaffoldMapByChr->size(); i++) {
         releaseGenMapScaffold(scaffoldMapByChr->at(i));
     }
     delete scaffoldMapByChr;
@@ -220,23 +220,31 @@ void releaseGenMapScaffold(vector< GenMapScaffold * > *scaffoldMapByChr) {
 int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
                            vector< HapData * > **hapDataByChr,
                            vector< FreqData * > **freqDataByChr,
-                           vector< GenoLikeData * > **GLDataByChr)
+                           vector< GenoLikeData * > **GLDataByChr,
+                           bool USE_GL)
 {
     vector< MapData * > *mapDataByChr2 = new vector< MapData * >;
     vector< HapData * > *hapDataByChr2 = new vector< HapData * >;
     vector< FreqData * > *freqDataByChr2 = new vector< FreqData * >;
-    vector< GenoLikeData * > *GLDataByChr2 = new vector< GenoLikeData * >;
+    vector< GenoLikeData * > *GLDataByChr2;
+
+    if(USE_GL){
+        GLDataByChr2 = new vector< GenoLikeData * >;
+    }
 
     int numLoci = 0;
     for (int i = 0; i < (*mapDataByChr)->size(); i++) {
         int newLoci = 0;
         MapData *mapData2 = filterMonomorphicSites((*mapDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
         HapData *hapData2 = filterMonomorphicSites((*hapDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
-        GenoLikeData *GLData2 = filterMonomorphicSites((*GLDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
+        GenoLikeData *GLData2;
+        if(USE_GL){
+            GLData2 = filterMonomorphicSites((*GLDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
+        }
         FreqData *freqData2 = filterMonomorphicSites((*freqDataByChr)->at(i), newLoci);
         mapDataByChr2->push_back(mapData2);
         hapDataByChr2->push_back(hapData2);
-        GLDataByChr2->push_back(GLData2);
+        if(USE_GL) GLDataByChr2->push_back(GLData2);
         freqDataByChr2->push_back(freqData2);
         numLoci += newLoci;
     }
@@ -244,11 +252,11 @@ int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
     releaseMapData(*mapDataByChr);
     releaseHapData(*hapDataByChr);
     releaseFreqData(*freqDataByChr);
-    releaseGLData(*GLDataByChr);
+    if(USE_GL) releaseGLData(*GLDataByChr);
 
     *mapDataByChr = mapDataByChr2;
     *hapDataByChr = hapDataByChr2;
-    *GLDataByChr = GLDataByChr2;
+    if(USE_GL) *GLDataByChr = GLDataByChr2;
     *freqDataByChr = freqDataByChr2;
 
     return numLoci;
@@ -258,23 +266,31 @@ int filterMonomorphicAndOOBSites(vector< MapData * > **mapDataByChr,
                                  vector< HapData * > **hapDataByChr,
                                  vector< FreqData * > **freqDataByChr,
                                  vector< GenoLikeData * > **GLDataByChr,
-                                 vector< GenMapScaffold * > *scaffoldMapByChr)
+                                 vector< GenMapScaffold * > *scaffoldMapByChr,
+                                 bool USE_GL)
 {
     vector< MapData * > *mapDataByChr2 = new vector< MapData * >;
     vector< HapData * > *hapDataByChr2 = new vector< HapData * >;
     vector< FreqData * > *freqDataByChr2 = new vector< FreqData * >;
-    vector< GenoLikeData * > *GLDataByChr2 = new vector< GenoLikeData * >;
+    vector< GenoLikeData * > *GLDataByChr2;
+
+    if(USE_GL){
+        GLDataByChr2 = new vector< GenoLikeData * >;
+    }
 
     int numLoci = 0;
     for (int i = 0; i < (*mapDataByChr)->size(); i++) {
         int newLoci = 0;
         MapData *mapData2 = filterMonomorphicAndOOBSites((*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
         HapData *hapData2 = filterMonomorphicAndOOBSites((*hapDataByChr)->at(i), (*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
-        GenoLikeData *GLData2 = filterMonomorphicAndOOBSites((*GLDataByChr)->at(i), (*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
+        GenoLikeData *GLData2; 
+        if(USE_GL){
+            GLData2 = filterMonomorphicAndOOBSites((*GLDataByChr)->at(i), (*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
+        }
         FreqData *freqData2 = filterMonomorphicAndOOBSites((*freqDataByChr)->at(i), (*mapDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
         mapDataByChr2->push_back(mapData2);
         hapDataByChr2->push_back(hapData2);
-        GLDataByChr2->push_back(GLData2);
+        if(USE_GL) GLDataByChr2->push_back(GLData2);
         freqDataByChr2->push_back(freqData2);
         numLoci += newLoci;
     }
@@ -282,11 +298,11 @@ int filterMonomorphicAndOOBSites(vector< MapData * > **mapDataByChr,
     releaseMapData(*mapDataByChr);
     releaseHapData(*hapDataByChr);
     releaseFreqData(*freqDataByChr);
-    releaseGLData(*GLDataByChr);
+    if(USE_GL) releaseGLData(*GLDataByChr);
 
     *mapDataByChr = mapDataByChr2;
     *hapDataByChr = hapDataByChr2;
-    *GLDataByChr = GLDataByChr2;
+    if(USE_GL) *GLDataByChr = GLDataByChr2;
     *freqDataByChr = freqDataByChr2;
 
     return numLoci;

@@ -147,9 +147,6 @@ const string DEFAULT_FEATURES = "_none";
 const string HELP_FEATURES = "A feature file giving classifications";
 */
 
-const string ARG_WLOD = "--wlod";
-const string DEFAULT_WLOD = false;
-const string HELP_WLOD = "Calculate wLOD scores.  This requires a genetic map.\n";
 
 param_t *getCLI(int argc, char *argv[])
 {
@@ -185,8 +182,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_AUTO_WINSIZE_STEP, DEFAULT_AUTO_WINSIZE_STEP, "", HELP_AUTO_WINSIZE_STEP);
 	params->addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);
 	params->addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
-	params->addFlag(ARG_WLOD, DEFAULT_WLOD, "", HELP_WLOD);
-
+	
 	if (!params->parseCommandLine(argc, argv))
 	{
 		delete params;

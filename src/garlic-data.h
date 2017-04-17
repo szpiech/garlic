@@ -119,13 +119,15 @@ void releaseGenMapScaffold(vector< GenMapScaffold * > *scaffoldMapByChr);
 int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
                            vector< HapData * > **hapDataByChr,
                            vector< FreqData * > **freqDataByChr,
-                           vector< GenoLikeData * > **GLDataByChr);
+                           vector< GenoLikeData * > **GLDataByChr,
+                           bool USE_GL);
 
 int filterMonomorphicAndOOBSites(vector< MapData * > **mapDataByChr,
                                  vector< HapData * > **hapDataByChr,
                                  vector< FreqData * > **freqDataByChr,
                                  vector< GenoLikeData * > **GLDataByChr,
-                                 vector< GenMapScaffold * > *scaffoldMapByChr);
+                                 vector< GenMapScaffold * > *scaffoldMapByChr,
+                                 bool USE_GL);
 
 MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLoci);
 HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci);

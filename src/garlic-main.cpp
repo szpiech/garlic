@@ -149,8 +149,6 @@ int main(int argc, char *argv[])
     bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
     LOG.log("Output raw LOD scores:", RAW_LOD);
 
-    bool WLOD = params->getBoolFlag(ARG_WLOD);
-    LOG.log("Compute wLOD:", WLOD);
 
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
@@ -232,15 +230,17 @@ int main(int argc, char *argv[])
     int newLoci;
 
     if (WEIGHTED) {
-        newLoci = filterMonomorphicAndOOBSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, scaffoldMapByChr);
+        newLoci = filterMonomorphicAndOOBSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, scaffoldMapByChr, USE_GL);
         LOG.log("Monomorphic or out of bounds loci filtered:", numLoci - newLoci);
         int numInterpolated = interpolateGeneticmap(&mapDataByChr, scaffoldMapByChr);
         LOG.log("Number of genetic map locations interpolated:", numInterpolated);
+        cerr << "release scaffold\n";
         releaseGenMapScaffold(scaffoldMapByChr);
+        cerr << "genotype freq\n";
         genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
     }
     else {
-        newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr);
+        newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, USE_GL);
         LOG.log("Monomorphic loci filtered:", numLoci - newLoci);
     }
 
@@ -295,14 +295,22 @@ int main(int argc, char *argv[])
 
     cout << "Window size: " << winsize << endl;
 
-    winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
-                                  GLDataByChr,
-                                  indData, centro, winsize, error,
-                                  MAX_GAP, USE_GL);
-
+    if(WEIGHTED){
+        winDataByChr = calcwLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
+                                       GLDataByChr, genoFreqDataByChr,
+                                       indData, centro, winsize, error,
+                                       MAX_GAP, USE_GL);
+    }
+    else{
+        winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
+                                      GLDataByChr,
+                                      indData, centro, winsize, error,
+                                      MAX_GAP, USE_GL);
+    }
     releaseHapData(hapDataByChr);
     releaseFreqData(freqDataByChr);
     if (USE_GL) releaseGLData(GLDataByChr);
+    if (WEIGHTED) releaseGenoFreq(genoFreqDataByChr);
 
     if (RAW_LOD)
     {

@@ -135,6 +135,7 @@ double ld(HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int
         else sum += 1;
     }
     //sum *= 2.0;
+    cout << site << " " << sum << "\n";
     return (1.0 / sum);
 }
 
@@ -164,7 +165,7 @@ void calcwLOD(IndData *indData, MapData *mapData,
               int winsize, double error, int MAX_GAP, bool USE_GL)
 {
     double mu = 1e-9;
-    int M = 7;
+    int M = 3;
     short **data = hapData->data;
     int nloci = hapData->nloci;
     int nind = hapData->nind;
@@ -306,11 +307,20 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
-        calcLOD(indData, mapDataByChr->at(chr),
-                hapDataByChr->at(chr), freqDataByChr->at(chr),
-                GLDataByChr->at(chr),
-                winDataByChr->at(chr), centro,
-                winsize, error, MAX_GAP, USE_GL);
+        if(USE_GL){
+            calcLOD(indData, mapDataByChr->at(chr),
+                    hapDataByChr->at(chr), freqDataByChr->at(chr),
+                    GLDataByChr->at(chr),
+                    winDataByChr->at(chr), centro,
+                    winsize, error, MAX_GAP, USE_GL);
+        }
+        else{
+            calcLOD(indData, mapDataByChr->at(chr),
+                    hapDataByChr->at(chr), freqDataByChr->at(chr),
+                    NULL,
+                    winDataByChr->at(chr), centro,
+                    winsize, error, MAX_GAP, USE_GL);
+        }
     }
     return winDataByChr;
 }
@@ -328,12 +338,22 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
-        calcwLOD(indData, mapDataByChr->at(chr),
-                 hapDataByChr->at(chr), freqDataByChr->at(chr),
-                 GLDataByChr->at(chr),
-                 genoFreqDataByChr->at(chr),
-                 winDataByChr->at(chr), centro,
-                 winsize, error, MAX_GAP, USE_GL);
+        if(USE_GL){
+            calcwLOD(indData, mapDataByChr->at(chr),
+                     hapDataByChr->at(chr), freqDataByChr->at(chr),
+                     GLDataByChr->at(chr),
+                     genoFreqDataByChr->at(chr),
+                     winDataByChr->at(chr), centro,
+                     winsize, error, MAX_GAP, USE_GL);
+        }
+        else{
+            calcwLOD(indData, mapDataByChr->at(chr),
+                     hapDataByChr->at(chr), freqDataByChr->at(chr),
+                     NULL,
+                     genoFreqDataByChr->at(chr),
+                     winDataByChr->at(chr), centro,
+                     winsize, error, MAX_GAP, USE_GL);   
+        }
     }
     return winDataByChr;
 }
