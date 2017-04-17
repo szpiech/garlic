@@ -154,7 +154,14 @@ double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j) {
     }
     HAB /= total;
     double H = HAB - HA * HB;
-    return H * H / (HA * (1 - HA) * HB * (1 - HB));
+    if(HA > 0 && HA < 1 && HB > 0 && HB < 1){
+        double HR2 = H * H / (HA * (1 - HA) * HB * (1 - HB));
+        if(HR2 > 1) return 1;
+        else return HR2;
+    }
+    else{
+        return 0;
+    }
 }
 
 void calcwLOD(IndData *indData, MapData *mapData,
