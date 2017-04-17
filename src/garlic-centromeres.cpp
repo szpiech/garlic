@@ -13,13 +13,13 @@ centromere::centromere(string arg, string file, string defaultFileName) {
 		makeHG38();
 		makeWarning();
 	}
+	else if (file.compare(defaultFileName) != 0) {
+		readCustomCentromeres(file);
+	}
 	else if (arg.compare("none") == 0) {
 		gapStart.clear();
 		gapEnd.clear();
 		makeWarning();
-	}
-	else if (file.compare(defaultFileName) != 0) {
-		readCustomCentromeres(arg);
 	}
 	return;
 }
@@ -35,8 +35,8 @@ int centromere::centromereStart(string chr) {
 		if (chrWarning[chr] == 0) {
 			LOG.err("WARNING: No centromere start information for chr:", chr);
 			LOG.err("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
-			LOG.log("WARNING: No centromere start information for chr:", chr);
-			LOG.log("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
+			//LOG.log("WARNING: No centromere start information for chr:", chr);
+			//LOG.log("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
 			chrWarning[chr]++;
 		}
 		return 0;
@@ -49,8 +49,8 @@ int centromere::centromereEnd(string chr) {
 		if (chrWarning[chr] == 0) {
 			LOG.err("WARNING: No centromere end information for chr:", chr);
 			LOG.err("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
-			LOG.log("WARNING: No centromere end information for chr:", chr);
-			LOG.log("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
+			//LOG.log("WARNING: No centromere end information for chr:", chr);
+			//LOG.log("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
 			chrWarning[chr]++;
 		}
 		return 0;
@@ -82,15 +82,20 @@ void centromere::readCustomCentromeres(string filename) {
 		}
 	}
 	fin.close();
-
+	fin.clear();
 	string chrname;
+	int start;
+	int end;
 	fin.open(filename.c_str());
 	for (int row = 0; row < numChr; row++) {
 		fin >> chrname;
-		fin >> gapStart[chrname] >> gapEnd[chrname];
+		fin >> start >> end;
+		gapStart[chrname] = start;
+		gapEnd[chrname] = end;
 		chrWarning[chrname] = 0;
 	}
 	cerr << "Loaded custom centromere limits for " << numChr << " chromosomes.\n";
+	fin.close();
 	return;
 }
 
