@@ -2,6 +2,8 @@
 
 //pthread_mutex_t io_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+double **LD = NULL;
+
 bool inGap(int qStart, int qEnd, int targetStart, int targetEnd)
 {
     return ( (targetStart <= qStart && targetEnd >= qStart) ||
@@ -128,33 +130,42 @@ double norec(double M, double interval) {
     return nomut(M, 1, interval);
 }
 
-double ld(HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end) {
-    double sum = 0;
-    for (int i = start; i <= end; i++) {
-        if (i != site) sum += hr2(hapData, genoFreqData, i, site);
-        else sum += 1;
+double ld(HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end, int ind) {
+    if(LD == NULL){
+        LD = new double*[hapData->nloci];
+        for(int i = 0; i < hapData->nloci; i++){
+            LD[i] = new double[end-start+1];
+            for (int j = 0; j < end-start+1; j++){
+                LD[i][j] = 0;
+            }
+        }
     }
-    //sum *= 2.0;
-    cout << site << " " << sum << "\n";
-    return (1.0 / sum);
+    if(ind == 0){
+        for (int i = start; i <= end; i++) {
+            if (i != site) LD[start][site-start] += hr2(hapData, genoFreqData, i, site);
+            else LD[start][site-start] += 1;
+        }
+    }
+
+    return (1.0 / LD[start][site-start]);
 }
 
 double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j) {
     double HA = genoFreqData->homFreq[i];
     double HB = genoFreqData->homFreq[j];
-    double HAB = 0;
-    double total = 0;
-    for (int ind = 0; ind < hapData->nind; ind++) {
-        if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
-            total++;
-            if (hapData->data[i][ind] != 1 && hapData->data[j][ind] != 1) {
-                HAB++;
+    if(HA > 0 && HA < 1 && HB > 0 && HB < 1){
+        double HAB = 0;
+        double total = 0;
+        for (int ind = 0; ind < hapData->nind; ind++) {
+            if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
+                total++;
+                if (hapData->data[i][ind] != 1 && hapData->data[j][ind] != 1) {
+                    HAB++;
+                }
             }
         }
-    }
-    HAB /= total;
-    double H = HAB - HA * HB;
-    if(HA > 0 && HA < 1 && HB > 0 && HB < 1){
+        HAB /= total;
+        double H = HAB - HA * HB;
         double HR2 = H * H / (HA * (1 - HA) * HB * (1 - HB));
         if(HR2 > 1) return 1;
         else return HR2;
@@ -200,8 +211,8 @@ void calcwLOD(IndData *indData, MapData *mapData,
             win[ind][locus] = 0;
 
             //First window?  If so we have to calcualte the whole thing
-            if (locus == start)
-            {
+            //if (locus == start)
+            //{
                 int prevI = locus;
                 for (int i = locus; i < locus + winsize; i++)
                 {
@@ -216,13 +227,14 @@ void calcwLOD(IndData *indData, MapData *mapData,
                     if (USE_GL) error = GLData->data[i][ind];
                     double physInterval = ( i > 0 ) ? (physicalPos[i] - physicalPos[i - 1]) : physicalPos[i];
                     double geneInterval = ( i > 0 ) ? (geneticPos[i] - geneticPos[i - 1]) : geneticPos[i];
-                    win[ind][locus] += lod(data[i][ind], freq[i], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) * ld(hapData, genoFreqData, i, locus, locus + winsize - 1);
+                    win[ind][locus] += lod(data[i][ind], freq[i], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) * ld(hapData, genoFreqData, i, locus, locus + winsize - 1, ind);
                     prevI = i;
                 }
 
                 //if(skip) continue;
 
-            }
+            //}
+            /*
             else //Otherwise, we can just subtract the locus that falls off and add the new one
             {
                 //But first we have to check if the previous window was MISSING
@@ -248,11 +260,11 @@ void calcwLOD(IndData *indData, MapData *mapData,
                                               (lod(data[locus - 1][ind], freq[locus - 1], GLData->data[locus - 1][ind]) *
                                                nomut(M, mu, physIntervalPrev) *
                                                norec(M, geneIntervalPrev) *
-                                               ld(hapData, genoFreqData, locus - 1, locus - 1, locus + winsize - 2)) +
+                                               ld(hapData, genoFreqData, locus - 1, locus - 1, locus + winsize - 2, ind)) +
                                               (lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], GLData->data[locus + winsize - 1][ind]) *
                                                nomut(M, mu, physInterval) *
                                                norec(M, geneInterval) *
-                                               ld(hapData, genoFreqData, locus + winsize - 1, locus, locus + winsize - 1));
+                                               ld(hapData, genoFreqData, locus + winsize - 1, locus, locus + winsize - 1, ind));
 
                         }
                         else {
@@ -260,11 +272,11 @@ void calcwLOD(IndData *indData, MapData *mapData,
                                               (lod(data[locus - 1][ind], freq[locus - 1], error) *
                                                nomut(M, mu, physIntervalPrev) *
                                                norec(M, geneIntervalPrev) *
-                                               ld(hapData, genoFreqData, locus - 1, locus - 1, locus + winsize - 2) ) +
+                                               ld(hapData, genoFreqData, locus - 1, locus - 1, locus + winsize - 2, ind) ) +
                                               (lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], error) *
                                                nomut(M, mu, physInterval) *
                                                norec(M, geneInterval) *
-                                               ld(hapData, genoFreqData, locus + winsize - 1, locus, locus + winsize - 1));
+                                               ld(hapData, genoFreqData, locus + winsize - 1, locus, locus + winsize - 1, ind));
                         }
                     }
                 }
@@ -286,7 +298,7 @@ void calcwLOD(IndData *indData, MapData *mapData,
 
                         double physInterval = ( i > 0 ) ? (physicalPos[i] - physicalPos[i - 1]) : physicalPos[i];
                         double geneInterval = ( i > 0 ) ? (geneticPos[i] - geneticPos[i - 1]) : geneticPos[i];
-                        win[ind][locus] += lod(data[i][ind], freq[i], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) * ld(hapData, genoFreqData, i, locus, locus + winsize - 1);
+                        win[ind][locus] += lod(data[i][ind], freq[i], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) * ld(hapData, genoFreqData, i, locus, locus + winsize - 1, ind);
 
                         prevI = i;
                     }
@@ -294,6 +306,7 @@ void calcwLOD(IndData *indData, MapData *mapData,
                     //if(skip) continue;
                 }
             }
+            */
         }
     }
 

@@ -49,6 +49,8 @@ struct ROHLength
   int size;
 };
 
+extern double **LD;
+
 void calcLOD(IndData *indData, MapData *mapData,
              HapData *hapData, FreqData *freqData,
              GenoLikeData *GLData,
@@ -63,7 +65,7 @@ void calcwLOD(IndData *indData, MapData *mapData,
 
 double nomut(double M, double mu, double interval);
 double norec(double M, double interval);
-double ld(FreqData *freqData, GenoFreqData *genoFreqData, int site, int start, int end);
+double ld(FreqData *freqData, GenoFreqData *genoFreqData, int site, int start, int end, int ind);
 double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j);
 
 double lod(const short &genotype, const double &freq, const double &error);
