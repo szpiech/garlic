@@ -12,7 +12,7 @@ bool inGap(int qStart, int qEnd, int targetStart, int targetEnd)
              (targetStart >= qStart && targetEnd <= qEnd) );
 }
 
-void calcLOD(IndData *indData, MapData *mapData,
+void calcLOD(MapData *mapData,
              HapData *hapData, FreqData *freqData,
              GenoLikeData *GLData,
              WinData *winData, centromere *centro,
@@ -133,7 +133,7 @@ double norec(double M, double interval) {
 
 
 
-void calcwLOD(IndData *indData, MapData *mapData,
+void calcwLOD(MapData *mapData,
               HapData *hapData, FreqData *freqData,
               GenoLikeData *GLData,
               LDData *LD,
@@ -151,7 +151,6 @@ void calcwLOD(IndData *indData, MapData *mapData,
     for (int i = 0; i < numThreads; i++)
     {
         order = new WLOD_work_order_t;
-        order->indData = indData;
         order->mapData = mapData;
         order->hapData = hapData;
         order->freqData = freqData;
@@ -384,23 +383,22 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< FreqData * > *freqDataByChr,
                                     vector< MapData * > *mapDataByChr,
                                     vector< GenoLikeData * > *GLDataByChr,
-                                    IndData *indData,
                                     centromere *centro,
                                     int winsize, double error, int MAX_GAP, bool USE_GL)
 {
-    vector< WinData * > *winDataByChr = initWinData(mapDataByChr, indData);
+    vector< WinData * > *winDataByChr = initWinData(mapDataByChr, hapDataByChr->at(0)->nind);
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         if(USE_GL){
-            calcLOD(indData, mapDataByChr->at(chr),
+            calcLOD(mapDataByChr->at(chr),
                     hapDataByChr->at(chr), freqDataByChr->at(chr),
                     GLDataByChr->at(chr),
                     winDataByChr->at(chr), centro,
                     winsize, error, MAX_GAP, USE_GL);
         }
         else{
-            calcLOD(indData, mapDataByChr->at(chr),
+            calcLOD(mapDataByChr->at(chr),
                     hapDataByChr->at(chr), freqDataByChr->at(chr),
                     NULL,
                     winDataByChr->at(chr), centro,
@@ -415,17 +413,16 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                                      vector< MapData * > *mapDataByChr,
                                      vector< GenoLikeData * > *GLDataByChr,
                                      vector< LDData * > *ldDataByChr,
-                                     IndData *indData,
                                      centromere *centro,
                                      int winsize, double error, int MAX_GAP, bool USE_GL, 
                                      int M, double mu, int numThreads)
 {
-    vector< WinData * > *winDataByChr = initWinData(mapDataByChr, indData);
+    vector< WinData * > *winDataByChr = initWinData(mapDataByChr, hapDataByChr->at(0)->nind);
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         if(USE_GL){
-            calcwLOD(indData, mapDataByChr->at(chr),
+            calcwLOD(mapDataByChr->at(chr),
                      hapDataByChr->at(chr), freqDataByChr->at(chr),
                      GLDataByChr->at(chr),
                      ldDataByChr->at(chr),
@@ -433,7 +430,7 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                      winsize, error, MAX_GAP, USE_GL, mu, M, numThreads);
         }
         else{
-            calcwLOD(indData, mapDataByChr->at(chr),
+            calcwLOD(mapDataByChr->at(chr),
                      hapDataByChr->at(chr), freqDataByChr->at(chr),
                      NULL,
                      ldDataByChr->at(chr),
@@ -943,14 +940,14 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      double error,
                      vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr)
+                     bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED)
 {
     vector< WinData * > *winDataByChr;
     vector< HapData * > *hapDataByChrToCalc;
     vector< GenoLikeData * > *GLDataByChrToCalc;
     IndData *indDataToCalc;
 
-    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, GLDataByChr, indData, &hapDataByChrToCalc, &GLDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE, USE_GL);
+    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, GLDataByChr, indData, &hapDataByChrToCalc, &GLDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE, USE_GL, PHASED);
     else
     {
         hapDataByChrToCalc = hapDataByChr;
@@ -966,7 +963,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
             winDataByChr = calcwLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
                                            GLDataByChrToCalc,
                                            genoFreqDataByChr,
-                                           indDataToCalc, centro, multiWinsizes[i],
+                                           centro, multiWinsizes[i],
                                            error, MAX_GAP, USE_GL);
             */
             cerr << "Not currently supported.\n";
@@ -975,7 +972,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
         else {
             winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
                                           GLDataByChrToCalc,
-                                          indDataToCalc, centro, multiWinsizes[i],
+                                          centro, multiWinsizes[i],
                                           error, MAX_GAP, USE_GL);
         }
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
@@ -1008,7 +1005,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          int &winsize, int step, double error,
                          vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr)
+                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED)
 {
     double AUTO_WINSIZE_THRESHOLD = 0.5;
     vector< WinData * > *winDataByChr = NULL;
@@ -1018,7 +1015,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
     KDEResult *selectedKDEResult = NULL;
 
     //subset of individuals as given by --kde-subsample
-    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, GLDataByChr, indData, &hapDataByChrToCalc, &GLDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE, USE_GL);
+    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, GLDataByChr, indData, &hapDataByChrToCalc, &GLDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE, USE_GL, PHASED);
     else
     {
         hapDataByChrToCalc = hapDataByChr;
@@ -1040,7 +1037,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
             winDataByChr = calcwLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
                                            GLDataByChrToCalc,
                                            genoFreqDataByChr,
-                                           indDataToCalc, centro, winsizeQuery,
+                                           centro, winsizeQuery,
                                            error, MAX_GAP, USE_GL);
             */
             cerr << "Not currently supported.\n";
@@ -1049,7 +1046,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
         else {
             winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
                                           GLDataByChrToCalc,
-                                          indDataToCalc, centro, winsizeQuery,
+                                          centro, winsizeQuery,
                                           error, MAX_GAP, USE_GL);
         }
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
@@ -1095,7 +1092,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector<int> *multiWinsizes, int &winsize, double error,
                                  vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr)
+                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED)
 {
     double AUTO_WINSIZE_THRESHOLD = 0.5;
     vector< WinData * > *winDataByChr = NULL;
@@ -1105,7 +1102,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
     KDEResult *selectedKDEResult = NULL;
 
     //subset of individuals as given by --kde-subsample
-    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, GLDataByChr, indData, &hapDataByChrToCalc, &GLDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE, USE_GL);
+    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, GLDataByChr, indData, &hapDataByChrToCalc, &GLDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE, USE_GL, PHASED);
     else
     {
         hapDataByChrToCalc = hapDataByChr;
@@ -1124,7 +1121,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
             winDataByChr = calcwLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
                                            GLDataByChrToCalc,
                                            genoFreqDataByChr,
-                                           indDataToCalc, centro, multiWinsizes->at(i),
+                                           centro, multiWinsizes->at(i),
                                            error, MAX_GAP, USE_GL);
             */
             cerr << "Not currently supported.\n";
@@ -1133,7 +1130,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
         else {
             winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
                                           GLDataByChrToCalc,
-                                          indDataToCalc, centro, multiWinsizes->at(i),
+                                          centro, multiWinsizes->at(i),
                                           error, MAX_GAP, USE_GL);
         }
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);

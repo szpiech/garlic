@@ -19,7 +19,6 @@ using namespace std;
 
 struct WLOD_work_order_t
 {
-  IndData *indData;
   MapData *mapData;
   HapData *hapData;
   FreqData *freqData;
@@ -58,13 +57,13 @@ struct ROHLength
 
 void parallelwLOD(void *order);
 
-void calcLOD(IndData *indData, MapData *mapData,
+void calcLOD(MapData *mapData,
              HapData *hapData, FreqData *freqData,
              GenoLikeData *GLData,
              WinData *winData, centromere *centro,
              int winsize, double error, int MAX_GAP, bool USE_GL);
 
-void calcwLOD(IndData *indData, MapData *mapData,
+void calcwLOD(MapData *mapData,
               HapData *hapData, FreqData *freqData,
               GenoLikeData *GLData,
               LDData *LD,
@@ -91,7 +90,6 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< FreqData * > *freqDataByChr,
                                     vector< MapData * > *mapDataByChr,
                                     vector< GenoLikeData * > *GLDataByChr,
-                                    IndData *indData,
                                     centromere *centro,
                                     int winsize, double error,
                                     int MAX_GAP, bool USE_GL);
@@ -101,7 +99,6 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                                      vector< MapData * > *mapDataByChr,
                                      vector< GenoLikeData * > *GLDataByChr,
                                      vector< LDData * > *ldDataByChr,
-                                     IndData *indData,
                                      centromere *centro,
                                      int winsize, double error,
                                      int MAX_GAP, bool USE_GL, 
@@ -143,7 +140,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      double error,
                      vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr);
+                     bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED);
 
 KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector< FreqData * > *freqDataByChr,
@@ -152,7 +149,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector<int> *multiWinsizes, int &winsize, double error,
                                  vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr);
+                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED);
 
 KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          vector< FreqData * > *freqDataByChr,
@@ -161,7 +158,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          int &winsize, int step, double error,
                          vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr);
+                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED);
 
 //int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD);
 

@@ -195,7 +195,7 @@ int main(int argc, char *argv[])
         LOG.log("Population:", popName);
         LOG.log("Total diploid individuals:", numInd);
 
-        hapDataByChr = readTPEDHapData3(tpedfile, numLoci, numInd, TPED_MISSING, mapDataByChr);
+        hapDataByChr = readTPEDHapData3(tpedfile, numLoci, numInd, TPED_MISSING, mapDataByChr, PHASED);
 
         if (tglsfile.compare(DEFAULT_TGLS) != 0) {
             GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr, GL_TYPE);
@@ -243,15 +243,15 @@ int main(int argc, char *argv[])
     int newLoci;
 
     if (WEIGHTED) {
-        newLoci = filterMonomorphicAndOOBSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, scaffoldMapByChr, USE_GL);
+        newLoci = filterMonomorphicAndOOBSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, scaffoldMapByChr, USE_GL, PHASED);
         LOG.log("Monomorphic or out of bounds loci filtered:", numLoci - newLoci);
         int numInterpolated = interpolateGeneticmap(&mapDataByChr, scaffoldMapByChr);
         LOG.log("Number of genetic map locations interpolated:", numInterpolated);
         releaseGenMapScaffold(scaffoldMapByChr);
-        genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
+        if(!PHASED) genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
     }
     else {
-        newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, USE_GL);
+        newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, USE_GL, PHASED);
         LOG.log("Monomorphic loci filtered:", numLoci - newLoci);
     }
 
@@ -265,7 +265,7 @@ int main(int argc, char *argv[])
         kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, &multiWinsizes, winsize, error,
                                           GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr);
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED);
     }
     else if (WINSIZE_EXPLORE)
     {
@@ -279,7 +279,7 @@ int main(int argc, char *argv[])
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
                         GLDataByChr, USE_GL,
-                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr);
+                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED);
 
         return 0;
     }
@@ -290,7 +290,7 @@ int main(int argc, char *argv[])
             kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
                                       indData, centro, winsize, AUTO_WINSIZE_STEP, error,
                                       GLDataByChr, USE_GL,
-                                      MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr);
+                                      MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED);
         }
         catch (...)
         {
@@ -308,17 +308,17 @@ int main(int argc, char *argv[])
 
     if(WEIGHTED){
         ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads);
-        releaseGenoFreq(genoFreqDataByChr);
+        if(!PHASED) releaseGenoFreq(genoFreqDataByChr);
         winDataByChr = calcwLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
                                        GLDataByChr, ldDataByChr,
-                                       indData, centro, winsize, error,
+                                       centro, winsize, error,
                                        MAX_GAP, USE_GL, M, mu, numThreads);
         releaseLDData(ldDataByChr);
     }
     else{
         winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
                                       GLDataByChr,
-                                      indData, centro, winsize, error,
+                                      centro, winsize, error,
                                       MAX_GAP, USE_GL);
     }
     releaseHapData(hapDataByChr);

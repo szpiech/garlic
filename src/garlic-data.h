@@ -29,6 +29,7 @@ struct int_pair_t
 
 struct HapData
 {
+  bool **firstCopy;
   short **data;
   int nind;
   int nloci;
@@ -115,16 +116,32 @@ struct HR2_work_order_t
   LDData *LD;
 };
 
+struct R2_work_order_t
+{
+  //int id;
+  int start;
+  int stop;
+  int winsize;
+  HapData *hapData;
+  FreqData *freqData;
+  LDData *LD;
+};
+
 
 void parallelHR2(void *order);
+void parallelR2(void *order);
 
 unsigned int *make_thread_partition(int &num_threads, int nloci);
 
 void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end);
+void ldR2(LDData *LD, HapData *hapData, FreqData *freqData, int site, int start, int end);
+
 LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads);
+LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThreads);
+
 //double ld(HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end, int ind);
 double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j);
-
+double r2(HapData *hapData, FreqData *freqData, int i, int j);
 
 vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr, 
                                vector< FreqData * > *freqDataByChr,
@@ -161,22 +178,22 @@ int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
                            vector< HapData * > **hapDataByChr,
                            vector< FreqData * > **freqDataByChr,
                            vector< GenoLikeData * > **GLDataByChr,
-                           bool USE_GL);
+                           bool USE_GL, bool PHASED);
 
 int filterMonomorphicAndOOBSites(vector< MapData * > **mapDataByChr,
                                  vector< HapData * > **hapDataByChr,
                                  vector< FreqData * > **freqDataByChr,
                                  vector< GenoLikeData * > **GLDataByChr,
                                  vector< GenMapScaffold * > *scaffoldMapByChr,
-                                 bool USE_GL);
+                                 bool USE_GL, bool PHASED);
 
 MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLoci);
-HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci);
+HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci, bool PHASED);
 GenoLikeData *filterMonomorphicSites(GenoLikeData *GLData, FreqData *freqData, int &newLoci);
 FreqData *filterMonomorphicSites(FreqData *freqData, int &newLoci);
 
 MapData *filterMonomorphicAndOOBSites(MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci);
-HapData *filterMonomorphicAndOOBSites(HapData *hapData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci);
+HapData *filterMonomorphicAndOOBSites(HapData *hapData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci, bool PHASED);
 GenoLikeData *filterMonomorphicAndOOBSites(GenoLikeData *GLData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci);
 FreqData *filterMonomorphicAndOOBSites(FreqData *freqData, MapData *mapData, GenMapScaffold *scaffold, int &newLoci);
 
@@ -218,7 +235,7 @@ vector< HapData * > *readTPEDHapData3(string filename,
                                       int expectedLoci,
                                       int expectedInd,
                                       char TPED_MISSING,
-                                      vector< MapData * > *mapDataByChr);
+                                      vector< MapData * > *mapDataByChr, bool PHASED);
 
 vector< GenoLikeData * > *readTGLSData(string filename,
                                        int expectedLoci,
@@ -235,7 +252,7 @@ IndData *readIndData3(string filename, int numInd);
 IndData *initIndData(int nind);
 void releaseIndData(IndData *data);
 
-HapData *initHapData(unsigned int nind, unsigned int nloci);
+HapData *initHapData(unsigned int nind, unsigned int nloci, bool PHASED);
 void releaseHapData(HapData *data);
 void releaseHapData(vector< HapData * > *hapDataByChr);
 
@@ -249,11 +266,11 @@ void subsetData(vector< HapData * > *hapDataByChr,
                 vector< HapData * > **subsetHapDataByChr,
                 vector< GenoLikeData *> **subsetGLDataByChr,
                 IndData **subsetIndData,
-                int subsample, bool USE_GL);
+                int subsample, bool USE_GL, bool PHASED);
 
 
 WinData *initWinData(unsigned int nind, unsigned int nloci);
-vector< WinData * > *initWinData(vector< MapData * > *mapDataByChr, IndData *indData);
+vector< WinData * > *initWinData(vector< MapData * > *mapDataByChr, int nind);
 void releaseWinData(WinData *data);
 void releaseWinData(vector< WinData * > *winDataByChr);
 void writeWinData(vector< WinData * > *winDataByChr,

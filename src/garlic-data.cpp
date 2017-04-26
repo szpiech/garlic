@@ -13,6 +13,7 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
     for(int chr = 0; chr < hapDataByChr->size(); chr++){
 
         if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), winsize, numThreads));
+        else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), winsize, numThreads));
     }
     return ldDataByChr;
 }
@@ -78,6 +79,47 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
     return LD;
 }
 
+LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThreads){
+    
+    LDData *LD = initLDData(hapData->nloci, winsize);
+
+    unsigned int *NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
+
+    R2_work_order_t *order;
+    pthread_t *peer = new pthread_t[numThreads];
+    vector< R2_work_order_t * > orders;
+    unsigned int previous = 0;
+    for (int i = 0; i < numThreads; i++)
+    {
+        order = new R2_work_order_t;
+        order->hapData = hapData;
+        order->freqData = freqData;
+        order->LD = LD;
+        order->winsize = winsize;
+        //order->id = i;
+        order->start = previous;
+        previous += NUM_PER_THREAD[i];
+        order->stop = previous;
+
+        pthread_create(&(peer[i]),
+                       NULL,
+                       (void *(*)(void *))parallelR2,
+                       (void *)order);
+        orders.push_back(order);
+    }
+
+    for (int i = 0; i < numThreads; i++){
+        pthread_join(peer[i], NULL);
+        delete orders[i];
+    }
+
+    orders.clear();
+
+    delete [] peer;
+
+    return LD;
+}
+
 
 void parallelHR2(void *order){
     HR2_work_order_t *p = (HR2_work_order_t *)order;
@@ -97,6 +139,25 @@ void parallelHR2(void *order){
     }
 }
 
+void parallelR2(void *order){
+    R2_work_order_t *p = (R2_work_order_t *)order;
+    LDData *LD = p->LD;
+    HapData *hapData = p->hapData;
+    FreqData *freqData = p->freqData;
+    int winsize = p->winsize;
+    int start = p->start;
+    int stop = p->stop;
+
+    if (hapData->nloci - stop < winsize) stop = hapData->nloci - winsize + 1;
+
+    for (int locus = start; locus < stop; locus++){
+        for (int i = locus; i < locus + winsize; i++){
+            ldR2(LD, hapData, freqData, i, locus, locus + winsize - 1);
+        }
+    }
+}
+
+
 void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end) {
     for (int i = start; i <= end; i++) {
         if (i != site) LD->LD[start][site-start] += hr2(hapData, genoFreqData, i, site);
@@ -104,6 +165,15 @@ void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, i
     }
     return;
 }
+
+void ldR2(LDData *LD, HapData *hapData, FreqData *freqData, int site, int start, int end) {
+    for (int i = start; i <= end; i++) {
+        if (i != site) LD->LD[start][site-start] += r2(hapData, freqData, i, site);
+        else LD->LD[start][site-start] += 1;
+    }
+    return;
+}
+
 
 unsigned int *make_thread_partition(int &numThreads, int ncols) {
     if (numThreads > ncols) numThreads = ncols;
@@ -165,6 +235,36 @@ double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j) {
         double HR2 = H * H / (HA * (1 - HA) * HB * (1 - HB));
         if(HR2 > 1) return 1;
         else return HR2;
+    }
+    else{
+        return 0;
+    }
+}
+
+double r2(HapData *hapData, FreqData *freqData, int i, int j) {
+    
+    double pi = freqData->freq[i];
+    double pj = freqData->freq[j];
+
+    if(pi > 0 && pi < 1 && pj > 0 && pj < 1){
+        double x11 = 0;
+        double total = 0;
+        for (int ind = 0; ind < hapData->nind; ind++) {
+            if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
+                total+=2;
+                if (hapData->data[i][ind] == 2 && hapData->data[j][ind] == 2) x11+=2;
+                else if (hapData->data[i][ind] == 1 && 
+                         hapData->data[j][ind] == 1 && 
+                         hapData->firstCopy[j][ind] == hapData->firstCopy[i][ind]){
+                    x11++;
+                }
+            }
+        }
+        x11 /= total;
+        double D = x11 - pi * pj;
+        double R2 = D * D / (pi * (1 - pi) * pj * (1 - pj));
+        if(R2 > 1) return 1;
+        else return R2;
     }
     else{
         return 0;
@@ -428,7 +528,7 @@ int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
                            vector< HapData * > **hapDataByChr,
                            vector< FreqData * > **freqDataByChr,
                            vector< GenoLikeData * > **GLDataByChr,
-                           bool USE_GL)
+                           bool USE_GL, bool PHASED)
 {
     vector< MapData * > *mapDataByChr2 = new vector< MapData * >;
     vector< HapData * > *hapDataByChr2 = new vector< HapData * >;
@@ -443,7 +543,7 @@ int filterMonomorphicSites(vector< MapData * > **mapDataByChr,
     for (int i = 0; i < (*mapDataByChr)->size(); i++) {
         int newLoci = 0;
         MapData *mapData2 = filterMonomorphicSites((*mapDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
-        HapData *hapData2 = filterMonomorphicSites((*hapDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
+        HapData *hapData2 = filterMonomorphicSites((*hapDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci, PHASED);
         GenoLikeData *GLData2;
         if(USE_GL){
             GLData2 = filterMonomorphicSites((*GLDataByChr)->at(i), (*freqDataByChr)->at(i), newLoci);
@@ -474,7 +574,7 @@ int filterMonomorphicAndOOBSites(vector< MapData * > **mapDataByChr,
                                  vector< FreqData * > **freqDataByChr,
                                  vector< GenoLikeData * > **GLDataByChr,
                                  vector< GenMapScaffold * > *scaffoldMapByChr,
-                                 bool USE_GL)
+                                 bool USE_GL, bool PHASED)
 {
     vector< MapData * > *mapDataByChr2 = new vector< MapData * >;
     vector< HapData * > *hapDataByChr2 = new vector< HapData * >;
@@ -489,7 +589,7 @@ int filterMonomorphicAndOOBSites(vector< MapData * > **mapDataByChr,
     for (int i = 0; i < (*mapDataByChr)->size(); i++) {
         int newLoci = 0;
         MapData *mapData2 = filterMonomorphicAndOOBSites((*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
-        HapData *hapData2 = filterMonomorphicAndOOBSites((*hapDataByChr)->at(i), (*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
+        HapData *hapData2 = filterMonomorphicAndOOBSites((*hapDataByChr)->at(i), (*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci, PHASED);
         GenoLikeData *GLData2; 
         if(USE_GL){
             GLData2 = filterMonomorphicAndOOBSites((*GLDataByChr)->at(i), (*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffoldMapByChr->at(i), newLoci);
@@ -544,7 +644,7 @@ MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLo
     return mapData2;
 }
 
-HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci)
+HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci, bool PHASED)
 {
     if (newLoci <= 0) {
         newLoci = 0;
@@ -553,7 +653,7 @@ HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLo
                 newLoci++;
     }
 
-    HapData *hapData2 = initHapData(hapData->nind, newLoci);
+    HapData *hapData2 = initHapData(hapData->nind, newLoci, PHASED);
     int index = 0;
     for (int i = 0; i < freqData->nloci; i++)
     {
@@ -562,6 +662,7 @@ HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLo
             for (int j = 0; j < hapData->nind; j++)
             {
                 hapData2->data[index][j] = hapData->data[i][j];
+                if(PHASED) hapData2->firstCopy[index][j] = hapData->firstCopy[i][j];
             }
             index++;
         }
@@ -653,7 +754,7 @@ MapData *filterMonomorphicAndOOBSites(MapData *mapData, FreqData *freqData, GenM
     return mapData2;
 }
 
-HapData *filterMonomorphicAndOOBSites(HapData *hapData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci) {
+HapData *filterMonomorphicAndOOBSites(HapData *hapData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci, bool PHASED) {
     if (newLoci <= 0) {
         newLoci = 0;
         for (int i = 0; i < freqData->nloci; i++) {
@@ -666,7 +767,7 @@ HapData *filterMonomorphicAndOOBSites(HapData *hapData, MapData *mapData, FreqDa
         }
     }
 
-    HapData *hapData2 = initHapData(hapData->nind, newLoci);
+    HapData *hapData2 = initHapData(hapData->nind, newLoci, PHASED);
     int index = 0;
     for (int i = 0; i < freqData->nloci; i++)
     {
@@ -678,6 +779,7 @@ HapData *filterMonomorphicAndOOBSites(HapData *hapData, MapData *mapData, FreqDa
             for (int j = 0; j < hapData->nind; j++)
             {
                 hapData2->data[index][j] = hapData->data[i][j];
+                if(PHASED) hapData2->firstCopy[index][j] = hapData->firstCopy[i][j];
             }
             index++;
         }
@@ -1257,7 +1359,7 @@ vector< HapData * > *readTPEDHapData3(string filename,
                                       int expectedLoci,
                                       int expectedInd,
                                       char TPED_MISSING,
-                                      vector< MapData * > *mapDataByChr)
+                                      vector< MapData * > *mapDataByChr, bool PHASED)
 {
     int expectedHaps = 2 * expectedInd;
     igzstream fin;
@@ -1310,7 +1412,6 @@ vector< HapData * > *readTPEDHapData3(string filename,
 
     if (fin.fail())
     {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
         LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
@@ -1318,7 +1419,7 @@ vector< HapData * > *readTPEDHapData3(string filename,
     vector< HapData * > *hapDataByChr = new vector< HapData * >;
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
-        HapData *data = initHapData(expectedInd, mapDataByChr->at(chr)->nloci);
+        HapData *data = initHapData(expectedInd, mapDataByChr->at(chr)->nloci, PHASED);
         hapDataByChr->push_back(data);
     }
 
@@ -1351,6 +1452,8 @@ vector< HapData * > *readTPEDHapData3(string filename,
 
                 if (allele < 0) hapDataByChr->at(chr)->data[locus][ind] = -9;
                 else hapDataByChr->at(chr)->data[locus][ind] = allele;
+
+                if(PHASED) hapDataByChr->at(chr)->firstCopy[locus][ind] = (alleleStr1 == oneAllele);
             }
         }
     }
@@ -1650,9 +1753,9 @@ vector< vector< WinData * >* > *initWinData(vector< MapData * > *mapDataByChr,
     return winDataByPopByChr;
 }
 
-vector< WinData * > *initWinData(vector< MapData * > *mapDataByChr, IndData *indData)
+vector< WinData * > *initWinData(vector< MapData * > *mapDataByChr, int nind)
 {
-    int nind = indData->nind;
+    //int nind = indData->nind;
     vector< WinData * > *winDataByChr = new vector< WinData * >;
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
@@ -1709,7 +1812,7 @@ void writeWinData(vector< WinData * > *winDataByChr,
     return;
 }
 
-HapData *initHapData(unsigned int nind, unsigned int nloci)
+HapData *initHapData(unsigned int nind, unsigned int nloci, bool PHASED)
 {
     if (nind < 1 || nloci < 1)
     {
@@ -1724,12 +1827,15 @@ HapData *initHapData(unsigned int nind, unsigned int nloci)
     data->nloci = nloci;
 
     data->data = new short*[nloci];
+    if(PHASED) data->firstCopy = new bool*[nloci];
     for (unsigned int i = 0; i < nloci; i++)
     {
         data->data[i] = new short[nind];
+        if(PHASED) data->firstCopy[i] = new bool[nind];
         for (unsigned int j = 0; j < nind; j++)
         {
             data->data[i][j] = MISSING;
+            if(PHASED) data->firstCopy[i][j] = 0;
         }
     }
 
@@ -1739,14 +1845,19 @@ HapData *initHapData(unsigned int nind, unsigned int nloci)
 void releaseHapData(HapData *data)
 {
     if (data == NULL) return;
+
     for (int i = 0; i < data->nloci; i++)
     {
+        if(data->firstCopy != NULL) delete [] data->firstCopy[i];
         delete [] data->data[i];
     }
 
     delete [] data->data;
 
+    if(data->firstCopy != NULL) delete [] data->firstCopy;
+
     data->data = NULL;
+    data->firstCopy = NULL;
     data->nind = -9;
     data->nloci = -9;
     delete data;
@@ -2252,7 +2363,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
                 vector< HapData * > **subsetHapDataByChr,
                 vector< GenoLikeData *> **subsetGLDataByChr,
                 IndData **subsetIndData,
-                int subsample, bool USE_GL)
+                int subsample, bool USE_GL, bool PHASED)
 {
     const gsl_rng_type *T;
     gsl_rng *r;
@@ -2295,7 +2406,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
     for (int chr = 0; chr < nchr; chr++)
     {
         int nloci = hapDataByChr->at(chr)->nloci;
-        hapData = initHapData(nind, nloci);
+        hapData = initHapData(nind, nloci, PHASED);
         GLData = initGLData(nind, nloci);
 
         for (int locus = 0; locus < nloci; locus++)
@@ -2303,6 +2414,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
             for (int ind = 0; ind < nind; ind++)
             {
                 hapData->data[locus][ind] = hapDataByChr->at(chr)->data[locus][randInd[ind]];
+                if (PHASED) hapData->firstCopy[locus][ind] = hapDataByChr->at(chr)->firstCopy[locus][randInd[ind]];
                 if (USE_GL) GLData->data[locus][ind] = GLDataByChr->at(chr)->data[locus][randInd[ind]];
             }
         }
