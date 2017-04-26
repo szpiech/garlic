@@ -17,21 +17,25 @@
 
 using namespace std;
 
-struct work_order_t
+struct WLOD_work_order_t
 {
-  int id;
+  IndData *indData;
+  MapData *mapData;
+  HapData *hapData;
+  FreqData *freqData;
+  GenoLikeData *GLData;
+  LDData *LD;
+  WinData *winData;
+  int cStart;
+  int cEnd;
+  int winsize;
   double error;
   int MAX_GAP;
-  int numThreads;
-  vector<int> *multiWinsizes;
-  IndData *indData;
-  vector< MapData * > *mapDataByChr;
-  vector< HapData * > *hapDataByChr;
-  vector< FreqData * > *freqDataByChr;
-  KDEWinsizeReport *winsizeReport;
-  centromere *centro;
-  bool WINSIZE_EXPLORE;
-  string outfile;
+  bool USE_GL;
+  double mu;
+  int M;
+  int start;
+  int stop;
 };
 
 struct ROHData
@@ -49,7 +53,10 @@ struct ROHLength
   int size;
 };
 
-extern double **LD;
+//extern double **LD;
+//extern double **LD1;
+
+void parallelwLOD(void *order);
 
 void calcLOD(IndData *indData, MapData *mapData,
              HapData *hapData, FreqData *freqData,
@@ -60,13 +67,13 @@ void calcLOD(IndData *indData, MapData *mapData,
 void calcwLOD(IndData *indData, MapData *mapData,
               HapData *hapData, FreqData *freqData,
               GenoLikeData *GLData,
+              LDData *LD,
               WinData *winData, centromere *centro,
-              int winsize, double error, int MAX_GAP, bool USE_GL);
+              int winsize, double error, int MAX_GAP, bool USE_GL,
+              double mu, int M, int numThreads);
 
 double nomut(double M, double mu, double interval);
 double norec(double M, double interval);
-double ld(FreqData *freqData, GenoFreqData *genoFreqData, int site, int start, int end, int ind);
-double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j);
 
 double lod(const short &genotype, const double &freq, const double &error);
 
@@ -93,11 +100,12 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                                      vector< FreqData * > *freqDataByChr,
                                      vector< MapData * > *mapDataByChr,
                                      vector< GenoLikeData * > *GLDataByChr,
-                                     vector< GenoFreqData * > *genoFreqDataByChr,
+                                     vector< LDData * > *ldDataByChr,
                                      IndData *indData,
                                      centromere *centro,
                                      int winsize, double error,
-                                     int MAX_GAP, bool USE_GL);
+                                     int MAX_GAP, bool USE_GL, 
+                                     int M, double mu, int numThreads);
 
 vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         vector< MapData * > *mapDataByChr,

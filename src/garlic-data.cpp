@@ -1,5 +1,211 @@
 #include "garlic-data.h"
 
+vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr, 
+                               vector< FreqData * > *freqDataByChr,
+                               vector< MapData * > *mapDataByChr,
+                               vector< GenoFreqData * > *genoFreqDataByChr,
+                               centromere *centro,
+                               int winsize,
+                               int MAX_GAP,
+                               bool PHASED,
+                               int numThreads){
+    vector< LDData * > *ldDataByChr = new vector< LDData * >;
+    for(int chr = 0; chr < hapDataByChr->size(); chr++){
+
+        if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), winsize, numThreads));
+    }
+    return ldDataByChr;
+}
+
+/*
+LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads){
+
+    LDData *LD = initLDData(hapData->nloci, winsize);
+
+    int start = 0;
+    //This looks stupid in a single thread, but it should be necessary if we parition loci for multiple threads
+    int stop = hapData->nloci;//this would change to the end of the chunk instead of the end of the chr
+    if (hapData->nloci - stop < winsize) stop = hapData->nloci - winsize + 1;
+
+    for (int locus = start; locus < stop; locus++){
+        for (int i = locus; i < locus + winsize; i++){
+            ldHR2(LD, hapData, genoFreqData, i, locus, locus + winsize - 1);
+        }
+    }
+    return LD;
+}
+*/
+
+
+LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads){
+    
+    LDData *LD = initLDData(hapData->nloci, winsize);
+
+    unsigned int *NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
+
+    HR2_work_order_t *order;
+    pthread_t *peer = new pthread_t[numThreads];
+    vector< HR2_work_order_t * > orders;
+    unsigned int previous = 0;
+    for (int i = 0; i < numThreads; i++)
+    {
+        order = new HR2_work_order_t;
+        order->hapData = hapData;
+        order->genoFreqData = genoFreqData;
+        order->LD = LD;
+        order->winsize = winsize;
+        //order->id = i;
+        order->start = previous;
+        previous += NUM_PER_THREAD[i];
+        order->stop = previous;
+
+        pthread_create(&(peer[i]),
+                       NULL,
+                       (void *(*)(void *))parallelHR2,
+                       (void *)order);
+        orders.push_back(order);
+    }
+
+    for (int i = 0; i < numThreads; i++){
+        pthread_join(peer[i], NULL);
+        delete orders[i];
+    }
+
+    orders.clear();
+
+    delete [] peer;
+
+    return LD;
+}
+
+
+void parallelHR2(void *order){
+    HR2_work_order_t *p = (HR2_work_order_t *)order;
+    LDData *LD = p->LD;
+    HapData *hapData = p->hapData;
+    GenoFreqData *genoFreqData = p->genoFreqData;
+    int winsize = p->winsize;
+    int start = p->start;
+    int stop = p->stop;
+
+    if (hapData->nloci - stop < winsize) stop = hapData->nloci - winsize + 1;
+
+    for (int locus = start; locus < stop; locus++){
+        for (int i = locus; i < locus + winsize; i++){
+            ldHR2(LD, hapData, genoFreqData, i, locus, locus + winsize - 1);
+        }
+    }
+}
+
+void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end) {
+    for (int i = start; i <= end; i++) {
+        if (i != site) LD->LD[start][site-start] += hr2(hapData, genoFreqData, i, site);
+        else LD->LD[start][site-start] += 1;
+    }
+    return;
+}
+
+unsigned int *make_thread_partition(int &numThreads, int ncols) {
+    if (numThreads > ncols) numThreads = ncols;
+    unsigned int *NUM_PER_THREAD = new unsigned int[numThreads];
+    unsigned int div = ncols / numThreads;
+
+    for (int i = 0; i < numThreads; i++)
+    {
+        NUM_PER_THREAD[i] = 0;
+        NUM_PER_THREAD[i] += div;
+    }
+
+    for (int i = 0; i < ncols % numThreads; i++)
+    {
+        NUM_PER_THREAD[i]++;
+    }
+
+    return NUM_PER_THREAD;
+}
+
+/*
+double ld(HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end, int ind) {
+    
+    if(LD == NULL){
+        LD = new double*[hapData->nloci];
+        for(int i = 0; i < hapData->nloci; i++){
+            LD[i] = new double[end-start+1];
+            for (int j = 0; j < end-start+1; j++){
+                LD[i][j] = 0;
+            }
+        }
+    }
+    if(ind == 0){
+        for (int i = start; i <= end; i++) {
+            if (i != site) LD[start][site-start] += hr2(hapData, genoFreqData, i, site);
+            else LD[start][site-start] += 1;
+        }
+    }
+
+    return (1.0 / LD[start][site-start]);
+}
+*/
+double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j) {
+    double HA = genoFreqData->homFreq[i];
+    double HB = genoFreqData->homFreq[j];
+    if(HA > 0 && HA < 1 && HB > 0 && HB < 1){
+        double HAB = 0;
+        double total = 0;
+        for (int ind = 0; ind < hapData->nind; ind++) {
+            if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
+                total++;
+                if (hapData->data[i][ind] != 1 && hapData->data[j][ind] != 1) {
+                    HAB++;
+                }
+            }
+        }
+        HAB /= total;
+        double H = HAB - HA * HB;
+        double HR2 = H * H / (HA * (1 - HA) * HB * (1 - HB));
+        if(HR2 > 1) return 1;
+        else return HR2;
+    }
+    else{
+        return 0;
+    }
+}
+
+
+
+
+
+
+
+LDData *initLDData(int nloci, int winsize){
+    LDData *data = new LDData;
+    data->nloci = nloci;
+    data->winsize = winsize;
+    data->LD = new double*[nloci];
+    for(int i = 0; i < nloci; i++){
+        data->LD[i] = new double[winsize];
+        for(int j = 0; j < winsize; j++){
+            data->LD[i][j] = 0;
+        }
+    }
+    return data;
+}
+void releaseLDData(LDData *data){
+    for(int i = 0; i < data->nloci; i++){
+        delete [] data->LD[i];
+    }
+    delete [] data->LD;
+    delete data;
+}
+void releaseLDData(vector< LDData * > *ldDataByChr){
+    for (unsigned int chr = 0; chr < ldDataByChr->size(); chr++){
+        releaseLDData(ldDataByChr->at(chr));
+    }
+    ldDataByChr->clear();
+    delete ldDataByChr;
+    return;
+}
+
 vector< GenoFreqData * > *calculateGenoFreq(vector <HapData *> *hapDataByChr){
     vector< GenoFreqData * > *genoFreqDataByChr = new vector< GenoFreqData * >;
     for(int chr = 0; chr < hapDataByChr->size(); chr++){
@@ -178,6 +384,7 @@ vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
         for (int locus = 0; locus < nlociByChr.at(chr); locus++)
         {
             fin >> scaffold->chr;
+            scaffold->chr = checkChrName(scaffold->chr);
             fin >> locusName;
             fin >> scaffold->geneticPos[locus];
             fin >> scaffold->physicalPos[locus];

@@ -19,11 +19,9 @@ extern const string ARG_OUTFILE;
 extern const string DEFAULT_OUTFILE;
 extern const string HELP_OUTFILE;
 
-/*
 extern const string ARG_THREADS;
 extern const int DEFAULT_THREADS;
 extern const string HELP_THREADS;
-*/
 
 extern const string ARG_ERROR;
 extern const double DEFAULT_ERROR;
@@ -127,9 +125,14 @@ extern const string DEFAULT_FEATURES;
 extern const string HELP_FEATURES;
 */
 
-extern const string ARG_WLOD;
-extern const bool DEFAULT_WLOD;
-extern const string HELP_WLOD;
+extern const string ARG_M;
+extern const int DEFAULT_M;
+extern const string HELP_M;
+
+extern const string ARG_MU;
+extern const double DEFAULT_MU;
+extern const string HELP_MU;
+
 
 
 param_t *getCLI(int argc, char *argv[]);
@@ -149,5 +152,6 @@ bool checkGLType(string TYPE);
 bool checkWinsize(int winsize);
 bool checkMaxGap(int MAX_GAP);
 bool checkOverlapFrac(double OVERLAP_FRAC);
-
+bool checkM(int M);
+bool checkMU(double mu);
 #endif

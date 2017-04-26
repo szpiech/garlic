@@ -117,11 +117,9 @@ int main(int argc, char *argv[])
     LOG.log("Choose ROH class thresholds automatically:", AUTO_BOUNDS);
     if (!AUTO_BOUNDS) LOG.logv("User defined ROH class thresholds:", boundSizes);
 
-    /*
-        int numThreads = params->getIntFlag(ARG_THREADS);
-        argerr = argerr || checkThreads(numThreads);
-        LOG.log("Threads:", numThreads);
-    */
+    int numThreads = params->getIntFlag(ARG_THREADS);
+    argerr = argerr || checkThreads(numThreads);
+    LOG.log("Threads:", numThreads);
 
     double error = params->getDoubleFlag(ARG_ERROR);
     argerr = argerr || checkError(error, tglsfile);
@@ -138,6 +136,16 @@ int main(int argc, char *argv[])
     if (argerr) return -1;
     LOG.log("Overlap fraction:", OVERLAP_FRAC);
 
+    double mu = params->getDoubleFlag(ARG_MU);
+    argerr = argerr || checkMU(mu);
+    if (argerr) return -1;
+    LOG.log("mu:", mu);
+
+    double M = params->getIntFlag(ARG_M);
+    argerr = argerr || checkM(M);
+    if (argerr) return -1;
+    LOG.log("M:", M);
+
     //cerr << "argerr " << argerr << endl;
 
     if (argerr) return -1;
@@ -149,6 +157,10 @@ int main(int argc, char *argv[])
     bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
     LOG.log("Output raw LOD scores:", RAW_LOD);
 
+
+
+
+    bool PHASED = false;
 
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
@@ -167,6 +179,7 @@ int main(int argc, char *argv[])
     vector< WinData * > *winDataByChr = NULL;
     vector< GenoLikeData * > *GLDataByChr = NULL;
     vector< GenMapScaffold *> *scaffoldMapByChr = NULL;
+    vector< LDData * > *ldDataByChr = NULL;
     KDEResult *kdeResult;
     bool USE_GL = false;
     try
@@ -234,9 +247,7 @@ int main(int argc, char *argv[])
         LOG.log("Monomorphic or out of bounds loci filtered:", numLoci - newLoci);
         int numInterpolated = interpolateGeneticmap(&mapDataByChr, scaffoldMapByChr);
         LOG.log("Number of genetic map locations interpolated:", numInterpolated);
-        cerr << "release scaffold\n";
         releaseGenMapScaffold(scaffoldMapByChr);
-        cerr << "genotype freq\n";
         genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
     }
     else {
@@ -296,10 +307,13 @@ int main(int argc, char *argv[])
     cout << "Window size: " << winsize << endl;
 
     if(WEIGHTED){
+        ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads);
+        releaseGenoFreq(genoFreqDataByChr);
         winDataByChr = calcwLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
-                                       GLDataByChr, genoFreqDataByChr,
+                                       GLDataByChr, ldDataByChr,
                                        indData, centro, winsize, error,
-                                       MAX_GAP, USE_GL);
+                                       MAX_GAP, USE_GL, M, mu, numThreads);
+        releaseLDData(ldDataByChr);
     }
     else{
         winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
@@ -310,7 +324,6 @@ int main(int argc, char *argv[])
     releaseHapData(hapDataByChr);
     releaseFreqData(freqDataByChr);
     if (USE_GL) releaseGLData(GLDataByChr);
-    if (WEIGHTED) releaseGenoFreq(genoFreqDataByChr);
 
     if (RAW_LOD)
     {

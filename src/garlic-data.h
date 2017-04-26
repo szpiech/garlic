@@ -91,13 +91,54 @@ struct GenoLikeData
   //int nmiss;
 };
 
-
 struct DoubleData
 {
   double *data;
   int size;
 };
 
+struct LDData
+{
+  double **LD;
+  int nloci;
+  int winsize;
+};
+
+struct HR2_work_order_t
+{
+  //int id;
+  int start;
+  int stop;
+  int winsize;
+  HapData *hapData;
+  GenoFreqData *genoFreqData;
+  LDData *LD;
+};
+
+
+void parallelHR2(void *order);
+
+unsigned int *make_thread_partition(int &num_threads, int nloci);
+
+void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end);
+LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads);
+//double ld(HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end, int ind);
+double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j);
+
+
+vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr, 
+                               vector< FreqData * > *freqDataByChr,
+                               vector< MapData * > *mapDataByChr,
+                               vector< GenoFreqData * > *genoFreqDataByChr,
+                               centromere *centro,
+                               int winsize,
+                               int MAX_GAP,
+                               bool PHASED,
+                               int numThreads);
+
+LDData *initLDData(int nloci, int winsize);
+void releaseLDData(LDData *data);
+void releaseLDData(vector< LDData * > *ldDataByChr);
 
 GenoFreqData *initGenoFreq(int nloci);
 void releaseGenoFreq(GenoFreqData *genoFreqData);

@@ -89,6 +89,7 @@ void centromere::readCustomCentromeres(string filename) {
 	fin.open(filename.c_str());
 	for (int row = 0; row < numChr; row++) {
 		fin >> chrname;
+		chrname = checkChrName(chrname);
 		fin >> start >> end;
 		gapStart[chrname] = start;
 		gapEnd[chrname] = end;
@@ -97,6 +98,13 @@ void centromere::readCustomCentromeres(string filename) {
 	cerr << "Loaded custom centromere limits for " << numChr << " chromosomes.\n";
 	fin.close();
 	return;
+}
+
+string centromere::checkChrName(string chr) {
+    if (chr[0] != 'c') {
+        chr = "chr" + chr;
+    }
+    return chr;
 }
 
 void centromere::makeWarning() {

@@ -20,11 +20,9 @@ const string ARG_OUTFILE = "--out";
 const string DEFAULT_OUTFILE = "outfile";
 const string HELP_OUTFILE = "The base name for all output files.";
 
-/*
 const string ARG_THREADS = "--threads";
 const int DEFAULT_THREADS = 1;
-const string HELP_THREADS = "The number of threads to spawn during calculations.";
-*/
+const string HELP_THREADS = "The number of threads to spawn during weighted calculations.";
 
 const string ARG_ERROR = "--error";
 const double DEFAULT_ERROR = -1;
@@ -131,6 +129,16 @@ const string HELP_BUILD = "Choose which genome build to use for centromere locat
 const string ARG_CENTROMERE_FILE = "--centromere";
 const string DEFAULT_CENTROMERE_FILE = "none";
 const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
+
+const string ARG_M = "--M";
+const int DEFAULT_M = 7;
+const string HELP_M = "Advanced parameter.";
+
+const string ARG_MU = "--mu";
+const double DEFAULT_MU = 1e-9;
+const string HELP_MU = "Advanced parameter.";
+
+
 /*
 const string ARG_FEATURE_TPED = "--tped-counting";
 const string DEFAULT_FEATURE_TPED = "_none";
@@ -154,7 +162,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->setPreamble(PREAMBLE);
 	params->addFlag(ARG_OVERLAP_FRAC, DEFAULT_OVERLAP_FRAC, "", HELP_OVERLAP_FRAC);
 	params->addFlag(ARG_OUTFILE, DEFAULT_OUTFILE, "", HELP_OUTFILE);
-	//params->addFlag(ARG_THREADS, DEFAULT_THREADS, "", HELP_THREADS);
+	params->addFlag(ARG_THREADS, DEFAULT_THREADS, "", HELP_THREADS);
 	params->addFlag(ARG_ERROR, DEFAULT_ERROR, "", HELP_ERROR);
 	params->addFlag(ARG_WINSIZE, DEFAULT_WINSIZE, "", HELP_WINSIZE);
 	//params->addFlag(ARG_POINTS, DEFAULT_POINTS, "", HELP_POINTS);
@@ -182,6 +190,8 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_AUTO_WINSIZE_STEP, DEFAULT_AUTO_WINSIZE_STEP, "", HELP_AUTO_WINSIZE_STEP);
 	params->addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);
 	params->addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
+	params->addFlag(ARG_M, DEFAULT_M, "", HELP_M);
+	params->addFlag(ARG_MU, DEFAULT_MU, "", HELP_MU);
 	
 	if (!params->parseCommandLine(argc, argv))
 	{
@@ -190,6 +200,23 @@ param_t *getCLI(int argc, char *argv[])
 	}
 	return params;
 }
+
+bool checkM(int M){
+	if(M <= 0){
+		LOG.err("ERROR: M must be an integer > 0.");
+		return true;
+	}
+	else return false;
+}
+
+bool checkMU(double mu){
+	if(mu <= 0 || mu >= 1){
+		LOG.err("ERROR: mu must be between 0 and 1.");
+		return true;
+	}
+	else return false;
+}
+
 
 bool checkBuild(string BUILD)
 {

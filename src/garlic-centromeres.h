@@ -31,6 +31,7 @@ private:
 
 	int countFields(const string &str);
 	map <string, int> chrWarning;
+	string checkChrName(string chr);
 };
 
 #endif
