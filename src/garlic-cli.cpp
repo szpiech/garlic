@@ -323,31 +323,24 @@ bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF)
 	return false;
 }
 
-bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS)
-{
-	/*
-	if (boundSizes[0] != DEFAULT_BOUND_SIZE && boundSizes.size() != 2) {
-		//cerr << "ERROR: Must provide two bounds to " << ARG_BOUND_SIZE << endl;
-		LOG.err("ERROR: Must provide two bounds to", ARG_BOUND_SIZE);
-		return true;
-	}
-	else */
+bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS){
+	
 	if(boundSizes[0] == DEFAULT_BOUND_SIZE && boundSizes.size() == 1){
 		return false;
 	}
-	else 
-	{
+	else {
 		AUTO_BOUNDS = false;
 
-		for(int i = 0; i < boundSizes.size(); i++){		
+		for(unsigned int i = 0; i < boundSizes.size(); i++){		
 			if (boundSizes[i] <= 0){
 				LOG.err("ERROR: User provided size boundaries must be positive.");
 				return true;
 			}
 			if(i > 0){
 				if (boundSizes[i] >= boundSizes[i-1]){
-				LOG.err("ERROR: User provided size boundaries must be in increasing order.");
-				return true;
+					LOG.err("ERROR: User provided size boundaries must be in increasing order.");
+					return true;
+				}
 			}
 		}
 	}

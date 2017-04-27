@@ -668,10 +668,11 @@ void writeROHData(string outfile,
         {
             int size = (rohData->stop[roh] - rohData->start[roh]);
             char sc = 'A';
-            char sizeClass 'X';
+            char sizeClass = 'X';
             string color = "X";
 
-            for(int i = 0; i < bounds.size(); i++){
+            unsigned int i = 0;
+            for(i = 0; i < bounds.size(); i++){
                 if (size < bounds[i]) {
                     sizeClass = sc;
                     color = colors[(i <= 8) ? i : 8];
@@ -1111,7 +1112,7 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
     }
 
     gsl_sort_index(sortIndex, Mu, 1, ngaussians);
-    chr sizeClass = 'A';
+    char sizeClass = 'A';
 
     for(int i = 0; i < ngaussians; i++){
         LOG.log("Gaussian class", sizeClass, false); 
@@ -1124,12 +1125,12 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
     //Find boundaries, there are ngaussians-1 of them, but for the moment this is defined to be 2
     //This finds the 'first' root of the difference between two gaussians
     for(int i = 1; i < ngaussians; i++){
-        BoundFinder BF(Mu[sortIndex[0]],
-                       Sigma[sortIndex[0]],
-                       W[sortIndex[0]],
-                       Mu[sortIndex[1]],
-                       Sigma[sortIndex[1]],
-                       W[sortIndex[1]],
+        BoundFinder BF(Mu[sortIndex[i-1]],
+                       Sigma[sortIndex[i-1]],
+                       W[sortIndex[i-1]],
+                       Mu[sortIndex[i]],
+                       Sigma[sortIndex[i]],
+                       W[sortIndex[i]],
                        1000, 1e-4, false);
         bounds.push_back(BF.findBoundary());
     }
