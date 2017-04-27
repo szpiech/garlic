@@ -138,6 +138,15 @@ const string ARG_MU = "--mu";
 const double DEFAULT_MU = 1e-9;
 const string HELP_MU = "Advanced parameter.";
 
+const string ARG_PHASED = "--phased";
+const bool DEFAULT_PHASED = false;
+const string HELP_PHASED = "Set if data are phased and you want to calculate r2 instead of hr2 while --weighted is set.\n\
+Uses extra RAM. Has no effect on computations without --weighted.";
+
+const string ARG_NCLUST = "--nclust";
+const int DEFAULT_NCLUST = 3;
+const string HELP_NCLUST = "Set number of clusters for GMM classification of ROH lengths.";
+
 
 /*
 const string ARG_FEATURE_TPED = "--tped-counting";
@@ -192,6 +201,8 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_CENTROMERE_FILE, DEFAULT_CENTROMERE_FILE, "", HELP_CENTROMERE_FILE);
 	params->addFlag(ARG_M, DEFAULT_M, "", HELP_M);
 	params->addFlag(ARG_MU, DEFAULT_MU, "", HELP_MU);
+	params->addFlag(ARG_PHASED, DEFAULT_PHASED, "", HELP_PHASED);
+	params->addFlag(ARG_NCLUST, DEFAULT_NCLUST, "", HELP_NCLUST);
 	
 	if (!params->parseCommandLine(argc, argv))
 	{
@@ -199,6 +210,14 @@ param_t *getCLI(int argc, char *argv[])
 		return NULL;
 	}
 	return params;
+}
+
+bool checkNCLUST(int nclust){
+	if(nclust <= 0){
+		LOG.err("ERROR: Must choose positive number for number of GMM clusters.");
+		return true;
+	}
+	else return false;
 }
 
 bool checkM(int M){
@@ -306,32 +325,30 @@ bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF)
 
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS)
 {
+	/*
 	if (boundSizes[0] != DEFAULT_BOUND_SIZE && boundSizes.size() != 2) {
 		//cerr << "ERROR: Must provide two bounds to " << ARG_BOUND_SIZE << endl;
 		LOG.err("ERROR: Must provide two bounds to", ARG_BOUND_SIZE);
 		return true;
 	}
-	else if (boundSizes.size() == 2)
+	else */
+	if(boundSizes[0] == DEFAULT_BOUND_SIZE && boundSizes.size() == 1){
+		return false;
+	}
+	else 
 	{
-		double tmp;
 		AUTO_BOUNDS = false;
-		if (boundSizes[0] <= 0 || boundSizes[1] <= 0)
-		{
-			//cerr << "ERROR: User provided size boundaries must be positive.\n";
-			LOG.err("ERROR: User provided size boundaries must be positive.");
-			return true;
-		}
-		else if (boundSizes[0] > boundSizes[1])
-		{
-			tmp = boundSizes[0];
-			boundSizes[0] = boundSizes[1];
-			boundSizes[1] = tmp;
-		}
-		else if (boundSizes[0] == boundSizes[1])
-		{
-			//cerr << "ERROR: Size boundaries must be different.\n";
-			LOG.err("ERROR: Size boundaries must be different.");
-			return true;
+
+		for(int i = 0; i < boundSizes.size(); i++){		
+			if (boundSizes[i] <= 0){
+				LOG.err("ERROR: User provided size boundaries must be positive.");
+				return true;
+			}
+			if(i > 0){
+				if (boundSizes[i] >= boundSizes[i-1]){
+				LOG.err("ERROR: User provided size boundaries must be in increasing order.");
+				return true;
+			}
 		}
 	}
 	return false;

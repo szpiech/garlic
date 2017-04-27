@@ -634,10 +634,21 @@ void releaseROHLength(vector< ROHLength * > *rohLengthByPop)
 void writeROHData(string outfile,
                   vector< ROHData * > *rohDataByInd,
                   vector< MapData * > *mapDataByChr,
-                  int_pair_t bounds,
+                  vector< double > bounds,
                   string popName,
                   string version)
 {
+    string colors[9];
+    colors[0] = "228,26,28";
+    colors[1] = "77,175,74";
+    colors[2] = "55,126,184";
+    colors[3] = "152,78,163";
+    colors[4] = "255,127,0";
+    colors[5] = "255,255,51";
+    colors[6] = "166,86,40";
+    colors[7] = "247,129,191";
+    colors[8] = "153,153,153";
+   
     ofstream out;
     out.open(outfile.c_str());
     if (out.fail())
@@ -656,16 +667,23 @@ void writeROHData(string outfile,
         for (unsigned int roh = 0; roh < rohData->chr.size(); roh++)
         {
             int size = (rohData->stop[roh] - rohData->start[roh]);
-            char sizeClass = 'C';
-            string color = "0,76,153";
-            if (size < bounds.first) {
-                sizeClass = 'A';
-                color = "153,0,0";
+            char sc = 'A';
+            char sizeClass 'X';
+            string color = "X";
+
+            for(int i = 0; i < bounds.size(); i++){
+                if (size < bounds[i]) {
+                    sizeClass = sc;
+                    color = colors[(i <= 8) ? i : 8];
+                }
+                sc++;
             }
-            else if (size < bounds.second) {
-                sizeClass = 'B';
-                color = "0,153,0";
+
+            if(color.compare("X") == 0){
+                sizeClass = sc;
+                color = colors[(i <= 8) ? i : 8];
             }
+
             string chr = mapDataByChr->at(rohData->chr[roh])->chr;
             if (chr[0] != 'c' && chr[0] != 'C') chr = "chr" + chr;
             out << chr << "\t" << rohData->start[roh] << "\t" << rohData->stop[roh]
@@ -730,207 +748,6 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
     return LOD_CUTOFF;
 }
 
-/*
-void winsizeExplore(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,
-                    vector< MapData * > *mapDataByChr, IndData *indData,
-                    centromere *centro, vector<int> *multiWinsizes,
-                    KDEWinsizeReport *winsizeReport, double error, int MAX_GAP,
-                    int KDE_SUBSAMPLE, int numThreads, bool WINSIZE_EXPLORE, string outfile)
-{
-
-}
-*/
-
-/*
-KDEResult *automaticallyChooseWindowSizeFromCustomList();
-
-KDEResult *automaticallyChooseWindowSize(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,
-        vector< MapData * > *mapDataByChr, IndData *indData,
-        centromere *centro, int &winsize, double error, int MAX_GAP,
-        int KDE_SUBSAMPLE, int numThreads, bool WINSIZE_EXPLORE, double AUTO_WINSIZE_THRESHOLD, string outfile)
-{
-    KDEWinsizeReport *winsizeReport;
-    KDEResult *kdeResult;
-    int selectedWinsize = -1;
-    int stepSize = 10;
-    int lastWinsize = winsize - stepSize;
-    vector<int> *multiWinsizes;
-    bool finished = false;
-    do
-    {
-        multiWinsizes = getWinsizeList(lastWinsize, stepSize, numThreads);
-        cerr << "before.\n";
-        winsizeReport = calculateLODOverWinsizeRange(hapDataByChr, freqDataByChr,
-                        mapDataByChr, indData, centro, multiWinsizes, error, MAX_GAP,
-                        KDE_SUBSAMPLE, numThreads, WINSIZE_EXPLORE, outfile);
-        cerr << "end\n";
-        lastWinsize = multiWinsizes->at(multiWinsizes->size() - 1);
-        multiWinsizes->clear();
-        delete multiWinsizes;
-
-        selectedWinsize = selectWinsize(winsizeReport, AUTO_WINSIZE_THRESHOLD);
-        if (selectedWinsize > 0)
-        {
-            winsize = selectedWinsize;
-            kdeResult = cloneKDEResult(winsizeReport->kdeResultByWinsize->at(selectedWinsize));
-            finished = true;
-        }
-        releaseKDEWinsizeReport(winsizeReport);
-
-    } while (!finished);
-
-    return kdeResult;
-}
-
-vector<int> *getWinsizeList(int lastWinsize, int stepSize, int numThreads)
-{
-    vector<int> *winsizeList = new vector<int>;
-    for (int i = 1; i <= numThreads; i++)
-    {
-        winsizeList->push_back(lastWinsize + (i * stepSize));
-        //cerr << lastWinsize + (i * stepSize) << " ";
-    }
-    //cerr << endl;
-    return winsizeList;
-}
-*/
-/*
-int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD)
-{
-    map<int, double>::iterator it;
-    int winsize = -1;
-    double diff = numeric_limits<double>::max();
-    for (it = winsizeReport->win2mse->begin(); it != winsizeReport->win2mse->end(); it++)
-    {
-        if (it->second < AUTO_WINSIZE_THRESHOLD && (AUTO_WINSIZE_THRESHOLD - it->second) < diff)
-        {
-            winsize = it->first;
-            diff = AUTO_WINSIZE_THRESHOLD - it->second;
-        }
-    }
-    return winsize;
-}
-*/
-/*
-KDEWinsizeReport *calculateLODOverWinsizeRange(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,
-        vector< MapData * > *mapDataByChr, IndData *indData,
-        centromere *centro, vector<int> *multiWinsizes, double error, int MAX_GAP,
-        int KDE_SUBSAMPLE, int numThreads, bool WINSIZE_EXPLORE, string outfile)
-{
-    vector< HapData * > *hapDataByChrToCalc;
-    IndData *indDataToCalc;
-
-    if (KDE_SUBSAMPLE > 0) subsetData(hapDataByChr, indData, &hapDataByChrToCalc, &indDataToCalc, KDE_SUBSAMPLE);
-    else
-    {
-        hapDataByChrToCalc = hapDataByChr;
-        indDataToCalc = indData;
-    }
-
-    KDEWinsizeReport *winsizeReport = initKDEWinsizeReport();
-    work_order_t *order;
-    vector< work_order_t * > orderList;
-    pthread_t *peer = new pthread_t[numThreads];
-    for (int i = 0; i < numThreads; i++)
-    {
-        cerr << "set up thread " << i << endl;
-        order = new work_order_t;
-        order->multiWinsizes = multiWinsizes;
-        order->error = error;
-        order->MAX_GAP = MAX_GAP;
-
-        order->indData = indDataToCalc;
-        order->mapDataByChr = mapDataByChr;
-        order->hapDataByChr = hapDataByChrToCalc;
-        order->freqDataByChr = freqDataByChr;
-        order->winsizeReport = winsizeReport;
-        order->centro = centro;
-        order->numThreads = numThreads;
-        order->WINSIZE_EXPLORE = WINSIZE_EXPLORE;
-        order->winsizeReport = winsizeReport;
-        order->outfile = outfile;
-        order->id = i;
-        orderList.push_back(order);
-        pthread_create(&(peer[i]),
-                       NULL,
-                       (void *(*)(void *))compute,
-                       (void *)order);
-        order = NULL;
-    }
-
-    for (int i = 0; i < numThreads; i++)
-    {
-        pthread_join(peer[i], NULL);
-        delete orderList[i];
-        cerr << "ended " << i << endl;
-    }
-
-    delete [] peer;
-
-    if (KDE_SUBSAMPLE > 0) {
-        releaseHapData(hapDataByChrToCalc);
-        releaseIndData(indDataToCalc);
-    }
-
-    hapDataByChrToCalc = NULL;
-    indDataToCalc = NULL;
-
-    return winsizeReport;
-}
-*/
-/*
-void compute(void *order)
-{
-    work_order_t *w = (work_order_t *)order;
-    int id = w->id;
-    IndData *indData = w->indData;
-    vector< MapData * > *mapDataByChr = w->mapDataByChr;
-    vector< HapData * > *hapDataByChr = w->hapDataByChr;
-    vector< FreqData * > *freqDataByChr = w->freqDataByChr;
-    KDEWinsizeReport *winsizeReport = w->winsizeReport;
-    vector<int> *multiWinsizes = w->multiWinsizes;
-    double error = w->error;
-    int MAX_GAP = w->MAX_GAP;
-    centromere *centro = w->centro;
-    int numThreads = w->numThreads;
-    bool WINSIZE_EXPLORE = w->WINSIZE_EXPLORE;
-    string outfile = w->outfile;
-
-    pthread_mutex_lock(&io_mutex);
-    cerr << "thread " << id << endl;
-    pthread_mutex_unlock(&io_mutex);
-
-    vector< WinData * > *winDataByChr;
-    for (unsigned int i = id; i < multiWinsizes->size(); i += numThreads)
-    {
-
-        winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
-                                      indData, centro, multiWinsizes->at(i),
-                                      error, MAX_GAP);
-
-        pthread_mutex_lock(&io_mutex);
-        cerr << "thread " << id << " LOD windows completed." << endl;
-        pthread_mutex_unlock(&io_mutex);
-
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
-        releaseWinData(winDataByChr);
-
-        pthread_mutex_lock(&io_mutex);
-        KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
-        releaseDoubleData(rawWinData);
-        pthread_mutex_unlock(&io_mutex);
-
-        pthread_mutex_lock(&io_mutex);
-        winsizeReport->kdeResultByWinsize->operator[](multiWinsizes->at(i)) = kdeResult;
-        winsizeReport->win2mse->operator[](multiWinsizes->at(i)) = calculateWiggle(kdeResult);
-        try { if (WINSIZE_EXPLORE) writeKDEResult(kdeResult, makeKDEFilename(outfile, multiWinsizes->at(i))); }
-        catch (...) { throw 0; }
-        pthread_mutex_unlock(&io_mutex);
-    }
-
-    return;
-}
-*/
 void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< FreqData * > *freqDataByChr,
                      vector< MapData * > *mapDataByChr,
@@ -1169,6 +986,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
     return selectedKDEResult;
 }
 
+/*
 int_pair_t selectSizeClasses(ROHLength *rohLength)
 {
     int_pair_t bounds;
@@ -1251,176 +1069,78 @@ int_pair_t selectSizeClasses(ROHLength *rohLength)
     delete [] sortIndex;
     return bounds;
 }
-
-
-/*
-vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,
-        vector< vector< FreqData * >* > *freqDataByPopByChr,
-        vector< MapData * > *mapDataByChr,
-        vector< IndData * > *indDataByPop,
-        centromere *centro,
-        int* winsize, double error, int MAX_GAP, int numThreads, int pop)
-{
-
-    int numChr = mapDataByChr->size();
-    int numPop = 1;
-
-    vector< vector< WinData * >* > *winDataByPopByChr = initWinData(mapDataByChr, indDataByPop, pop);
-
-    //Create a vector of pop/chr pairs
-    //These will be distributed across threads for LOD score calculation
-    vector<int_pair_t> *popChrPairs = new vector<int_pair_t>;
-    int_pair_t pair;
-
-    for (int chr = 0; chr < numChr; chr++)
-    {
-        pair.first = pop;
-        pair.second = chr;
-        popChrPairs->push_back(pair);
-    }
-
-    //cerr << "There are " << popChrPairs->size() << " pop/chr combinations to compute.\n";
-
-    int numThreadsLODcalc = numThreads;
-
-    if (popChrPairs->size() < numThreads)
-    {
-        numThreadsLODcalc = popChrPairs->size();
-        //cerr << "WARNING: there are fewer pop/chr pairs than threads requested.  Running with "
-        //     << numThreads << " threads instead.\n";
-    }
-
-    //Partition pop/chr pairs amongst the specified threads
-    unsigned long int *NUM_PER_THREAD = new unsigned long int[numThreadsLODcalc];
-    unsigned long int div = popChrPairs->size() / numThreadsLODcalc;
-    for (int i = 0; i < numThreadsLODcalc; i++) NUM_PER_THREAD[i] = div;
-    for (int i = 0; i < (popChrPairs->size()) % numThreadsLODcalc; i++) NUM_PER_THREAD[i]++;
-
-
-    work_order_t *order;
-    pthread_t *peer = new pthread_t[numThreadsLODcalc];
-    int prev_index = 0;
-    for (int i = 0; i < numThreadsLODcalc; i++)
-    {
-        order = new work_order_t;
-        order->first_index = prev_index;
-        order->last_index = prev_index + NUM_PER_THREAD[i];
-        prev_index += NUM_PER_THREAD[i];
-
-        order->winsize = winsize;
-        order->error = error;
-        order->MAX_GAP = MAX_GAP;
-
-        order->popChrPairs = popChrPairs;
-        order->indDataByPop = indDataByPop;
-        order->mapDataByChr = mapDataByChr;
-        order->hapDataByPopByChr = hapDataByPopByChr;
-        order->freqDataByPopByChr = freqDataByPopByChr;
-        order->winDataByPopByChr = winDataByPopByChr;
-        order->centro = centro;
-
-        order->id = i;
-        pthread_create(&(peer[i]),
-                       NULL,
-                       (void *(*)(void *))scanSinglePop,
-                       (void *)order);
-
-    }
-
-    for (int i = 0; i < numThreadsLODcalc; i++)
-    {
-        pthread_join(peer[i], NULL);
-    }
-    return winDataByPopByChr;
-}
 */
 
-
-/*
-void scan(void *order)
+vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
 {
-    work_order_t *w = (work_order_t *)order;
-    int id = w->id;
-    int first_index = w->first_index;
-    int last_index = w->last_index;
-    vector<int_pair_t> *popChrPairs = w->popChrPairs;
-    vector< IndData * > *indDataByPop = w->indDataByPop;
-    vector< MapData * > *mapDataByChr = w->mapDataByChr;
-    vector< vector< HapData * >* > *hapDataByPopByChr = w->hapDataByPopByChr;
-    vector< vector< FreqData * >* > *freqDataByPopByChr = w->freqDataByPopByChr;
-    vector< vector< WinData * >* > *winDataByPopByChr = w->winDataByPopByChr;
-    int* winsize = w->winsize;
-    double error = w->error;
-    int MAX_GAP = w->MAX_GAP;
-    centromere *centro = w->centro;
+    vector<double> bounds;
+    size_t *sortIndex;
 
-    //pthread_mutex_lock(&cerr_mutex);
-    //cerr << "Thread " << id << ":\n";
-    //pthread_mutex_unlock(&cerr_mutex);
+    int ngaussians = NCLUST;
+    size_t maxIter = 1000;
+    double tolerance = 1e-5;
+    double * W;
+    double * Mu;
+    double * Sigma;
 
-    for (int i = first_index; i < last_index; i++)
+    W = new double[ngaussians];
+    Mu = new double[ngaussians];
+    Sigma = new double[ngaussians];
+    sortIndex = new size_t[ngaussians];
+
+    //calculate mean and var for the population size distribution to use for initial guess
+    double var = gsl_stats_variance(rohLength->length, 1, rohLength->size);
+    double mu = gsl_stats_mean(rohLength->length, 1, rohLength->size);
+    for (int n = 0; n < ngaussians; n++)
     {
-        int pop = popChrPairs->at(i).first;
-        int chr = popChrPairs->at(i).second;
-
-        IndData *indData = indDataByPop->at(pop);
-        MapData *mapData = mapDataByChr->at(chr);
-        HapData *hapData = hapDataByPopByChr->at(pop)->at(chr);
-        FreqData *freqData = freqDataByPopByChr->at(pop)->at(chr);
-        WinData *winData = winDataByPopByChr->at(pop)->at(chr);
-
-        calcLOD(indData, mapData, hapData, freqData, winData, centro, winsize[pop], error, MAX_GAP);
-
-        pthread_mutex_lock(&cerr_mutex);
-        cerr << indDataByPop->at(pop)->pop << " chromosome " << mapDataByChr->at(chr)->chr << " LOD windows finished.\n";
-        pthread_mutex_unlock(&cerr_mutex);
+        W[n] = 1.0 / double(ngaussians);
+        Mu[n] = mu * double(n + 1) / double(ngaussians + 1);
+        Sigma[n] = var * (n + 1) / double(ngaussians);
     }
 
-    return;
-}
-*/
-/*
-//ugly hack
-void scanSinglePop(void *order)
-{
-    work_order_t *w = (work_order_t *)order;
-    int id = w->id;
-    int first_index = w->first_index;
-    int last_index = w->last_index;
-    vector<int_pair_t> *popChrPairs = w->popChrPairs;
-    vector< IndData * > *indDataByPop = w->indDataByPop;
-    vector< MapData * > *mapDataByChr = w->mapDataByChr;
-    vector< vector< HapData * >* > *hapDataByPopByChr = w->hapDataByPopByChr;
-    vector< vector< FreqData * >* > *freqDataByPopByChr = w->freqDataByPopByChr;
-    vector< vector< WinData * >* > *winDataByPopByChr = w->winDataByPopByChr;
-    int* winsize = w->winsize;
-    double error = w->error;
-    int MAX_GAP = w->MAX_GAP;
-    centromere *centro = w->centro;
+    GMM gmm(ngaussians, W, Mu, Sigma, maxIter, tolerance, true);
 
-    //pthread_mutex_lock(&cerr_mutex);
-    //cerr << "Thread " << id << ":\n";
-    //pthread_mutex_unlock(&cerr_mutex);
+    gmm.estimate(rohLength->length, rohLength->size);
 
-    for (int i = first_index; i < last_index; i++)
+    for (int n = 0; n < ngaussians; n++)
     {
-        int pop = popChrPairs->at(i).first;
-        int chr = popChrPairs->at(i).second;
-
-        IndData *indData = indDataByPop->at(pop);
-        MapData *mapData = mapDataByChr->at(chr);
-        HapData *hapData = hapDataByPopByChr->at(pop)->at(chr);
-        FreqData *freqData = freqDataByPopByChr->at(pop)->at(chr);
-        WinData *winData = winDataByPopByChr->at(0)->at(chr);
-
-        calcLOD(indData, mapData, hapData, freqData, winData, centro, winsize[pop], error, MAX_GAP);
-
-        pthread_mutex_lock(&cerr_mutex);
-        cerr << indDataByPop->at(pop)->pop << " chromosome " << mapDataByChr->at(chr)->chr << " LOD windows finished.\n";
-        pthread_mutex_unlock(&cerr_mutex);
+        W[n] = gmm.getMixCoefficient(n);
+        Mu[n] = gmm.getMean(n);
+        Sigma[n] = gmm.getVar(n);
+        sortIndex[n] = n;
     }
 
-    return;
+    gsl_sort_index(sortIndex, Mu, 1, ngaussians);
+    chr sizeClass = 'A';
+
+    for(int i = 0; i < ngaussians; i++){
+        LOG.log("Gaussian class", sizeClass, false); 
+        LOG.log(" ( mixture, mean, std ) = (", W[sortIndex[i]], false);
+        LOG.log(",", Mu[sortIndex[i]], false);
+        LOG.log(",", Sigma[sortIndex[i]], false);
+        LOG.log(" )");
+        sizeClass++;
+    }
+    //Find boundaries, there are ngaussians-1 of them, but for the moment this is defined to be 2
+    //This finds the 'first' root of the difference between two gaussians
+    for(int i = 1; i < ngaussians; i++){
+        BoundFinder BF(Mu[sortIndex[0]],
+                       Sigma[sortIndex[0]],
+                       W[sortIndex[0]],
+                       Mu[sortIndex[1]],
+                       Sigma[sortIndex[1]],
+                       W[sortIndex[1]],
+                       1000, 1e-4, false);
+        bounds.push_back(BF.findBoundary());
+    }
+
+    delete [] W;
+    delete [] Mu;
+    delete [] Sigma;
+    delete [] sortIndex;
+    return bounds;
 }
-*/
+
+
+
 

@@ -41,8 +41,8 @@ struct ROHData
 {
   string indID;
   vector<int> chr;
-  vector<int> start;
-  vector<int> stop;
+  vector<double> start;
+  vector<double> stop;
 };
 
 struct ROHLength
@@ -121,7 +121,7 @@ vector< ROHData * > *initROHData(IndData *indData);
 void writeROHData(string outfile,
                   vector< ROHData * > *rohDataByInd,
                   vector< MapData * > *mapDataByChr,
-                  int_pair_t bounds,
+                  vector< double > bounds,
                   string popName,
                   string version);
 void releaseROHData(vector< ROHData * > *rohDataByInd);
@@ -166,7 +166,10 @@ vector<int> *getWinsizeList(int lastWinsize, int stepSize, int numThreads);
 
 bool inGap(int qStart, int qEnd, int targetStart, int targetEnd);
 
-int_pair_t selectSizeClasses(ROHLength *rohLength);
+//int_pair_t selectSizeClasses(ROHLength *rohLength);
+vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST);
+
+
 
 void compute(void *order);
 

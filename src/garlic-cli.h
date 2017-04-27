@@ -133,6 +133,14 @@ extern const string ARG_MU;
 extern const double DEFAULT_MU;
 extern const string HELP_MU;
 
+extern const string ARG_PHASED;
+extern const bool DEFAULT_PHASED;
+extern const string HELP_PHASED;
+
+extern const string ARG_NCLUST;
+extern const int DEFAULT_NCLUST;
+extern const string HELP_NCLUST;
+
 
 
 param_t *getCLI(int argc, char *argv[]);
@@ -154,4 +162,5 @@ bool checkMaxGap(int MAX_GAP);
 bool checkOverlapFrac(double OVERLAP_FRAC);
 bool checkM(int M);
 bool checkMU(double mu);
+bool checkNCLUST(int nclust);
 #endif

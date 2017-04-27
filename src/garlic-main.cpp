@@ -141,12 +141,15 @@ int main(int argc, char *argv[])
     if (argerr) return -1;
     LOG.log("mu:", mu);
 
-    double M = params->getIntFlag(ARG_M);
+    int M = params->getIntFlag(ARG_M);
     argerr = argerr || checkM(M);
     if (argerr) return -1;
     LOG.log("M:", M);
 
-    //cerr << "argerr " << argerr << endl;
+    int NCLUST = params->getIntFlag(ARG_NCLUST);
+    argerr = argerr || checkNCLUST(NCLUST);
+    if (argerr) return -1;
+    LOG.log("# GMM clusters:", NCLUST);
 
     if (argerr) return -1;
 
@@ -157,10 +160,8 @@ int main(int argc, char *argv[])
     bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
     LOG.log("Output raw LOD scores:", RAW_LOD);
 
-
-
-
-    bool PHASED = false;
+    bool PHASED = params->getBoolFlag(ARG_PHASED);
+    LOG.log("Use r2 for phaed data:", PHASED);
 
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
@@ -358,24 +359,16 @@ int main(int argc, char *argv[])
 
     releaseWinData(winDataByChr);
     delete centro;
-    int_pair_t bounds;
+    vector<double> bounds;
 
     if (AUTO_BOUNDS)
     {
-        cout << "Fitting 3-component GMM for size classification\n";
-        bounds = selectSizeClasses(rohLength);
-        LOG.log("Selected ROH size boundaries ( A/B, B/C ) = (", bounds.first, false);
-        LOG.log(",", bounds.second, false);
+        cout << "Fitting " << NCLUST << "-component GMM for size classification\n";
+        bounds = selectSizeClasses(rohLength, NCLUST);
+        LOG.logv("Selected ROH size boundaries = (", bounds, false);
         LOG.log(" )");
     }
-    else
-    {
-        bounds.first = boundSizes[0];
-        bounds.second = boundSizes[1];
-        cout << "User provided size boundaries.\n";
-    }
-
-    cout << "ROH size boundaries ( A/B, B/C ) = ( " << bounds.first << ", " << bounds.second << " )\n";
+    else cout << "User provided size boundaries.\n";
 
     //Output ROH calls to file, one for each individual
     //includes A/B/C size classifications

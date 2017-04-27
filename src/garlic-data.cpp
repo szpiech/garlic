@@ -253,6 +253,8 @@ double r2(HapData *hapData, FreqData *freqData, int i, int j) {
             if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
                 total+=2;
                 if (hapData->data[i][ind] == 2 && hapData->data[j][ind] == 2) x11+=2;
+                else if (hapData->data[i][ind] == 1 && hapData->data[j][ind] == 2) x11++;
+                else if (hapData->data[i][ind] == 2 && hapData->data[j][ind] == 1) x11++;
                 else if (hapData->data[i][ind] == 1 && 
                          hapData->data[j][ind] == 1 && 
                          hapData->firstCopy[j][ind] == hapData->firstCopy[i][ind]){
@@ -1828,6 +1830,7 @@ HapData *initHapData(unsigned int nind, unsigned int nloci, bool PHASED)
 
     data->data = new short*[nloci];
     if(PHASED) data->firstCopy = new bool*[nloci];
+    else data->firstCopy = NULL;
     for (unsigned int i = 0; i < nloci; i++)
     {
         data->data[i] = new short[nind];
