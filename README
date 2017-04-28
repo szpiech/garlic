@@ -20,13 +20,18 @@ GNU GSL: http://www.gnu.org/software/gsl/
 FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
+28APR2017 - Update to version 1.1.0.  Includes several updates, including a method for reweighting LOD scores by gaps between SNPs, the option to report ROH lengths in cM, and the ability to provide per-genotype error rates.
+
 25OCT2016 - Update to version 1.0.1.  This update fixes a bug where ROH that extended upto the end of the chromosome failed to get assembled and reported.
 This update also introduces a new command-line flag --overlap-frac which is designed to reduce false positive calls by requiring a SNP be covered by at 
 least OVERLAP_FRAC (default 0.25) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
 
-Garlic v1.0.1
+Garlic v1.1.0
 ----------Command Line Arguments----------
+
+--M <int>: The expected number of meioses since a recent common ancestor.
+	Default: 7
 
 --auto-winsize <bool>: Initiates an ad hoc method for automatically selecting the # of SNPs in which to
 	calculate LOD scores. Starts at the value specified by --winsize and increases
@@ -44,19 +49,26 @@ Garlic v1.0.1
 
 	Default: none
 
+--cm <bool>: Construct ROH in genetic distance units. This requires a mapfile.
+	Default: false
+
 --error <double>: The assumed genotyping error rate.
 	Default: -1.000000e+00
 
 --freq-file <string>: A file specifying allele frequencies for
 	each population for all variants. File format:
-	SNP	ALLELE	<pop1 ID> <pop2 ID> ...
-	<locus ID> <allele> <pop1 freq> <pop2 freq> ...
+	CHR SNP POS ALLELE <pop ID>
+	<chr> <locus ID> <allele> <freq>
 	By default, this is calculated automatically
 	from the provided data.
 	Default: none
 
---freq-only <bool>: If set, calculates a freq file from provided data and then exits.
+--freq-only <bool>: If set, calculates a freq file from provided data and then exits. Uses minimal RAM.
 	Default: false
+
+--gl-type <string>: Specify the form of the genotype likelihood data: GL or PL, as defined
+in VCFv4.2 documentation.
+	Default: GL
 
 --help <bool>: Prints this help dialog.
 	Default: false
@@ -71,16 +83,29 @@ Set <= 0 to use all individuals (may use large amounts of RAM).
 	automatically with KDE.
 	Default: -9.999990e+05
 
+--map <string>: Provide a scaffold genetic map, sites that aren't present within this file are interpolated.  Sites outside the bounds are filtered. This is 	 required for wLOD calcualtions and any runs for which you wish to report ROH in units of cM.
+	Default: none
+
 --max-gap <int>: A LOD score window is not calculated if the gap (in bps)
 	between two loci is greater than this value.
 	Default: 200000
+
+--mu <double>: Mutation rate per bp per generation for --weighted calculation.
+	Default: 1.000000e-09
+
+--nclust <int>: Set number of clusters for GMM classification of ROH lengths.
+	Default: 3
 
 --out <string>: The base name for all output files.
 	Default: outfile
 
 --overlap-frac <double>: The minimum fraction of overlapping windows above the LOD cutoff required
 	to begin constructing a run.
-	Default: 0.25
+	Default: 2.500000e-01
+
+--phased <bool>: Set if data are phased and you want to calculate r2 instead of hr2 while --weighted is set.
+Uses extra RAM. Has no effect on computations without --weighted.
+	Default: false
 
 --raw-lod <bool>: If set, LOD scores will be output to gzip compressed files.
 	Default: false
@@ -98,11 +123,20 @@ Set <= 0 to use all individuals (may use large amounts of RAM).
 --tfam <string>: A tfam formatted file containing population and individual IDs.
 	Default: none
 
+--tgls <string>: A tgls file containing per-genotype likelihoods.
+	Default: none
+
+--threads <int>: The number of threads to spawn during weighted calculations.
+	Default: 1
+
 --tped <string>: A tped formatted file containing map and genotype information.
 	Default: none
 
 --tped-missing <char>: Single character missing data code for TPED files.
 	Default: 0
+
+--weighted <bool>: Compute LOD scores weighted by LD and probability of mutation.
+	Default: false
 
 --winsize <int>: The window size in # of SNPs in which to calculate LOD scores.
 	Default: 10

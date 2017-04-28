@@ -77,7 +77,9 @@ in VCFv4.2 documentation.";
 
 const string ARG_MAP = "--map";
 const string DEFAULT_MAP = "none";
-const string HELP_MAP = "Genetic map information";
+const string HELP_MAP = "Provide a scaffold genetic map, sites that aren't present within this file are interpolated.\n\
+Sites outside the bounds are filtered. This is required for wLOD calcualtions\n\
+and any runs for which you wish to report ROH in units of cM.";
 
 const string ARG_WEIGHTED = "--weighted";
 const bool DEFAULT_WEIGHTED = false;
@@ -124,11 +126,11 @@ Set <= 0 to use all individuals (may use large amounts of RAM).";
 
 const string ARG_BUILD = "--build";
 const string DEFAULT_BUILD = "none";
-const string HELP_BUILD = "Choose which genome build to use for centromere locations (hg18, hg19, or hg38).\n";
+const string HELP_BUILD = "Choose which genome build to use for centromere locations (hg18, hg19, or hg38).";
 
 const string ARG_CENTROMERE_FILE = "--centromere";
 const string DEFAULT_CENTROMERE_FILE = "none";
-const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.\n";
+const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Format <chr> <start> <end>.";
 
 const string ARG_M = "--M";
 const int DEFAULT_M = 7;
