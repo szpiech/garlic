@@ -49,11 +49,13 @@ struct ROHLength
 {
   string pop;
   double *length;
-  int size;
+  double size;
 };
 
 //extern double **LD;
 //extern double **LD1;
+
+int selectWinsizeWeighted(double density);
 
 void parallelwLOD(void *order);
 
@@ -112,7 +114,8 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         ROHLength **rohLength,
                                         int winSize,
                                         int MAX_GAP,
-                                        double OVERLAP_FRAC);
+                                        double OVERLAP_FRAC,
+                                        bool CM);
 
 ROHLength *initROHLength(int size, string pop);
 void releaseROHLength(ROHLength *rohLength);
@@ -123,7 +126,8 @@ void writeROHData(string outfile,
                   vector< MapData * > *mapDataByChr,
                   vector< double > bounds,
                   string popName,
-                  string version);
+                  string version,
+                  bool CM);
 void releaseROHData(vector< ROHData * > *rohDataByInd);
 
 string makeROHFilename(string outfile);
@@ -138,9 +142,10 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      centromere *centro,
                      vector<int> &multiWinsizes,
                      double error,
-                     vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
+                     vector< GenoLikeData * > *GLDataByChr,
+                     vector< GenoFreqData * > *genoFreqDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED);
+                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED);
 
 KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector< FreqData * > *freqDataByChr,
@@ -158,7 +163,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          int &winsize, int step, double error,
                          vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED);
+                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PAHSED);
 
 //int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD);
 

@@ -2,13 +2,13 @@
 
 CC = g++
 #CC = clang++
-G++FLAG = -g -Wall
+#G++FLAG = -g -Wall
 
 I_PATH = ../include
 
 #osx
 L_PATH = ../lib/osx
-#G++FLAG = -fast -m64 -mmmx -msse -msse2
+G++FLAG = -fast -m64 -mmmx -msse -msse2
 #For static linking
 LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
 

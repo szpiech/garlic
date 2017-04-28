@@ -48,7 +48,7 @@ struct GenMapScaffold {
 
 struct MapData
 {
-  int *physicalPos;
+  double *physicalPos;
   double *geneticPos;
   string *locusName;
   char *allele;
@@ -127,6 +127,9 @@ struct R2_work_order_t
   LDData *LD;
 };
 
+void freqOnly(string tpedfile, string outfile, int nresample, char TPED_MISSING);
+
+double calcDensity(int numLoci, vector< MapData * > *mapDataByChr, centromere *centro);
 
 void parallelHR2(void *order);
 void parallelR2(void *order);

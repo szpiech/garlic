@@ -41,16 +41,23 @@ int main(int argc, char *argv[])
     argerr = argerr || checkRequiredFiles(tpedfile, tfamfile);
     if (argerr) return -1;
     LOG.log("TPED file:", tpedfile);
+
     char TPED_MISSING = params->getCharFlag(ARG_TPED_MISSING);
     LOG.log("TPED missing data code:", TPED_MISSING);
     LOG.log("TFAM file:", tfamfile);
     LOG.log("TGLS file:", tglsfile);
+
     string GL_TYPE = params->getStringFlag(ARG_GL_TYPE);
     argerr = argerr || checkGLType(GL_TYPE);
     LOG.log("Genotype likelihood format:", GL_TYPE);
+
     bool WEIGHTED = params->getBoolFlag(ARG_WEIGHTED);
     string mapfile = params->getStringFlag(ARG_MAP);
-    argerr = argerr || checkMapFile(mapfile, WEIGHTED);
+    bool CM = params->getBoolFlag(ARG_CM);
+    argerr = argerr || checkCM(mapfile, CM);
+    if (argerr) return -1;
+    LOG.log("Measure ROH in genetic distance units:", CM);
+    argerr = argerr || checkMapFile(mapfile, WEIGHTED || CM);
     LOG.log("Weighted LOD:", WEIGHTED);
     if (WEIGHTED) {
         LOG.log("Map file:", mapfile);
@@ -151,8 +158,6 @@ int main(int argc, char *argv[])
     if (argerr) return -1;
     LOG.log("# GMM clusters:", NCLUST);
 
-    if (argerr) return -1;
-
     int KDE_SUBSAMPLE = params->getIntFlag(ARG_KDE_SUBSAMPLE);
     if (KDE_SUBSAMPLE <= 0) LOG.log("# of rand individuals for KDE: ALL");
     else LOG.log("# of rand individuals for KDE:", KDE_SUBSAMPLE);
@@ -165,11 +170,18 @@ int main(int argc, char *argv[])
 
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
+
+    if (FREQ_ONLY){//calculated on the fly, as the file is read, to save RAM
+        freqOnly(tpedfile,outfile,nresample,TPED_MISSING);
+        return 0;
+    }
+
 //++++++++++Datafile reading++++++++++
     centromere *centro;
     centro = new centromere(BUILD, centromereFile, DEFAULT_CENTROMERE_FILE);
 
     int numLoci, numInd, numCols;
+    double variantDensity = -1;;
     vector< int_pair_t > *chrCoordList = NULL;
     vector< MapData * > *mapDataByChr = NULL;
     string popName;
@@ -203,7 +215,7 @@ int main(int argc, char *argv[])
             USE_GL = true;
         }
 
-        if (WEIGHTED) {
+        if (WEIGHTED || CM) {
             scaffoldMapByChr = loadMapScaffold(mapfile, centro);
             if (scaffoldMapByChr->size() != mapDataByChr->size()) {
                 LOG.err("ERROR: Scaffold genetic map does not have the same number of chromosomes as data.");
@@ -230,10 +242,6 @@ int main(int argc, char *argv[])
         try { freqDataByChr = readFreqData(freqfile, popName, chrCoordList, mapDataByChr); }
         catch (...) { return -1; }
     }
-    if (FREQ_ONLY) return 0;
-
-    chrCoordList->clear();
-    delete chrCoordList;
 
 //Filter data based on frequency data.
 //Remove all monomorphic sites.
@@ -243,13 +251,13 @@ int main(int argc, char *argv[])
 
     int newLoci;
 
-    if (WEIGHTED) {
+    if (WEIGHTED || CM) {
         newLoci = filterMonomorphicAndOOBSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, scaffoldMapByChr, USE_GL, PHASED);
         LOG.log("Monomorphic or out of bounds loci filtered:", numLoci - newLoci);
         int numInterpolated = interpolateGeneticmap(&mapDataByChr, scaffoldMapByChr);
         LOG.log("Number of genetic map locations interpolated:", numInterpolated);
         releaseGenMapScaffold(scaffoldMapByChr);
-        if(!PHASED) genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
+        if(!PHASED && WEIGHTED) genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
     }
     else {
         newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, USE_GL, PHASED);
@@ -260,8 +268,15 @@ int main(int argc, char *argv[])
 
     numLoci = newLoci;
 
+    if(AUTO_WINSIZE && WEIGHTED){
+        variantDensity = calcDensity(numLoci, mapDataByChr, centro);
+    }
+
+    chrCoordList->clear();
+    delete chrCoordList;
+
 //++++++++++Pipeline begins++++++++++
-    if (WINSIZE_EXPLORE && AUTO_WINSIZE)
+    if (WINSIZE_EXPLORE && AUTO_WINSIZE && !WEIGHTED)
     {
         kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, &multiWinsizes, winsize, error,
@@ -279,29 +294,28 @@ int main(int argc, char *argv[])
 
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
-                        GLDataByChr, USE_GL,
-                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED);
+                        GLDataByChr, genoFreqDataByChr, USE_GL,
+                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED);
 
         return 0;
     }
     else if (AUTO_WINSIZE)
     {
-        try
-        {
-            kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
-                                      indData, centro, winsize, AUTO_WINSIZE_STEP, error,
-                                      GLDataByChr, USE_GL,
-                                      MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED);
+        if(!WEIGHTED){
+            try{
+                kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
+                                          indData, centro, winsize, AUTO_WINSIZE_STEP, error,
+                                          GLDataByChr, USE_GL,
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED);
+            }
+            catch (...){
+                return 1;
+            }
         }
-        catch (...)
-        {
-            return 1;
+        else{
+            winsize = selectWinsizeWeighted(variantDensity);
         }
-        /*
-        kdeResult = automaticallyChooseWindowSize(hapDataByChr, freqDataByChr, mapDataByChr,
-                    indData, centro, winsize, error, MAX_GAP, KDE_SUBSAMPLE, numThreads,
-                    WINSIZE_EXPLORE, AUTO_WINSIZE_THRESHOLD, outfile);
-                    */
+        
         LOG.log("Selected window size:", winsize);
     }
 
@@ -326,36 +340,28 @@ int main(int argc, char *argv[])
     releaseFreqData(freqDataByChr);
     if (USE_GL) releaseGLData(GLDataByChr);
 
-    if (RAW_LOD)
-    {
+    if (RAW_LOD){
         //Output raw windows
         try { writeWinData(winDataByChr, indData, mapDataByChr, outfile); }
         catch (...) { return -1; }
     }
 
-    if (AUTO_CUTOFF)
-    {
-        if (!AUTO_WINSIZE && !WINSIZE_EXPLORE)
+    if (AUTO_CUTOFF){
+        if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
         {
             LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize));
         }
-        else
-        {
-            LOD_CUTOFF = selectLODCutoff(kdeResult);
-        }
+        else LOD_CUTOFF = selectLODCutoff(kdeResult);
+
         LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
-        //cout << "Selected LOD score cutoff: " << LOD_CUTOFF << endl;
     }
-    else
-    {
-        cout << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
-    }
+    else cout << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
 
     cout << "Assembling ROH windows\n";
     //Assemble ROH for each individual in each pop
     ROHLength *rohLength;
     vector< ROHData * > *rohDataByInd = assembleROHWindows(winDataByChr, mapDataByChr, indData,
-                                        centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC);
+                                        centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC, CM);
 
     releaseWinData(winDataByChr);
     delete centro;
@@ -373,7 +379,7 @@ int main(int argc, char *argv[])
     //Output ROH calls to file, one for each individual
     //includes A/B/C size classifications
     cout << "Writing ROH tracts.\n";
-    writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, bounds, popName, VERSION);
+    writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, bounds, popName, VERSION, CM);
 
     //releaseIndData(indData);
     //releaseROHLength(rohLength);

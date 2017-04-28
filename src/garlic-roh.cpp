@@ -1,9 +1,12 @@
 #include "garlic-roh.h"
 
-//pthread_mutex_t io_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-//double **LD = NULL;
-//double **LD1 = NULL;
+int selectWinsizeWeighted(double density){
+   /*
+    Window size = 8.3235*log(SNVdensity)+138.0521
+    Overlap (%) = 6.375*log(SNVdensity)+63.888;*/ 
+    int size = int(8.3235*log(density)+138.0521 + 0.5);
+    return (size >= 10 ? size : 10);
+}
 
 bool inGap(int qStart, int qEnd, int targetStart, int targetEnd)
 {
@@ -21,7 +24,7 @@ void calcLOD(MapData *mapData,
     short **data = hapData->data;
     int nloci = hapData->nloci;
     int nind = hapData->nind;
-    int *physicalPos = mapData->physicalPos;
+    double *physicalPos = mapData->physicalPos;
     //double *geneticPos = mapData->geneticPos;
     //string *locusName = mapData->locusName;
     double *freq = freqData->freq;
@@ -323,7 +326,7 @@ void parallelwLOD(void *order){
     short **data = p->hapData->data;
     int nloci = p->hapData->nloci;
     int nind = p->hapData->nind;
-    int *physicalPos = p->mapData->physicalPos;
+    double *physicalPos = p->mapData->physicalPos;
     double *geneticPos = p->mapData->geneticPos;
     double *freq = p->freqData->freq;
     double **win = p->winData->data;
@@ -509,9 +512,9 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         ROHLength **rohLength,
                                         int winSize,
                                         int MAX_GAP,
-                                        double OVERLAP_FRAC)
+                                        double OVERLAP_FRAC, bool CM)
 {
-    vector<int> lengths;
+    vector<double> lengths;
     vector< ROHData * > *rohDataByInd = initROHData(indData);
 
     double OVERLAP_THRESHOLD = OVERLAP_FRAC * winSize;
@@ -526,6 +529,10 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
         {
             WinData *winData = winDataByChr->at(chr);
             MapData *mapData = mapDataByChr->at(chr);
+            double *pos;
+
+            if(CM) pos = mapData->geneticPos;
+            else pos = mapData->physicalPos;
 
             int cStart = centro->centromereStart(mapData->chr);
             int cEnd = centro->centromereEnd(mapData->chr);
@@ -543,34 +550,38 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                 }
             }
 
-            int winStart = -1;
-            int winStop = -1;
+            double winStart = -1;
+            double winStop = -1;
             for (int w = 0; w < mapData->nloci; w++)
             {
                 //No window being extended and the snp is in ROH
                 //Start the window
                 if (winStart < 0 && inWin[w] >= OVERLAP_THRESHOLD)
                 {
-                    winStart = mapData->physicalPos[w];
+                    //winStart = mapData->physicalPos[w];
+                    winStart = pos[w];
                 }
                 //Window being extended and snp is not in ROH
                 //end the window at w-1
                 //reset winStart to -1
                 else if (inWin[w] >= OVERLAP_THRESHOLD && (mapData->physicalPos[w] - mapData->physicalPos[w - 1] > MAX_GAP ||
                          inGap(mapData->physicalPos[w - 1], mapData->physicalPos[w], cStart, cEnd)) ) {
-                    winStop = mapData->physicalPos[w - 1];
-                    int size = winStop - winStart + 1;
+                    //winStop = mapData->physicalPos[w - 1];
+                    winStop = pos[w - 1];
+                    double size = winStop - winStart + (!CM ? 1 : 0);
                     lengths.push_back(size);
                     rohData->chr.push_back(chr);
                     rohData->start.push_back(winStart);
                     rohData->stop.push_back(winStop);
                     winStop = -1;
-                    winStart = mapData->physicalPos[w];
+                    //winStart = mapData->physicalPos[w];
+                    winStart = pos[w];
                 }
                 else if (winStart > 0 && ! (inWin[w] >= OVERLAP_THRESHOLD) )
                 {
-                    winStop = mapData->physicalPos[w - 1];
-                    int size = winStop - winStart + 1;
+                    //winStop = mapData->physicalPos[w - 1];
+                    winStop = pos[w - 1];
+                    double size = winStop - winStart + (!CM ? 1 : 0);
                     lengths.push_back(size);
                     rohData->chr.push_back(chr);
                     rohData->start.push_back(winStart);
@@ -580,8 +591,9 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                 }
                 else if (winStart > 0 && w + 1 >= mapData->nloci)
                 {
-                    winStop = mapData->physicalPos[w];
-                    int size = winStop - winStart + 1;
+                    //winStop = mapData->physicalPos[w];
+                    winStop = pos[w];
+                    double size = winStop - winStart + (!CM ? 1 : 0);
                     lengths.push_back(size);
                     rohData->chr.push_back(chr);
                     rohData->start.push_back(winStart);
@@ -636,7 +648,7 @@ void writeROHData(string outfile,
                   vector< MapData * > *mapDataByChr,
                   vector< double > bounds,
                   string popName,
-                  string version)
+                  string version, bool CM)
 {
     string colors[9];
     colors[0] = "228,26,28";
@@ -666,7 +678,7 @@ void writeROHData(string outfile,
 
         for (unsigned int roh = 0; roh < rohData->chr.size(); roh++)
         {
-            int size = (rohData->stop[roh] - rohData->start[roh]);
+            double size = (rohData->stop[roh] - rohData->start[roh]);
             char sc = 'A';
             char sizeClass = 'X';
             string color = "X";
@@ -676,6 +688,7 @@ void writeROHData(string outfile,
                 if (size < bounds[i]) {
                     sizeClass = sc;
                     color = colors[(i <= 8) ? i : 8];
+                    break;
                 }
                 sc++;
             }
@@ -687,8 +700,14 @@ void writeROHData(string outfile,
 
             string chr = mapDataByChr->at(rohData->chr[roh])->chr;
             if (chr[0] != 'c' && chr[0] != 'C') chr = "chr" + chr;
-            out << chr << "\t" << rohData->start[roh] << "\t" << rohData->stop[roh]
-                << "\t" << sizeClass << "\t" << size << "\t.\t0\t0\t" << color << endl;
+            if(CM){
+                out << chr << "\t" << rohData->start[roh] << "\t" << rohData->stop[roh]
+                    << "\t" << sizeClass << "\t" << size << "\t.\t0\t0\t" << color << endl;
+            }
+            else{
+                out << chr << "\t" << int(rohData->start[roh]) << "\t" << int(rohData->stop[roh])
+                    << "\t" << sizeClass << "\t" << int(size) << "\t.\t0\t0\t" << color << endl;
+            }
         }
     }
     LOG.log("ROH calls:", outfile);
@@ -756,9 +775,10 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      centromere *centro,
                      vector<int> &multiWinsizes,
                      double error,
-                     vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
+                     vector< GenoLikeData * > *GLDataByChr,
+                     vector< GenoFreqData * > *genoFreqDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED)
+                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED)
 {
     vector< WinData * > *winDataByChr;
     vector< HapData * > *hapDataByChrToCalc;
@@ -773,19 +793,18 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
         indDataToCalc = indData;
     }
 
+    vector< LDData * > *ldDataByChr;
 
     for (unsigned int i = 0; i < multiWinsizes.size(); i++)
     {
         if (WEIGHTED) {
-            /*
+            ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, multiWinsizes[i], MAX_GAP, PHASED, numThreads);
             winDataByChr = calcwLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
                                            GLDataByChrToCalc,
-                                           genoFreqDataByChr,
+                                           ldDataByChr,
                                            centro, multiWinsizes[i],
-                                           error, MAX_GAP, USE_GL);
-            */
-            cerr << "Not currently supported.\n";
-            throw 0;
+                                           error, MAX_GAP, USE_GL, M, mu, numThreads);
+            releaseLDData(ldDataByChr);
         }
         else {
             winDataByChr = calcLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
@@ -986,91 +1005,6 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
 
     return selectedKDEResult;
 }
-
-/*
-int_pair_t selectSizeClasses(ROHLength *rohLength)
-{
-    int_pair_t bounds;
-    size_t *sortIndex;
-
-    int ngaussians = 3;
-    size_t maxIter = 1000;
-    double tolerance = 1e-5;
-    double * W;
-    double * Mu;
-    double * Sigma;
-
-    W = new double[ngaussians];
-    Mu = new double[ngaussians];
-    Sigma = new double[ngaussians];
-    sortIndex = new size_t[ngaussians];
-
-    //calculate mean and var for the population size distribution to use for initial guess
-    double var = gsl_stats_variance(rohLength->length, 1, rohLength->size);
-    double mu = gsl_stats_mean(rohLength->length, 1, rohLength->size);
-    for (int n = 0; n < ngaussians; n++)
-    {
-        W[n] = 1.0 / double(ngaussians);
-        Mu[n] = mu * double(n + 1) / double(ngaussians + 1);
-        Sigma[n] = var * (n + 1) / double(ngaussians);
-    }
-
-    GMM gmm(ngaussians, W, Mu, Sigma, maxIter, tolerance, true);
-
-    gmm.estimate(rohLength->length, rohLength->size);
-
-    for (int n = 0; n < ngaussians; n++)
-    {
-        W[n] = gmm.getMixCoefficient(n);
-        Mu[n] = gmm.getMean(n);
-        Sigma[n] = gmm.getVar(n);
-        sortIndex[n] = n;
-    }
-
-    gsl_sort_index(sortIndex, Mu, 1, ngaussians);
-
-    LOG.log("Gaussian class A ( mixture, mean, std ) = (", W[sortIndex[0]], false);
-    LOG.log(",", Mu[sortIndex[0]], false);
-    LOG.log(",", Sigma[sortIndex[0]], false);
-    LOG.log(" )");
-
-    LOG.log("Gaussian class B ( mixture, mean, std ) = (", W[sortIndex[1]], false);
-    LOG.log(",", Mu[sortIndex[1]], false);
-    LOG.log(",", Sigma[sortIndex[1]], false);
-    LOG.log(" )");
-
-    LOG.log("Gaussian class C ( mixture, mean, std ) = (", W[sortIndex[2]], false);
-    LOG.log(",", Mu[sortIndex[2]], false);
-    LOG.log(",", Sigma[sortIndex[2]], false);
-    LOG.log(" )");
-
-    //Find boundaries, there are ngaussians-1 of them, but for the moment this is defined to be 2
-    //This finds the 'first' root of the difference between two gaussians
-    BoundFinder SM(Mu[sortIndex[0]],
-                   Sigma[sortIndex[0]],
-                   W[sortIndex[0]],
-                   Mu[sortIndex[1]],
-                   Sigma[sortIndex[1]],
-                   W[sortIndex[1]],
-                   1000, 1e-4, false);
-    bounds.first = SM.findBoundary();
-
-    BoundFinder ML(Mu[sortIndex[1]],
-                   Sigma[sortIndex[1]],
-                   W[sortIndex[1]],
-                   Mu[sortIndex[2]],
-                   Sigma[sortIndex[2]],
-                   W[sortIndex[2]],
-                   1000, 1e-4, false);
-    bounds.second = ML.findBoundary();
-
-    delete [] W;
-    delete [] Mu;
-    delete [] Sigma;
-    delete [] sortIndex;
-    return bounds;
-}
-*/
 
 vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
 {

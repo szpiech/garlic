@@ -107,14 +107,14 @@ const string ARG_FREQ_FILE = "--freq-file";
 const string DEFAULT_FREQ_FILE = "none";
 const string HELP_FREQ_FILE = "A file specifying allele frequencies for\n\
 \teach population for all variants. File format:\n\
-\tSNP\tALLELE\t<pop1 ID> <pop2 ID> ...\n\
-\t<locus ID> <allele> <pop1 freq> <pop2 freq> ...\n\
+\tCHR SNP POS ALLELE <pop ID>\n\
+\t<chr> <locus ID> <allele> <freq>\n\
 \tBy default, this is calculated automatically\n\
 \tfrom the provided data.";
 
 const string ARG_FREQ_ONLY = "--freq-only";
 const bool DEFAULT_FREQ_ONLY = false;
-const string HELP_FREQ_ONLY = "If set, calculates a freq file from provided data and then exits.";
+const string HELP_FREQ_ONLY = "If set, calculates a freq file from provided data and then exits. Uses minimal RAM.";
 
 const string ARG_KDE_SUBSAMPLE = "--kde-subsample";
 const int DEFAULT_KDE_SUBSAMPLE = 10;
@@ -132,11 +132,11 @@ const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Forma
 
 const string ARG_M = "--M";
 const int DEFAULT_M = 7;
-const string HELP_M = "Advanced parameter.";
+const string HELP_M = "The expected number of meioses since a recent common ancestor.";
 
 const string ARG_MU = "--mu";
 const double DEFAULT_MU = 1e-9;
-const string HELP_MU = "Advanced parameter.";
+const string HELP_MU = "Mutation rate per bp per generation for --weighted calculation.";
 
 const string ARG_PHASED = "--phased";
 const bool DEFAULT_PHASED = false;
@@ -146,6 +146,10 @@ Uses extra RAM. Has no effect on computations without --weighted.";
 const string ARG_NCLUST = "--nclust";
 const int DEFAULT_NCLUST = 3;
 const string HELP_NCLUST = "Set number of clusters for GMM classification of ROH lengths.";
+
+const string ARG_CM = "--cm";
+const bool DEFAULT_CM = false;
+const string HELP_CM = "Construct ROH in genetic distance units. This requires a mapfile.";
 
 
 /*
@@ -203,6 +207,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_MU, DEFAULT_MU, "", HELP_MU);
 	params->addFlag(ARG_PHASED, DEFAULT_PHASED, "", HELP_PHASED);
 	params->addFlag(ARG_NCLUST, DEFAULT_NCLUST, "", HELP_NCLUST);
+	params->addFlag(ARG_CM, DEFAULT_CM, "", HELP_CM);
 	
 	if (!params->parseCommandLine(argc, argv))
 	{
@@ -212,6 +217,13 @@ param_t *getCLI(int argc, char *argv[])
 	return params;
 }
 
+bool checkCM(string mapfile, bool CM){
+	if(CM && mapfile.compare(DEFAULT_MAP) == 0){
+		LOG.err("ERROR: Must provide mapfile if you wish to construct ROH in genetic map units.");
+		return true;
+	}
+	else return false;
+}
 bool checkNCLUST(int nclust){
 	if(nclust <= 0){
 		LOG.err("ERROR: Must choose positive number for number of GMM clusters.");
