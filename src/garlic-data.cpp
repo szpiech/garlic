@@ -471,7 +471,7 @@ double interpolate(double x0, double y0, double x1, double y1, double query)
 
 
 vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
-    ifstream fin;
+    igzstream fin;
     cerr << "Opening " << mapfile << "...\n";
     fin.open(mapfile.c_str());
 
@@ -481,7 +481,6 @@ vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
         throw 0;
     }
 
-    int fileStart = fin.tellg();
     string line;
     vector<int> nlociByChr;
     int nloci = 0;
@@ -490,7 +489,7 @@ vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
     int current_cols = 0;
     stringstream ss;
     string currentChr;
-    string chr;
+    string chrstr;
     while (getline(fin, line))
     {
         nloci++;
@@ -503,43 +502,49 @@ vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
         }
 
         ss.str(line);
-        ss >> chr;
+        ss >> chrstr;
 
         if (nloci == 1) {
-            currentChr = chr;
+            currentChr = chrstr;
         }
 
-        if (currentChr.compare(chr) == 0) {
+        if (currentChr.compare(chrstr) == 0) {
             currentLoci++;
         }
         else {
             nlociByChr.push_back(currentLoci);
             currentLoci = 1;
-            currentChr = chr;
+            currentChr = chrstr;
         }
-
+        ss.clear();
     }
 
     nlociByChr.push_back(currentLoci);
 
+    fin.close();
     fin.clear();
-    fin.seekg(fileStart);
+    fin.open(mapfile.c_str());
 
     cerr << "Loading genetic map scaffold for " << nloci << " loci.\n";
 
     string locusName;
+    string chrname;
     vector< GenMapScaffold * > *scaffoldMapByChr = new vector< GenMapScaffold * >;
 
     for (unsigned int chr = 0; chr < nlociByChr.size(); chr++) {
         GenMapScaffold *scaffold = initGenMapScaffold(nlociByChr.at(chr));
         for (int locus = 0; locus < nlociByChr.at(chr); locus++)
         {
-            fin >> scaffold->chr;
-            scaffold->chr = checkChrName(scaffold->chr);
-            fin >> locusName;
-            fin >> scaffold->geneticPos[locus];
-            fin >> scaffold->physicalPos[locus];
+            getline(fin,line);
+            ss.str(line);
+            //fin >> scaffold->chr;
+            ss >> chrname;
+            scaffold->chr = checkChrName(chrname);
+            ss >> locusName;
+            ss >> scaffold->geneticPos[locus];
+            ss >> scaffold->physicalPos[locus];
             scaffold->ppos2index[scaffold->physicalPos[locus]] = locus;
+            ss.clear();
         }
         scaffold->centroStart = centro->centromereStart(scaffold->chr);
         scaffold->centroEnd = centro->centromereEnd(scaffold->chr);

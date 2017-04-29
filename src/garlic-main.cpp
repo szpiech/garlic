@@ -255,6 +255,7 @@ int main(int argc, char *argv[])
         newLoci = filterMonomorphicAndOOBSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, scaffoldMapByChr, USE_GL, PHASED);
         LOG.log("Monomorphic or out of bounds loci filtered:", numLoci - newLoci);
         int numInterpolated = interpolateGeneticmap(&mapDataByChr, scaffoldMapByChr);
+
         LOG.log("Number of genetic map locations interpolated:", numInterpolated);
         releaseGenMapScaffold(scaffoldMapByChr);
         if(!PHASED && WEIGHTED) genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
@@ -322,6 +323,7 @@ int main(int argc, char *argv[])
     cout << "Window size: " << winsize << endl;
 
     if(WEIGHTED){
+        cerr << "Calculating LD matrix.\n";
         ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads);
         if(!PHASED) releaseGenoFreq(genoFreqDataByChr);
         winDataByChr = calcwLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,

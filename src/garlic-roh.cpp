@@ -137,14 +137,13 @@ double norec(double M, double interval) {
 
 
 void calcwLOD(MapData *mapData,
-              HapData *hapData, FreqData *freqData,
+              HapData *hapData,
+              FreqData *freqData,
               GenoLikeData *GLData,
               LDData *LD,
               WinData *winData, centromere *centro,
               int winsize, double error, int MAX_GAP, bool USE_GL, double mu, int M, int numThreads)
 {
-
-
     unsigned int *NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
 
     WLOD_work_order_t *order;
@@ -185,131 +184,10 @@ void calcwLOD(MapData *mapData,
     }
 
     orders.clear();
-
     delete [] peer;
-
-
-    //double mu = 1e-9;
-    //int M = 3;
-    /*
-    short **data = hapData->data;
-    int nloci = hapData->nloci;
-    int nind = hapData->nind;
-    int *physicalPos = mapData->physicalPos;
-    double *geneticPos = mapData->geneticPos;
-    //string *locusName = mapData->locusName;
-    double *freq = freqData->freq;
-    int start = 0;
-    int stop = mapData->nloci;
-    double **win = winData->data;
-    //int nmiss = 0;
-
-    int cStart = centro->centromereStart(mapData->chr);
-    int cEnd = centro->centromereEnd(mapData->chr);
-
-    //Check if the last window would overshoot the last locus in the data
-    if (nloci - stop < winsize) stop = nloci - winsize + 1;
-
-    //For each individual
-    for (int ind = 0; ind < nind; ind++)
-    {
-        //starting locus of the window
-        for (int locus = start; locus < stop; locus++)
-        {
-            win[ind][locus] = 0;
-
-            //First window?  If so we have to calcualte the whole thing
-            int prevI = locus;
-            for (int i = locus; i < locus + winsize; i++)
-            {
-                if (physicalPos[i] - physicalPos[prevI] > MAX_GAP ||
-                        inGap(physicalPos[prevI], physicalPos[i], cStart, cEnd))
-                {
-                    win[ind][locus] = MISSING;
-                    //nmiss++;
-                    locus = prevI;
-                    break;
-                }
-                if (USE_GL) error = GLData->data[i][ind];
-                double physInterval = ( i > 0 ) ? (physicalPos[i] - physicalPos[i - 1]) : physicalPos[i];
-                double geneInterval = ( i > 0 ) ? (geneticPos[i] - geneticPos[i - 1]) : geneticPos[i];
-                //win[ind][locus] += lod(data[i][ind], freq[i], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) * ld(hapData, genoFreqData, i, locus, locus + winsize - 1, ind);
-                win[ind][locus] += lod(data[i][ind], freq[i], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) * (1.0 / LD->LD[locus][i-locus]);// ld(hapData, genoFreqData, i, locus, locus + winsize - 1, ind);
-                
-                prevI = i;
-            }
-        }
-    }
-    */
     return;
 }
 
-/*
-void parallelwLOD(void *order){
-    WLOD_work_order_t *p = (WLOD_work_order_t *)order;
-    //IndData *indData = p->indData;
-    //MapData *mapData = p->mapData;
-    //HapData *hapData = p->hapData;
-    //FreqData *freqData = p->freqData;
-    GenoLikeData *GLData = p->GLData;
-    LDData *LD = p->LD;
-    //WinData *winData = p->winData;
-    //centromere *centro = p->centro;
-    int winsize = p->winsize;
-    double error = p->error;
-    int MAX_GAP = p->MAX_GAP;
-    bool USE_GL = p->USE_GL;
-    double mu = p->mu;
-    int M = p->M;
-    int start = p->start;
-    int stop = p->stop;
-
-    short **data = p->hapData->data;
-    int nloci = p->hapData->nloci;
-    int nind = p->hapData->nind;
-    int *physicalPos = p->mapData->physicalPos;
-    double *geneticPos = p->mapData->geneticPos;
-    //string *locusName = mapData->locusName;
-    double *freq = p->freqData->freq;
-    double **win = p->winData->data;
-    //int nmiss = 0;
-
-    int cStart = p->cStart;
-    int cEnd = p->cEnd;
-
-    //Check if the last window would overshoot the last locus in the data
-    if (nloci - stop < winsize) stop = nloci - winsize + 1;
-
-    //For each individual
-    for (int ind = 0; ind < nind; ind++)
-    {
-        //starting locus of the window
-        for (int locus = start; locus < stop; locus++)
-        {
-            win[ind][locus] = 0;
-
-            //First window?  If so we have to calcualte the whole thing
-            int prevI = locus;
-            for (int i = locus; i < locus + winsize; i++)
-            {
-                if (physicalPos[i] - physicalPos[prevI] > MAX_GAP ||
-                        inGap(physicalPos[prevI], physicalPos[i], cStart, cEnd))
-                {
-                    win[ind][locus] = MISSING;
-                    //nmiss++;
-                    locus = prevI;
-                    break;
-                }
-                if (USE_GL) error = GLData->data[i][ind];
-                double physInterval = ( i > 0 ) ? (physicalPos[i] - physicalPos[i - 1]) : physicalPos[i];
-                double geneInterval = ( i > 0 ) ? (geneticPos[i] - geneticPos[i - 1]) : geneticPos[i];
-                win[ind][locus] += lod(data[i][ind], freq[i], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) * (1.0 / LD->LD[locus][i-locus]);
-                prevI = i;
-            }
-        }
-    }
-}
-*/
 void parallelwLOD(void *order){
     WLOD_work_order_t *p = (WLOD_work_order_t *)order;
     GenoLikeData *GLData = p->GLData;
@@ -340,17 +218,19 @@ void parallelwLOD(void *order){
     int size = stop-start+winsize+1;
     double *score;
 
-    //For each individual
-    for (int ind = 0; ind < nind; ind++)
-    {
+    //cerr << "XXX " << start << " " << stop << endl;
 
+  //  cerr << "wLOD " << p->mapData->chr << endl;
+
+    //For each individual
+    for (int ind = 0; ind < nind; ind++){
         score = new double[size];
-        for (int locus = start; locus < stop+winsize+1; locus++){
+        for (int locus = start; locus < ((stop+winsize+1 > nloci) ? nloci : stop+winsize+1); locus++){
             if (USE_GL) error = GLData->data[locus][ind];
             double physInterval = ( locus > 0 ) ? (physicalPos[locus] - physicalPos[locus - 1]) : physicalPos[locus];
             double geneInterval = ( locus > 0 ) ? (geneticPos[locus] - geneticPos[locus - 1]) : geneticPos[locus];
-
-            score[locus-start] = lod(data[locus][ind], freq[locus], error) * nomut(M, mu, physInterval) * norec(M, geneInterval) ;
+            //if(p->mapData->chr.compare("chr21") == 0 && locus > 0) cerr << nloci << " " << locus << " " <<  geneticPos[locus] << " - " << geneticPos[locus - 1] << " " << geneInterval << " " << physicalPos[locus] << endl;
+            score[locus-start] = lod(data[locus][ind], freq[locus], error) * nomut(M, mu, physInterval) * norec(M, geneInterval);
         }
 
         //starting locus of the window
@@ -370,15 +250,13 @@ void parallelwLOD(void *order){
                     locus = prevI;
                     break;
                 }
-                
-                
+
                 win[ind][locus] += score[i-start] * (1.0 / LD->LD[locus][i-locus]);
                 prevI = i;
             }
         }
 
         delete [] score;
-
     }
 }
 
@@ -426,7 +304,8 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
     {
         if(USE_GL){
             calcwLOD(mapDataByChr->at(chr),
-                     hapDataByChr->at(chr), freqDataByChr->at(chr),
+                     hapDataByChr->at(chr),
+                     freqDataByChr->at(chr),
                      GLDataByChr->at(chr),
                      ldDataByChr->at(chr),
                      winDataByChr->at(chr), centro,
@@ -434,7 +313,8 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
         }
         else{
             calcwLOD(mapDataByChr->at(chr),
-                     hapDataByChr->at(chr), freqDataByChr->at(chr),
+                     hapDataByChr->at(chr),
+                     freqDataByChr->at(chr),
                      NULL,
                      ldDataByChr->at(chr),
                      winDataByChr->at(chr), centro,

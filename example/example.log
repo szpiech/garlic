@@ -1,47 +1,43 @@
-garlic --tped example.tped.gz --tfam example.tfam --build hg18 --auto-winsize --out example
+../src/garlic --tped example.tped.gz --tfam example.tfam --build hg18 --winsize 60 --out example --error 0.001
 Output file basename: example
 TPED file: example.tped.gz
 TPED missing data code: 0
 TFAM file: example.tfam
+TGLS file: none
+Genotype likelihood format: GL
+Measure ROH in genetic distance units: FALSE
+Weighted LOD: FALSE
 Genome build: hg18
 User defined centromere file: none
 Calculate allele frequencies only: FALSE
 Calculate allele frequencies from data: TRUE
 Allele frequencies resampled: FALSE
 Explore window sizes: FALSE
-Automatic window size: TRUE
+Automatic window size: FALSE
+Automatic window step size: 10
+User defined window size: 60
 Choose LOD score cutoff automatically: TRUE
 Choose ROH class thresholds automatically: TRUE
 Threads: 1
 Genotyping error: 0.001
 Max gap: 200000
+Overlap fraction: 0.25
+mu: 1e-09
+M: 7
+# GMM clusters: 3
 # of rand individuals for KDE: 10
 Output raw LOD scores: FALSE
+Use r2 for phaed data: FALSE
 Total loci: 577489
 Population: 36
 Total diploid individuals: 45
 Monomorphic loci filtered: 26432
 Total loci used for analysis: 551057
-Individuals used for KDE: HGDP00613 HGDP00614 HGDP00619 HGDP00620 HGDP00626 HGDP00627 HGDP00629 HGDP00630 HGDP00632 HGDP00650
-Searching for acceptable window size, smoothness threshold: 0.5
-winsize	smoothness
-10
-	994.077
-20
-	242.691
-30
-	48.9109
-40
-	7.21583
-50
-	1.3138
-60
-	0.304581
+Individuals used for KDE: HGDP00613 HGDP00627 HGDP00630 HGDP00631 HGDP00635 HGDP00639 HGDP00640 HGDP00648 HGDP00650 HGDP00653 
 Wrote KDE results to example.60SNPs.kde
-Selected window size: 60
-Selected LOD score cutoff: 3.26027
-Gaussian class A ( mixture, mean, std ) = ( 0.724099, 356651, 1.95886e+10 )
-Gaussian class B ( mixture, mean, std ) = ( 0.24009, 805375, 1.30098e+11 )
-Gaussian class C ( mixture, mean, std ) = ( 0.0358108, 6.20575e+06, 4.41947e+13 )
-Selected ROH size boundaries ( A/B, B/C ) = ( 646698, 1948471 )
+Selected LOD score cutoff: 1.46152
+Gaussian class A ( mixture, mean, std ) = ( 0.684739, 288297, 1.46172e+10 )
+Gaussian class B ( mixture, mean, std ) = ( 0.263823, 713662, 1.13889e+11 )
+Gaussian class C ( mixture, mean, std ) = ( 0.051438, 5.97004e+06, 4.3198e+13 )
+Selected ROH size boundaries = ( 537082 1.76029e+06 )
 ROH calls: example.roh.bed
