@@ -7,10 +7,10 @@ CC = g++
 I_PATH = ../include
 
 #osx
-#L_PATH = ../lib/osx
-#G++FLAG = -fast -m64 -mmmx -msse -msse2
+L_PATH = ../lib/osx
+G++FLAG = -fast -m64 -mmmx -msse -msse2
 #For static linking
-#LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
+LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
 
 #linux
 #L_PATH = ../lib/linux
@@ -19,11 +19,11 @@ I_PATH = ../include
 #LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a -static -pthread
 
 #win
-I_PATH2 = -I ../include/win32
-L_PATH = ../lib/win32
-G++FLAG = -O3 -DPTW32_STATIC_LIB
+#I_PATH2 = -I ../include/win32
+#L_PATH = ../lib/win32
+#G++FLAG = -O3 -DPTW32_STATIC_LIB
 #For static linking
-LINK_OPTS = $(L_PATH)/libpthreadGC2.a $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/ann_figtree_version.lib $(L_PATH)/figtree.lib $(L_PATH)/libz.a -static-libgcc -static-libstdc++
+#LINK_OPTS = $(L_PATH)/libpthreadGC2.a $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/ann_figtree_version.lib $(L_PATH)/figtree.lib $(L_PATH)/libz.a -static-libgcc -static-libstdc++
 
 
 all : garlic
