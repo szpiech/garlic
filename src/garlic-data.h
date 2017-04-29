@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cctype>
 #include <map>
+#include <pthread.h>
 #include "gzstream.h"
 #include "gsl/gsl_rng.h"
 #include "gsl/gsl_randist.h"
