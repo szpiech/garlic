@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <fstream>
 #include <cmath>
-//#include <pthread.h>
+#include <pthread.h>
 #include "garlic-data.h"
 #include "garlic-roh.h"
 #include "garlic-kde.h"
@@ -24,6 +24,9 @@ string getCommandLineString(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+    #ifdef PTW32_STATIC_LIB
+        pthread_win32_process_attach_np();
+    #endif
 //++++++++++CLI handling++++++++++
     param_t *params = getCLI(argc, argv);
     if (params == NULL) return 0;
@@ -390,5 +393,10 @@ int main(int argc, char *argv[])
     //releaseMapData(mapDataByChr);
     //delete params;
     cout << "Finished.\n";
+    
+    #ifdef PTW32_STATIC_LIB
+        pthread_win32_process_detach_np();
+    #endif
+    
     return 0;
 }
