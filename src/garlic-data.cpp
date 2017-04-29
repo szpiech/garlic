@@ -2100,14 +2100,11 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
         nind = subsample;
     }
 
-    cout << "Individuals used for KDE: ";
     LOG.logn("Individuals used for KDE: ");
     for (int ind = 0; ind < nind; ind++) {
-        cout << indData->indID[randInd[ind]] << " ";
         LOG.logn(indData->indID[randInd[ind]]);
         LOG.logn(" ");
     }
-    cout << "\n";
     LOG.logn("\n");
 
     DoubleData *rawWinData;

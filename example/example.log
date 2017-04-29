@@ -33,11 +33,11 @@ Population: 36
 Total diploid individuals: 45
 Monomorphic loci filtered: 26432
 Total loci used for analysis: 551057
-Individuals used for KDE: HGDP00613 HGDP00627 HGDP00630 HGDP00631 HGDP00635 HGDP00639 HGDP00640 HGDP00648 HGDP00650 HGDP00653 
+Individuals used for KDE: HGDP00613 HGDP00614 HGDP00615 HGDP00616 HGDP00628 HGDP00632 HGDP00638 HGDP00645 HGDP00653 HGDP00701 
 Wrote KDE results to example.60SNPs.kde
-Selected LOD score cutoff: 1.46152
-Gaussian class A ( mixture, mean, std ) = ( 0.684739, 288297, 1.46172e+10 )
-Gaussian class B ( mixture, mean, std ) = ( 0.263823, 713662, 1.13889e+11 )
-Gaussian class C ( mixture, mean, std ) = ( 0.051438, 5.97004e+06, 4.3198e+13 )
-Selected ROH size boundaries = ( 537082 1.76029e+06 )
+Selected LOD score cutoff: 1.26224
+Gaussian class A ( mixture, mean, std ) = ( 0.684111, 287592, 1.44797e+10 )
+Gaussian class B ( mixture, mean, std ) = ( 0.265049, 711574, 1.13318e+11 )
+Gaussian class C ( mixture, mean, std ) = ( 0.05084, 5.95414e+06, 4.30965e+13 )
+Selected ROH size boundaries = ( 535045 1.7574e+06 )
 ROH calls: example.roh.bed
