@@ -16,10 +16,19 @@ IV.		Gaussian Mixture Modeling of ROH size distribution
 
 Input files:
 
-tped/tfam: http://zzz.bwh.harvard.edu/plink/data.shtml#tr
-map: http://zzz.bwh.harvard.edu/plink/data.shtml#map (negative positions will cause errors)
-tgls: <chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
+tped/tfam: 
+	http://zzz.bwh.harvard.edu/plink/data.shtml#tr
 
+map:
+	http://zzz.bwh.harvard.edu/plink/data.shtml#map (negative positions will cause errors)
+
+tgls:
+	<chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
+
+freq: 
+	CHR SNP POS ALLELE FREQ
+	<chr> <locus ID> <allele> <freq>
+	
 GARLIC depends on the following libraries.
 
 GNU GSL: http://www.gnu.org/software/gsl/ 
@@ -63,7 +72,7 @@ Garlic v1.1.0
 
 --freq-file <string>: A file specifying allele frequencies for
 	each population for all variants. File format:
-	CHR SNP POS ALLELE <pop ID>
+	CHR SNP POS ALLELE FREQ
 	<chr> <locus ID> <allele> <freq>
 	By default, this is calculated automatically
 	from the provided data.
