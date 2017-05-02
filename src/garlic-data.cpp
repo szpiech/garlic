@@ -1455,7 +1455,7 @@ vector< GenoLikeData * > *readTGLSData(string filename,
                     LOG.err("ERROR: This error should never get triggered. Something really bad happened.");
                 }
                 gl = ( gl > -10 ) ? gl : -10;
-                GLDataByChr->at(chr)->data[locus][ind] = 1 - pow(gl, 10);
+                GLDataByChr->at(chr)->data[locus][ind] = 1 - pow(10,gl);
 
             }
         }
