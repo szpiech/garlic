@@ -20,7 +20,9 @@ tped/tfam:
 	http://zzz.bwh.harvard.edu/plink/data.shtml#tr
 
 map:
-	http://zzz.bwh.harvard.edu/plink/data.shtml#map (negative positions will cause errors)
+	<chr> <snpid> <genetic pos> <physical pos>
+	http://zzz.bwh.harvard.edu/plink/data.shtml#map 
+	(negative positions will cause errors)
 
 tgls:
 	<chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
@@ -34,6 +36,8 @@ GARLIC depends on the following libraries.
 GNU GSL: http://www.gnu.org/software/gsl/ 
 FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
+
+02MAY2017 - Update to version 1.1.0a. Bug fixed that caused crashes when using TGLS file. 
 
 28APR2017 - Update to version 1.1.0.  Includes several updates, including a method for reweighting LOD scores by gaps between SNPs, the option to report ROH lengths in cM, and the ability to provide per-genotype error rates.
 
