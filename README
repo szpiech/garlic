@@ -14,6 +14,12 @@ II.		Kernel Density Estimation of LOD score distribution
 III.	Assembly of ROH
 IV.		Gaussian Mixture Modeling of ROH size distribution
 
+Input files:
+
+tped/tfam: http://zzz.bwh.harvard.edu/plink/data.shtml#tr
+map: http://zzz.bwh.harvard.edu/plink/data.shtml#map (negative positions will cause errors)
+tgls: <chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
+
 GARLIC depends on the following libraries.
 
 GNU GSL: http://www.gnu.org/software/gsl/ 
@@ -83,7 +89,7 @@ Set <= 0 to use all individuals (may use large amounts of RAM).
 	automatically with KDE.
 	Default: -9.999990e+05
 
---map <string>: Provide a scaffold genetic map, sites that aren't present within this file are interpolated.  Sites outside the bounds are filtered. This is 	 required for wLOD calcualtions and any runs for which you wish to report ROH in units of cM.
+--map <string>: Provide a scaffold genetic map, sites that aren't present within this file are interpolated.  Sites outside the bounds are filtered. This is required for wLOD calcualtions and any runs for which you wish to report ROH in units of cM. Formatted <chr> <snpid> <genetic pos> <physical pos>.
 	Default: none
 
 --max-gap <int>: A LOD score window is not calculated if the gap (in bps)
