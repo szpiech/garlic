@@ -2046,7 +2046,6 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
-                cout << "XX " << locus << endl;
                 if (winDataByChr->at(chr)->data[ind][locus] == MISSING) nmiss++;
                 else ncols++;
             }
@@ -2056,7 +2055,6 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
         nrows = winDataByChr->at(chr)->nind;
     }
     //rawWinData = initDoubleData(ncols * nrows - nmiss);
-    cerr << "Step: " << step << " loci: " << ncols << " ind: " << nrows << " " << ncols*nrows << endl;
     rawWinData = initDoubleData(ncols * nrows);
     
     int i = 0;
@@ -2069,6 +2067,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
                 if (winDataByChr->at(chr)->data[ind][locus] != MISSING)
                 {
                     rawWinData->data[i] = winDataByChr->at(chr)->data[ind][locus];
+                    cout << "XX " << rawWinData->data[i] << endl;
                     i++;
                 }
             }
