@@ -2034,7 +2034,7 @@ DoubleData *initDoubleData(int n)
     return data;
 }
 
-DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr)
+DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int step)
 {
     int nmiss = 0;
     int ncols = 0;
@@ -2044,23 +2044,25 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr)
     {
         for (int ind = 0; ind < winDataByChr->at(chr)->nind; ind++)
         {
-            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus++)
+            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
                 if (winDataByChr->at(chr)->data[ind][locus] == MISSING) nmiss++;
+                else ncols++;
             }
         }
 
-        ncols += winDataByChr->at(chr)->nloci;
+        //ncols += winDataByChr->at(chr)->nloci;
         nrows = winDataByChr->at(chr)->nind;
     }
-    rawWinData = initDoubleData(ncols * nrows - nmiss);
-
+    //rawWinData = initDoubleData(ncols * nrows - nmiss);
+    rawWinData = initDoubleData(ncols * nrows);
+    
     int i = 0;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         for (int ind = 0; ind < winDataByChr->at(chr)->nind; ind++)
         {
-            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus++)
+            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
                 if (winDataByChr->at(chr)->data[ind][locus] != MISSING)
                 {
@@ -2074,7 +2076,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr)
     return rawWinData;
 }
 
-DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample)
+DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample, int step)
 {
     const gsl_rng_type *T;
     gsl_rng *r;
@@ -2116,23 +2118,25 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
     {
         for (int ind = 0; ind < nind; ind++)
         {
-            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus++)
+            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
                 if (winDataByChr->at(chr)->data[randInd[ind]][locus] == MISSING) nmiss++;
+                else ncols++;
             }
         }
 
-        ncols += winDataByChr->at(chr)->nloci;
+        //ncols += winDataByChr->at(chr)->nloci;
         nrows = nind;
     }
-    rawWinData = initDoubleData(ncols * nrows - nmiss);
+    //rawWinData = initDoubleData(ncols * nrows - nmiss);
+    rawWinData = initDoubleData(ncols * nrows);
 
     int i = 0;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         for (int ind = 0; ind < nind; ind++)
         {
-            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus++)
+            for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
                 if (winDataByChr->at(chr)->data[randInd[ind]][locus] != MISSING)
                 {

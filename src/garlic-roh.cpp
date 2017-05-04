@@ -616,15 +616,15 @@ double selectLODCutoff(KDEResult *kdeResult)
 }
 
 
-double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile)
+double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step)
 {
     //Format the LOD window data into a single array per pop with no missing data
     //Prepped for KDE
     DoubleData *rawWinData;
     double LOD_CUTOFF;
 
-    if (KDE_SUBSAMPLE <= 0) rawWinData = convertWinData2DoubleData(winDataByChr);
-    else rawWinData = convertSubsetWinData2DoubleData(winDataByChr, indData, KDE_SUBSAMPLE);
+    if (KDE_SUBSAMPLE <= 0) rawWinData = convertWinData2DoubleData(winDataByChr, step);
+    else rawWinData = convertSubsetWinData2DoubleData(winDataByChr, indData, KDE_SUBSAMPLE, step);
 
     //Compute KDE of LOD score distribution
     cout << "Estimating distribution of raw LOD score windows:\n";
@@ -658,7 +658,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< GenoLikeData * > *GLDataByChr,
                      vector< GenoFreqData * > *genoFreqDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED)
+                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, bool THIN)
 {
     vector< WinData * > *winDataByChr;
     vector< HapData * > *hapDataByChrToCalc;
@@ -692,7 +692,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                                           centro, multiWinsizes[i],
                                           error, MAX_GAP, USE_GL);
         }
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (THIN ? multiWinsizes[i] : 1));
         releaseWinData(winDataByChr);
 
         KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
@@ -722,7 +722,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          int &winsize, int step, double error,
                          vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED)
+                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, bool THIN)
 {
     double AUTO_WINSIZE_THRESHOLD = 0.5;
     vector< WinData * > *winDataByChr = NULL;
@@ -766,7 +766,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                                           centro, winsizeQuery,
                                           error, MAX_GAP, USE_GL);
         }
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (THIN ? winsizeQuery : 1));
         releaseWinData(winDataByChr);
 
         KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
@@ -809,7 +809,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector<int> *multiWinsizes, int &winsize, double error,
                                  vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED)
+                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, bool THIN)
 {
     double AUTO_WINSIZE_THRESHOLD = 0.5;
     vector< WinData * > *winDataByChr = NULL;
@@ -850,7 +850,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                           centro, multiWinsizes->at(i),
                                           error, MAX_GAP, USE_GL);
         }
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr);
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (THIN ? multiWinsizes->at(i) : 1));
         releaseWinData(winDataByChr);
 
         KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);

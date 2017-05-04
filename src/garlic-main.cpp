@@ -171,6 +171,8 @@ int main(int argc, char *argv[])
     bool PHASED = params->getBoolFlag(ARG_PHASED);
     LOG.log("Use r2 for phaed data:", PHASED);
 
+    bool THIN = params->getBoolFlag(ARG_KDE_THINNING);
+    LOG.log("Use thinning for KDE estimation:", THIN);
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
 
@@ -285,7 +287,7 @@ int main(int argc, char *argv[])
         kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, &multiWinsizes, winsize, error,
                                           GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED);
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, THIN);
     }
     else if (WINSIZE_EXPLORE)
     {
@@ -299,7 +301,7 @@ int main(int argc, char *argv[])
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
                         GLDataByChr, genoFreqDataByChr, USE_GL,
-                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED);
+                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, THIN);
 
         return 0;
     }
@@ -310,7 +312,7 @@ int main(int argc, char *argv[])
                 kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, winsize, AUTO_WINSIZE_STEP, error,
                                           GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED);
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, THIN);
             }
             catch (...){
                 return 1;
@@ -354,7 +356,7 @@ int main(int argc, char *argv[])
     if (AUTO_CUTOFF){
         if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
         {
-            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize));
+            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (THIN ? winsize : 1));
         }
         else LOD_CUTOFF = selectLODCutoff(kdeResult);
 

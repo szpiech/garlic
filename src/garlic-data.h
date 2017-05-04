@@ -283,8 +283,8 @@ void writeWinData(vector< WinData * > *winDataByChr,
                   string outfile);
 
 DoubleData *initDoubleData(int n);
-DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr);
-DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample);
+DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int step);
+DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample, int step);
 void releaseDoubleData(DoubleData *data);
 void writeDoubleData(vector < DoubleData * > *rawWinDataByPop, vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);
 

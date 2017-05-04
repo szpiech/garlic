@@ -145,6 +145,9 @@ extern const string ARG_CM;
 extern const bool DEFAULT_CM;
 extern const string HELP_CM;
 
+extern const string ARG_KDE_THINNING;
+extern const bool DEFAULT_KDE_THINNING;
+extern const string HELP_KDE_THINNING;
 
 
 param_t *getCLI(int argc, char *argv[]);

@@ -153,6 +153,9 @@ const string ARG_CM = "--cm";
 const bool DEFAULT_CM = false;
 const string HELP_CM = "Construct ROH in genetic distance units. This requires a mapfile.";
 
+const string ARG_KDE_THINNING = "--kde-thinning";
+const bool DEFAULT_KDE_THINNING = false;
+const string HELP_KDE_THINNING = ".";
 
 /*
 const string ARG_FEATURE_TPED = "--tped-counting";
@@ -210,6 +213,8 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_PHASED, DEFAULT_PHASED, "", HELP_PHASED);
 	params->addFlag(ARG_NCLUST, DEFAULT_NCLUST, "", HELP_NCLUST);
 	params->addFlag(ARG_CM, DEFAULT_CM, "", HELP_CM);
+	params->addFlag(ARG_KDE_THINNING, DEFAULT_KDE_THINNING, "", HELP_KDE_THINNING);
+
 	
 	if (!params->parseCommandLine(argc, argv))
 	{
