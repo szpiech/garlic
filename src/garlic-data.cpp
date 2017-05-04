@@ -2067,7 +2067,6 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
                 if (winDataByChr->at(chr)->data[ind][locus] != MISSING)
                 {
                     rawWinData->data[i] = winDataByChr->at(chr)->data[ind][locus];
-                    cout << "XX " << rawWinData->data[i] << endl;
                     i++;
                 }
             }
