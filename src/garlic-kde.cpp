@@ -70,7 +70,7 @@ KDEResult *computeKDE(double *data, int size)
 
 
     cout << "\n\tMin LOD: " << min << "\n\tMax LOD: " << max
-         << "\n\th: " << h << "\n";
+         << "\n\th: " << h << "\n\tsize: " << size << endl;
 
     //Results
     double *kde_points = new double[M];
