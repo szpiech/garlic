@@ -2036,9 +2036,10 @@ DoubleData *initDoubleData(int n)
 
 DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int step)
 {
-    int nmiss = 0;
-    int ncols = 0;
-    int nrows = 0;
+    //int nmiss = 0;
+    //int ncols = 0;
+    //int nrows = 0;
+    int size = 0;
     DoubleData *rawWinData;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
@@ -2046,16 +2047,16 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
-                if (winDataByChr->at(chr)->data[ind][locus] == MISSING) nmiss++;
-                else ncols++;
+                //if (winDataByChr->at(chr)->data[ind][locus] == MISSING) nmiss++;
+                if (winDataByChr->at(chr)->data[ind][locus] != MISSING) size++;
             }
         }
 
         //ncols += winDataByChr->at(chr)->nloci;
-        nrows = winDataByChr->at(chr)->nind;
+        //nrows = winDataByChr->at(chr)->nind;
     }
     //rawWinData = initDoubleData(ncols * nrows - nmiss);
-    rawWinData = initDoubleData(ncols * nrows);
+    rawWinData = initDoubleData(size);
     
     int i = 0;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
@@ -2110,26 +2111,26 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
     LOG.logn("\n");
 
     DoubleData *rawWinData;
-    int nmiss = 0;
-    int ncols = 0;
-    int nrows = 0;
-
+    //int nmiss = 0;
+    //int ncols = 0;
+    //int nrows = 0;
+    int size = 0;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         for (int ind = 0; ind < nind; ind++)
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
-                if (winDataByChr->at(chr)->data[randInd[ind]][locus] == MISSING) nmiss++;
-                else ncols++;
+                //if (winDataByChr->at(chr)->data[randInd[ind]][locus] == MISSING) nmiss++;
+                if (winDataByChr->at(chr)->data[randInd[ind]][locus] != MISSING) size++;
             }
         }
 
         //ncols += winDataByChr->at(chr)->nloci;
-        nrows = nind;
+        //nrows = nind;
     }
     //rawWinData = initDoubleData(ncols * nrows - nmiss);
-    rawWinData = initDoubleData(ncols * nrows);
+    rawWinData = initDoubleData(size);
 
     int i = 0;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
