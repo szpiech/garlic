@@ -171,7 +171,7 @@ int main(int argc, char *argv[])
     bool PHASED = params->getBoolFlag(ARG_PHASED);
     LOG.log("Use r2 for phaed data:", PHASED);
 
-    bool THIN = params->getBoolFlag(ARG_KDE_THINNING);
+    bool THIN = !(params->getBoolFlag(ARG_KDE_THINNING));
     LOG.log("Use thinning for KDE estimation:", THIN);
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 

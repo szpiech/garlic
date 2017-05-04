@@ -119,7 +119,7 @@ const bool DEFAULT_FREQ_ONLY = false;
 const string HELP_FREQ_ONLY = "If set, calculates a freq file from provided data and then exits. Uses minimal RAM.";
 
 const string ARG_KDE_SUBSAMPLE = "--kde-subsample";
-const int DEFAULT_KDE_SUBSAMPLE = 10;
+const int DEFAULT_KDE_SUBSAMPLE = 20;
 const string HELP_KDE_SUBSAMPLE = "The number of individuals to randomly sample for LOD score KDE. If there\n\
 \tare fewer individuals in the population all are used.\n\
 Set <= 0 to use all individuals (may use large amounts of RAM).";
@@ -153,7 +153,7 @@ const string ARG_CM = "--cm";
 const bool DEFAULT_CM = false;
 const string HELP_CM = "Construct ROH in genetic distance units. This requires a mapfile.";
 
-const string ARG_KDE_THINNING = "--kde-thinning";
+const string ARG_KDE_THINNING = "--no-kde-thinning";
 const bool DEFAULT_KDE_THINNING = false;
 const string HELP_KDE_THINNING = ".";
 
