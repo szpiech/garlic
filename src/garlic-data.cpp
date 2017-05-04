@@ -2046,6 +2046,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
+                cout << "XX " << locus << endl;
                 if (winDataByChr->at(chr)->data[ind][locus] == MISSING) nmiss++;
                 else ncols++;
             }
