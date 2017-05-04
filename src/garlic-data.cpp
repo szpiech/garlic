@@ -2055,7 +2055,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
         nrows = winDataByChr->at(chr)->nind;
     }
     //rawWinData = initDoubleData(ncols * nrows - nmiss);
-    cerr << "loci: " << ncols << " ind: " << nrows << " " << ncols*nrows << endl;
+    cerr << "Step: " << step << " loci: " << ncols << " ind: " << nrows << " " << ncols*nrows << endl;
     rawWinData = initDoubleData(ncols * nrows);
     
     int i = 0;
