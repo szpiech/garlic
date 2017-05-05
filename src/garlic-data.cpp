@@ -139,9 +139,9 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         ss.clear();
     }
 
-    LOG.logn("Chromosome",checkChrName(chr));
-    LOG.logn(":",currChrLoci);
-    LOG.log(" sites.");
+    LOG.log("Chromosome",checkChrName(chr),false);
+    LOG.log(":",currChrLoci,false);
+    LOG.logn(" sites.");
 
     (*mapDataByChr)->push_back(initMapData(geneticPos,physicalPos,locusNames, allele, currChrLoci, checkChrName(chr)));
     geneticPos.clear();
