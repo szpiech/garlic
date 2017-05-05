@@ -376,7 +376,7 @@ int main(int argc, char *argv[])
     if (AUTO_BOUNDS){
         cout << "Fitting " << NCLUST << "-component GMM for size classification\n";
         boundSizes = selectSizeClasses(rohLength, NCLUST);
-        LOG.logv("Selected ROH size boundaries = (", bounds, false);
+        LOG.logv("Selected ROH size boundaries = (", boundSizes, false);
         LOG.log(" )");
     }
     else cout << "User provided size boundaries.\n";
