@@ -79,8 +79,8 @@ in VCFv4.2 documentation.";
 const string ARG_MAP = "--map";
 const string DEFAULT_MAP = "none";
 const string HELP_MAP = "Provide a scaffold genetic map, sites that aren't present within this file are interpolated.\n\
-Sites outside the bounds are filtered. This is required for wLOD calcualtions\n\
-and any runs for which you wish to report ROH in units of cM.";
+\tSites outside the bounds are filtered. This is required for wLOD calcualtions\n\
+\tand any runs for which you wish to report ROH in units of cM.";
 
 const string ARG_WEIGHTED = "--weighted";
 const bool DEFAULT_WEIGHTED = false;
@@ -144,7 +144,7 @@ const string HELP_MU = "Mutation rate per bp per generation for --weighted calcu
 const string ARG_PHASED = "--phased";
 const bool DEFAULT_PHASED = false;
 const string HELP_PHASED = "Set if data are phased and you want to calculate r2 instead of hr2 while --weighted is set.\n\
-Uses extra RAM. Has no effect on computations without --weighted.";
+\tUses extra RAM. Has no effect on computations without --weighted.";
 
 const string ARG_NCLUST = "--nclust";
 const int DEFAULT_NCLUST = 3;
