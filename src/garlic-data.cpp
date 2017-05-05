@@ -45,6 +45,8 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     short *data;
     bool *firstCopy;
 
+    numLoci = 0;
+
     while(getline(fin,line)){
         numLoci++;
         ncols = countFields(line) - 4;
