@@ -372,21 +372,18 @@ int main(int argc, char *argv[])
 
     releaseWinData(winDataByChr);
     delete centro;
-    vector<double> bounds;
-
-    if (AUTO_BOUNDS)
-    {
+    
+    if (AUTO_BOUNDS){
         cout << "Fitting " << NCLUST << "-component GMM for size classification\n";
-        bounds = selectSizeClasses(rohLength, NCLUST);
+        boundSizes = selectSizeClasses(rohLength, NCLUST);
         LOG.logv("Selected ROH size boundaries = (", bounds, false);
         LOG.log(" )");
     }
     else cout << "User provided size boundaries.\n";
-
     //Output ROH calls to file, one for each individual
-    //includes A/B/C size classifications
+    //includes A/B/C/etc size classifications
     cout << "Writing ROH tracts.\n";
-    writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, bounds, popName, VERSION, CM);
+    writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, boundSizes, popName, VERSION, CM);
 
     //releaseIndData(indData);
     //releaseROHLength(rohLength);
