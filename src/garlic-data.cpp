@@ -153,7 +153,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     hap.clear();
     fc.clear();
 
-    (*freqDataByChr)->push_back(initFreqData(freq, nloci));
+    (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
     freq.clear();
 
     return;
