@@ -144,7 +144,8 @@ int main(int argc, char *argv[])
     double OVERLAP_FRAC = params->getDoubleFlag(ARG_OVERLAP_FRAC);
     argerr = argerr || checkOverlapFrac(OVERLAP_FRAC);
     if (argerr) return -1;
-    LOG.log("Overlap fraction:", OVERLAP_FRAC);
+    if(OVERLAP_FRAC != 0) LOG.log("Overlap fraction:", OVERLAP_FRAC);
+    else LOG.logn("Overlap fraction: automatic");
 
     double mu = params->getDoubleFlag(ARG_MU);
     argerr = argerr || checkMU(mu);
@@ -283,8 +284,13 @@ int main(int argc, char *argv[])
 
     numLoci = newLoci;
 
-    if(AUTO_WINSIZE && WEIGHTED){
+    if((AUTO_WINSIZE && WEIGHTED) || OVERLAP_FRAC == 0){
         variantDensity = calcDensity(numLoci, mapDataByChr, centro);
+    }
+
+    if(OVERLAP_FRAC == 0){
+        OVERLAP_FRAC = selectOverlapFrac(variantDensity);
+        LOG.log("Selected overlap fraction:", OVERLAP_FRAC);
     }
 
     //chrCoordList->clear();

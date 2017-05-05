@@ -1,5 +1,10 @@
 #include "garlic-data.h"
 
+double selectOverlapFrac(double variantDensity){
+    return (6.375*log(variantDensity)+63.888);
+}
+
+
 void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                                    vector< HapData * > **hapDataByChr,
                                    vector< MapData * > **mapDataByChr,

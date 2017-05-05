@@ -14,7 +14,7 @@ TJ Pemberton, et al. (2012) AJHG, 91: 275–292.\n";
 const string ARG_OVERLAP_FRAC = "--overlap-frac";
 const double DEFAULT_OVERLAP_FRAC = 0.25;
 const string HELP_OVERLAP_FRAC = "The minimum fraction of overlapping windows above the LOD cutoff required\n\
-\tto begin constructing a run.";
+\tto begin constructing a run. If set to 0, GARLIC attempts to guess based on marker density.";
 
 const string ARG_OUTFILE = "--out";
 const string DEFAULT_OUTFILE = "outfile";
@@ -449,8 +449,8 @@ bool checkMaxGap(int MAX_GAP)
 }
 
 bool checkOverlapFrac(double OVERLAP_FRAC){
-	if(OVERLAP_FRAC <= 0 || OVERLAP_FRAC > 1){
-		LOG.err("ERROR: Overlap fraction must be > 0 and <= 1.");
+	if(OVERLAP_FRAC < 0 || OVERLAP_FRAC > 1){
+		LOG.err("ERROR: Overlap fraction must be >= 0 and <= 1.");
 		return true;
 	}
 	return false;

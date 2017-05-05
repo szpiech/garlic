@@ -128,6 +128,8 @@ struct R2_work_order_t
   LDData *LD;
 };
 
+double selectOverlapFrac(double variantDensity);
+
 FreqData *initFreqData(const vector<double> &freq, int nloci);
 
 HapData *initHapData(const vector< short * > &hap,
