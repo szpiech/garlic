@@ -187,7 +187,7 @@ int main(int argc, char *argv[])
 
     int numLoci, numInd, numCols;
     double variantDensity = -1;;
-    vector< int_pair_t > *chrCoordList = NULL;
+    //vector< int_pair_t > *chrCoordList = NULL;
     vector< MapData * > *mapDataByChr = NULL;
     string popName;
     IndData *indData = NULL;
@@ -202,8 +202,17 @@ int main(int argc, char *argv[])
     bool USE_GL = false;
     try
     {
-        chrCoordList = scanTPEDMapData(tpedfile, numLoci, numCols);
-        mapDataByChr = readTPEDMapData(tpedfile, numCols, chrCoordList, TPED_MISSING);
+
+        //chrCoordList = scanTPEDMapData(tpedfile, numLoci, numCols);
+        //mapDataByChr = readTPEDMapData(tpedfile, numCols, chrCoordList, TPED_MISSING);
+
+        hapDataByChr = new vector< HapData * >;
+        mapDataByChr = new vector< MapData * >;
+        freqDataByChr = new vector< FreqData * >;
+
+        loadTPEDData(tpedfile, numLoci, numInd,
+                     &hapDataByChr, &mapDataByChr, &freqDataByChr,
+                     TPED_MISSING, nresample, PHASED, AUTO_FREQ);
 
         LOG.log("Total loci:", numLoci);
 
@@ -213,7 +222,7 @@ int main(int argc, char *argv[])
         LOG.log("Population:", popName);
         LOG.log("Total diploid individuals:", numInd);
 
-        hapDataByChr = readTPEDHapData3(tpedfile, numLoci, numInd, TPED_MISSING, mapDataByChr, PHASED);
+        //hapDataByChr = readTPEDHapData3(tpedfile, numLoci, numInd, TPED_MISSING, mapDataByChr, PHASED);
 
         if (tglsfile.compare(DEFAULT_TGLS) != 0) {
             GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr, GL_TYPE);
@@ -234,8 +243,8 @@ int main(int argc, char *argv[])
 //++++++++++Allele frequencies++++++++++
     if (AUTO_FREQ)
     {
-        cout << "Calculating allele frequencies\n";
-        freqDataByChr = calcFreqData2(hapDataByChr, nresample);
+        //cout << "Calculating allele frequencies\n";
+        //freqDataByChr = calcFreqData2(hapDataByChr, nresample);
 
         string freqOutfile = outfile;
         freqOutfile += ".freq";
@@ -244,7 +253,7 @@ int main(int argc, char *argv[])
     else //(!AUTO_FREQ)
     {
         cout << "Loading user provided allele frequencies from " << freqfile << "\n";
-        try { freqDataByChr = readFreqData(freqfile, popName, chrCoordList, mapDataByChr); }
+        try { freqDataByChr = readFreqData(freqfile, popName, mapDataByChr); }
         catch (...) { return -1; }
     }
 
@@ -278,8 +287,8 @@ int main(int argc, char *argv[])
         variantDensity = calcDensity(numLoci, mapDataByChr, centro);
     }
 
-    chrCoordList->clear();
-    delete chrCoordList;
+    //chrCoordList->clear();
+    //delete chrCoordList;
 
 //++++++++++Pipeline begins++++++++++
     if (WINSIZE_EXPLORE && AUTO_WINSIZE && !WEIGHTED)

@@ -128,6 +128,24 @@ struct R2_work_order_t
   LDData *LD;
 };
 
+FreqData *initFreqData(const vector<double> &freq, int nloci);
+
+HapData *initHapData(const vector< short * > &hap,
+                     const vector< bool * > &fc,
+                     int nloci, int nind, bool PHASED);
+
+MapData *initMapData(const vector<double> &geneticPos,
+                     const vector<double> &physicalPos,
+                     const vector<string> &locusNames,
+                     const vector<char> &allele,
+                     int nloci, string chr);
+
+void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
+                  vector< HapData * > **hapDataByChr,
+                  vector< MapData * > **mapDataByChr,
+                  vector< FreqData * > **freqDataByChr,
+                  char TPED_MISSING, int nresample, bool PHASED, bool AUTO_FREQ);
+
 void freqOnly(string tpedfile, string outfile, int nresample, char TPED_MISSING);
 
 double calcDensity(int numLoci, vector< MapData * > *mapDataByChr, centromere *centro);
@@ -219,7 +237,6 @@ void writeFreqData(string freqOutfile, string popName,
                    IndData *indData);
 
 vector< FreqData * > *readFreqData(string freqfile, string popName,
-                                   vector< int_pair_t > *chrCoordList,
                                    vector< MapData * > *mapDataByChr);
 
 vector< int_pair_t > *scanTFAMData(string filename, int &numInd);

@@ -1,5 +1,216 @@
 #include "garlic-data.h"
 
+void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
+                                   vector< HapData * > **hapDataByChr,
+                                   vector< MapData * > **mapDataByChr,
+                                   vector< FreqData * > **freqDataByChr,
+                                   char TPED_MISSING, int nresample, bool PHASED, bool AUTO_FREQ){
+    const gsl_rng_type *T;
+    gsl_rng *r;
+    T = gsl_rng_default;
+    r = gsl_rng_alloc (T);
+    gsl_rng_set(r, time(NULL));
+
+    igzstream fin;
+    fin.open(filename.c_str());
+
+    if (fin.fail())
+    {
+        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+        LOG.err("ERROR: Failed to open", filename);
+        throw 0;
+    }
+
+    string line;
+    stringstream ss;
+    char oneAllele = TPED_MISSING;
+    int currChrLoci = 0;
+    int ncols = 0;
+    int nalleles = 0;
+    int total = 0;
+    string chr, locusName, prevChr;
+    string emptyChr = "_nochr";
+    double gpos, ppos;
+
+    vector<double> geneticPos, physicalPos;
+    vector<string> locusNames;
+    vector<char> allele;
+    
+    char alleleStr1, alleleStr2;
+
+    vector< double > freq;
+    vector< short * > hap;
+    vector< bool * > fc;
+    short *data;
+    bool *firstCopy;
+
+    while(getline(fin,line)){
+        numLoci++;
+        ncols = countFields(line) - 4;
+        numInd = ncols/2;
+
+        ss.str(line);
+
+        ss >> chr;
+
+        if (prevChr.compare(emptyChr) == 0 && numLoci == 1) prevChr = chr;
+
+        if (chr.compare(prevChr) != 0){
+            
+            LOG.logn("Chromosome",checkChrName(chr));
+            LOG.logn(":",currChrLoci);
+            LOG.log(" sites.");
+
+            (*mapDataByChr)->push_back(initMapData(geneticPos,physicalPos,locusNames, allele, currChrLoci, checkChrName(chr)));
+            geneticPos.clear();
+            physicalPos.clear();
+            allele.clear();
+            locusNames.clear();
+
+            (*hapDataByChr)->push_back(initHapData(hap, fc, currChrLoci, numInd, PHASED));
+            hap.clear();
+            fc.clear();
+
+            (*freqDataByChr)->push_back(initFreqData(freq, nloci));
+            freq.clear();
+
+            prevChr = chr;
+            currChrLoci = 0;
+        }
+
+        currChrLoci++;
+        
+        ss >> locusName;
+        locusNames.push_back(locusName);
+        ss >> gpos;
+        geneticPos.push_back(gpos);
+        ss >> ppos;
+        physicalPos.push_back(ppos);
+
+        //alleles remain in ss
+        nalleles = 0;
+        total = 0;
+        data = new short[numInd];
+        if(PHASED) firstCopy = new bool[numInd];
+
+        for(int i = 0; i < numInd; i++){
+            data[i] = 0;
+            ss >> alleleStr1 >> alleleStr2;
+            if(oneAllele == TPED_MISSING && alleleStr1 != TPED_MISSING) oneAllele = alleleStr1;
+            if(oneAllele == TPED_MISSING && alleleStr2 != TPED_MISSING) oneAllele = alleleStr2;
+            if (alleleStr1 == TPED_MISSING) data[i] += -9;
+            else if (alleleStr1 == oneAllele){
+                data[i] += 1;
+                nalleles++;
+                total++;
+            }
+            else total++;
+            if (alleleStr2 == TPED_MISSING) data[i] += -9;
+            else if (alleleStr2 == oneAllele){
+                data[i] += 1;
+                nalleles++;
+                total++;
+            }
+            else total++;
+            if (data[i] < 0) data[i] = -9;
+            if(PHASED) firstCopy[i] = (alleleStr1 == oneAllele);
+        }
+
+        allele.push_back(oneAllele);
+        hap.push_back(data);
+        data = NULL;
+        if(PHASED){
+            fc.push_back(firstCopy);
+            firstCopy = NULL;
+        }
+
+        if(AUTO_FREQ){
+            double freqtmp = double(nalleles)/double(total);
+            if (nresample > 0){
+                int count = 0;
+                for (int i = 0; i < nresample; i++){
+                    if (gsl_rng_uniform(r) <= freqtmp) count++;
+                }
+                freqtmp = count / nresample;
+            }
+            freq.push_back(freqtmp);
+        }
+
+        ss.clear();
+    }
+
+    LOG.logn("Chromosome",checkChrName(chr));
+    LOG.logn(":",currChrLoci);
+    LOG.log(" sites.");
+
+    (*mapDataByChr)->push_back(initMapData(geneticPos,physicalPos,locusNames, allele, currChrLoci, checkChrName(chr)));
+    geneticPos.clear();
+    physicalPos.clear();
+    allele.clear();
+    locusNames.clear();
+
+    (*hapDataByChr)->push_back(initHapData(hap, fc, currChrLoci, numInd, PHASED));
+    hap.clear();
+    fc.clear();
+
+    (*freqDataByChr)->push_back(initFreqData(freq, nloci));
+    freq.clear();
+
+    return;
+}
+
+FreqData *initFreqData(const vector<double> &freq, int nloci){
+    FreqData *freqData = new FreqData;
+    freqData->freq = new double[nloci];
+
+    for(int i = 0; i < nloci; i++){
+        freqData->freq[i] = freq[i];
+    }
+
+    return freqData;
+}
+
+HapData *initHapData(const vector< short * > &hap,
+                     const vector< bool * > &fc,
+                     int nloci, int nind, bool PHASED){
+    HapData *hapData = new HapData;
+    hapData->nind = nind;
+    hapData->nloci = nloci;
+    hapData->data = new short*[nloci];
+    if(PHASED) hapData->firstCopy = new bool*[nloci];
+
+    for(int i = 0; i < nloci; i++){
+        hapData->data[i] = hap[i];
+        if(PHASED) hapData->firstCopy[i] = fc[i];
+    }
+
+    return hapData;
+}
+
+MapData *initMapData(const vector<double> &geneticPos,
+                     const vector<double> &physicalPos,
+                     const vector<string> &locusNames,
+                     const vector<char> &allele,
+                     int nloci, string chr){
+
+    MapData *mapData = new MapData;
+    mapData->physicalPos = new double[nloci];
+    mapData->geneticPos = new double[nloci];
+    mapData->locusName = new string[nloci];
+    mapData->allele = new char[nloci];
+    mapData->nloci = nloci;
+    mapData->chr = chr;
+
+    for(int i = 0; i < nloci; i++){
+        mapData->physicalPos[i] = physicalPos[i];
+        mapData->geneticPos[i] = geneticPos[i];
+        mapData->locusName[i] = locusNames[i];
+        mapData->allele[i] = allele[i];
+    }
+
+    return mapData;
+}
+
 void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING){
     
     const gsl_rng_type *T;
@@ -1055,7 +1266,6 @@ void writeFreqData(string freqOutfile, string popName,
 }
 
 vector< FreqData * > *readFreqData(string freqfile, string popName,
-                                   vector< int_pair_t > *chrCoordList,
                                    vector< MapData * > *mapDataByChr)
 {
     //scan file for format integrity
