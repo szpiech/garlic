@@ -12,7 +12,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     gsl_rng_set(r, time(NULL));
 
     igzstream fin;
-    fin.open(filename.c_str());
+    fin.open(tpedfile.c_str());
 
     if (fin.fail())
     {
@@ -57,11 +57,11 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
 
         if (chr.compare(prevChr) != 0){
             
-            LOG.logn("Chromosome",checkChrName(chr));
-            LOG.logn(":",currChrLoci);
-            LOG.log(" sites.");
+            LOG.log("Chromosome",checkChrName(chr),false);
+            LOG.log(":",currChrLoci,false);
+            LOG.logn(" sites.");
 
-            (*mapDataByChr)->push_back(initMapData(geneticPos,physicalPos,locusNames, allele, currChrLoci, checkChrName(chr)));
+            (*mapDataByChr)->push_back(initMapData(geneticPos, physicalPos,locusNames, allele, currChrLoci, checkChrName(chr)));
             geneticPos.clear();
             physicalPos.clear();
             allele.clear();
@@ -71,7 +71,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
             hap.clear();
             fc.clear();
 
-            (*freqDataByChr)->push_back(initFreqData(freq, nloci));
+            (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
             freq.clear();
 
             prevChr = chr;
