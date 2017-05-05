@@ -16,8 +16,8 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
 
     if (fin.fail())
     {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        LOG.err("ERROR: Failed to open", filename);
+        cerr << "ERROR: Failed to open " << tpedfile << " for reading.\n";
+        LOG.err("ERROR: Failed to open", tpedfile);
         throw 0;
     }
 
