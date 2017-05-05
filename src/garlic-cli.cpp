@@ -1,7 +1,7 @@
 #include "garlic-cli.h"
 #include <iostream>
 
-const string VERSION = "1.1.0a";
+const string VERSION = "1.1.1";
 
 const string PREAMBLE = "\ngarlic v" + VERSION + " -- a program to call runs of homozygosity in genetic data.\n\
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.\n\
@@ -39,7 +39,8 @@ const string HELP_WINSIZE_MULTI = "Provide several window sizes (in # of SNPs) t
 
 const string ARG_AUTO_WINSIZE = "--auto-winsize";
 const bool DEFAULT_AUTO_WINSIZE = false;
-const string HELP_AUTO_WINSIZE = "Initiates an ad hoc method for automatically selecting the # of SNPs in which to\n\
+const string HELP_AUTO_WINSIZE = "If --weighted is set, guesses the best window size based on SNP density, otherwise\n\
+\tinitiates an ad hoc method for automatically selecting the # of SNPs in which to\n\
 \tcalculate LOD scores. Starts at the value specified by --winsize and increases\n\
 \tby <step size> SNPs until finished.";
 
@@ -97,9 +98,9 @@ const string HELP_LOD_CUTOFF = "For LOD based ROH calling, specify a single LOD 
 
 const string ARG_BOUND_SIZE = "--size-bounds";
 const double DEFAULT_BOUND_SIZE = -1;
-const string HELP_BOUND_SIZE = "Specify the short/medium and medium/long\n\
+const string HELP_BOUND_SIZE = "Specify the size class boundaries\n\
 \tROH boundaries.  By default, this is chosen automatically\n\
-\twith a 3-component GMM.  Must provide 2 numbers.";
+\twith a 3-component GMM.  Must provide numbers in increasing order.";
 
 const string ARG_TPED_MISSING = "--tped-missing";
 const char DEFAULT_TPED_MISSING = '0';
@@ -134,7 +135,7 @@ const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Forma
 
 const string ARG_M = "--M";
 const int DEFAULT_M = 7;
-const string HELP_M = "The expected number of meioses since a recent common ancestor.";
+const string HELP_M = "The expected number of meioses since a recent common ancestor for --weighted calcualtion.";
 
 const string ARG_MU = "--mu";
 const double DEFAULT_MU = 1e-9;
@@ -155,7 +156,8 @@ const string HELP_CM = "Construct ROH in genetic distance units. This requires a
 
 const string ARG_KDE_THINNING = "--no-kde-thinning";
 const bool DEFAULT_KDE_THINNING = false;
-const string HELP_KDE_THINNING = ".";
+const string HELP_KDE_THINNING = "Set this flag to send all LOD score data to KDE function. This may dramatically\n\
+\tincrease runtime.";
 
 /*
 const string ARG_FEATURE_TPED = "--tped-counting";

@@ -16,26 +16,39 @@ IV.		Gaussian Mixture Modeling of ROH size distribution
 
 Input files:
 
-tped/tfam: 
+tped/tfam (required): 
 	http://zzz.bwh.harvard.edu/plink/data.shtml#tr
 
-map:
+map (required when --weighted or --cm are set):
 	<chr> <snpid> <genetic pos> <physical pos>
 	http://zzz.bwh.harvard.edu/plink/data.shtml#map 
 	(negative positions will cause errors)
 
-tgls:
+tgls (optional):
 	<chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
 
-freq: 
+freq (optional, output during computation, can be generated without running whole pipeling with --freq-only): 
 	CHR SNP POS ALLELE FREQ
 	<chr> <locus ID> <allele> <freq>
 	
-GARLIC depends on the following libraries.
+centromere file (required if no --build is set):
+	<chr> <centromere start> <centromere end>
+
+GARLIC depends on the following libraries, which are included in this repository.
 
 GNU GSL: http://www.gnu.org/software/gsl/ 
 FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
+
+---CHANGES---
+
+05MAY2017 - Update to version 1.1.1. For some large datasets (e.g. WGS), KDE can take extremely long to complete, even when
+only a subset of individuals are considered.  Here we introduce some changes to speed this calculation up.  Instead of passing
+all LOD score windows to the KDE function, we now pass only non-overlapping windows.  This reduces the number of points sent
+to the function by a factor of WINSIZE. If you wish to retain all LOD scores, you may set the --no-kde-thinning flag. We also change the default number of random individuals for KDE (--kde-subsample) to 20, which still may be set to 0 to use all individuals. 
+	We also introduce a lower bound on the size of ROH reported.  Now, an ROH will not be called unless it contains at least
+WINSIZE*OVERLAP_FRAC number of SNPs. For example, for a WINSIZE (--winsize) of 100 and an OVERLAP_FRAC (--overlap-frac) of 0.25
+the smallest possible ROH that will be reported will be 25 SNPs long.
 
 02MAY2017 - Update to version 1.1.0a. Bug fixed that caused crashes when using TGLS file. 
 
@@ -46,7 +59,7 @@ This update also introduces a new command-line flag --overlap-frac which is desi
 least OVERLAP_FRAC (default 0.25) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
 
-Garlic v1.1.0
+Garlic v1.1.1
 ----------Command Line Arguments----------
 
 --M <int>: The expected number of meioses since a recent common ancestor.
@@ -114,6 +127,9 @@ Set <= 0 to use all individuals (may use large amounts of RAM).
 
 --nclust <int>: Set number of clusters for GMM classification of ROH lengths.
 	Default: 3
+
+--no-kde-thinning <bool>: Set this flag to send all LOD score data to KDE function. This may dramatically increase runtime.
+	Default: false
 
 --out <string>: The base name for all output files.
 	Default: outfile
