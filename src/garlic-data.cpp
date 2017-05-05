@@ -60,11 +60,11 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
 
         if (chr.compare(prevChr) != 0){
             
-            LOG.log("Chromosome",checkChrName(chr),false);
+            LOG.log("Chromosome",checkChrName(prevChr),false);
             LOG.log(":",currChrLoci,false);
             LOG.log(" sites.");
 
-            (*mapDataByChr)->push_back(initMapData(geneticPos, physicalPos,locusNames, allele, currChrLoci, checkChrName(chr)));
+            (*mapDataByChr)->push_back(initMapData(geneticPos, physicalPos,locusNames, allele, currChrLoci, checkChrName(prevChr)));
             geneticPos.clear();
             physicalPos.clear();
             allele.clear();
