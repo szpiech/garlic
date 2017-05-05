@@ -95,7 +95,8 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         total = 0;
         data = new short[numInd];
         if(PHASED) firstCopy = new bool[numInd];
-
+        oneAllele = TPED_MISSING;
+        
         for(int i = 0; i < numInd; i++){
             data[i] = 0;
             ss >> alleleStr1 >> alleleStr2;
