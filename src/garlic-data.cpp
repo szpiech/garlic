@@ -96,7 +96,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         data = new short[numInd];
         if(PHASED) firstCopy = new bool[numInd];
         oneAllele = TPED_MISSING;
-        
+
         for(int i = 0; i < numInd; i++){
             data[i] = 0;
             ss >> alleleStr1 >> alleleStr2;
@@ -166,6 +166,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
 FreqData *initFreqData(const vector<double> &freq, int nloci){
     FreqData *freqData = new FreqData;
     freqData->freq = new double[nloci];
+    freqData->nloci = nloci;
 
     for(int i = 0; i < nloci; i++){
         freqData->freq[i] = freq[i];
@@ -182,6 +183,7 @@ HapData *initHapData(const vector< short * > &hap,
     hapData->nloci = nloci;
     hapData->data = new short*[nloci];
     if(PHASED) hapData->firstCopy = new bool*[nloci];
+    else hapData->firstCopy = NULL;
 
     for(int i = 0; i < nloci; i++){
         hapData->data[i] = hap[i];
