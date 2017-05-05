@@ -431,7 +431,9 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
             }
 
             double winStart = -1;
+            int winStartIndex = -1;
             double winStop = -1;
+            int winStopIndex = -1;
             for (int w = 0; w < mapData->nloci; w++)
             {
                 //No window being extended and the snp is in ROH
@@ -440,46 +442,59 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                 {
                     //winStart = mapData->physicalPos[w];
                     winStart = pos[w];
+                    winStartIndex = w;
                 }
-                //Window being extended and snp is not in ROH
-                //end the window at w-1
-                //reset winStart to -1
                 else if (inWin[w] >= OVERLAP_THRESHOLD && (mapData->physicalPos[w] - mapData->physicalPos[w - 1] > MAX_GAP ||
                          inGap(mapData->physicalPos[w - 1], mapData->physicalPos[w], cStart, cEnd)) ) {
                     //winStop = mapData->physicalPos[w - 1];
                     winStop = pos[w - 1];
-                    double size = winStop - winStart + (!CM ? 1 : 0);
-                    lengths.push_back(size);
-                    rohData->chr.push_back(chr);
-                    rohData->start.push_back(winStart);
-                    rohData->stop.push_back(winStop);
+                    winStopIndex = w - 1;
+                    if(winStopIndex - winStartIndex + 1 >= OVERLAP_THRESHOLD){
+                        double size = winStop - winStart + (!CM ? 1 : 0);
+                        lengths.push_back(size);
+                        rohData->chr.push_back(chr);
+                        rohData->start.push_back(winStart);
+                        rohData->stop.push_back(winStop);
+                    }
                     winStop = -1;
-                    //winStart = mapData->physicalPos[w];
+                    winStopIndex = -1;
                     winStart = pos[w];
+                    winStartIndex = w;
                 }
                 else if (winStart > 0 && ! (inWin[w] >= OVERLAP_THRESHOLD) )
                 {
                     //winStop = mapData->physicalPos[w - 1];
                     winStop = pos[w - 1];
-                    double size = winStop - winStart + (!CM ? 1 : 0);
-                    lengths.push_back(size);
-                    rohData->chr.push_back(chr);
-                    rohData->start.push_back(winStart);
-                    rohData->stop.push_back(winStop);
+                    winStopIndex = w - 1;
+                    if(winStopIndex - winStartIndex + 1 >= OVERLAP_THRESHOLD){
+                        double size = winStop - winStart + (!CM ? 1 : 0);
+                        lengths.push_back(size);
+                        rohData->chr.push_back(chr);
+                        rohData->start.push_back(winStart);
+                        rohData->stop.push_back(winStop);
+                    }
                     winStart = -1;
+                    winStartIndex = -1;
                     winStop = -1;
+                    winStopIndex = -1;
+
                 }
                 else if (winStart > 0 && w + 1 >= mapData->nloci)
                 {
                     //winStop = mapData->physicalPos[w];
                     winStop = pos[w];
-                    double size = winStop - winStart + (!CM ? 1 : 0);
-                    lengths.push_back(size);
-                    rohData->chr.push_back(chr);
-                    rohData->start.push_back(winStart);
-                    rohData->stop.push_back(winStop);
+                    winStopIndex = w;
+                    if(winStopIndex - winStartIndex + 1 >= OVERLAP_THRESHOLD){
+                        double size = winStop - winStart + (!CM ? 1 : 0);
+                        lengths.push_back(size);
+                        rohData->chr.push_back(chr);
+                        rohData->start.push_back(winStart);
+                        rohData->stop.push_back(winStop);
+                    }
                     winStart = -1;
+                    winStartIndex = -1;
                     winStop = -1;
+                    winStopIndex = -1;
                 }
             }
 
