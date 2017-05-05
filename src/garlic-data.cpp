@@ -28,8 +28,9 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     int ncols = 0;
     int nalleles = 0;
     int total = 0;
-    string chr, locusName, prevChr;
+    string chr, locusName;
     string emptyChr = "_nochr";
+    string prevChr = emptyChr;
     double gpos, ppos;
 
     vector<double> geneticPos, physicalPos;
@@ -59,7 +60,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
             
             LOG.log("Chromosome",checkChrName(chr),false);
             LOG.log(":",currChrLoci,false);
-            LOG.logn(" sites.");
+            LOG.log(" sites.");
 
             (*mapDataByChr)->push_back(initMapData(geneticPos, physicalPos,locusNames, allele, currChrLoci, checkChrName(chr)));
             geneticPos.clear();
@@ -141,7 +142,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
 
     LOG.log("Chromosome",checkChrName(chr),false);
     LOG.log(":",currChrLoci,false);
-    LOG.logn(" sites.");
+    LOG.log(" sites.");
 
     (*mapDataByChr)->push_back(initMapData(geneticPos,physicalPos,locusNames, allele, currChrLoci, checkChrName(chr)));
     geneticPos.clear();
