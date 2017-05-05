@@ -379,7 +379,10 @@ int main(int argc, char *argv[])
         LOG.logv("Selected ROH size boundaries = (", boundSizes, false);
         LOG.log(" )");
     }
-    else cout << "User provided size boundaries.\n";
+    else{
+        LOG.logv("User provided ROH size boundaries = (", boundSizes, false);
+        LOG.log(" )");
+    }
     //Output ROH calls to file, one for each individual
     //includes A/B/C/etc size classifications
     cout << "Writing ROH tracts.\n";
