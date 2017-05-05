@@ -110,7 +110,7 @@ const string ARG_FREQ_FILE = "--freq-file";
 const string DEFAULT_FREQ_FILE = "none";
 const string HELP_FREQ_FILE = "A file specifying allele frequencies for\n\
 \teach population for all variants. File format:\n\
-\tCHR SNP POS ALLELE <pop ID>\n\
+\tCHR SNP POS ALLELE FREQ\n\
 \t<chr> <locus ID> <allele> <freq>\n\
 \tBy default, this is calculated automatically\n\
 \tfrom the provided data.";
