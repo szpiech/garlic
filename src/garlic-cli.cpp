@@ -358,8 +358,8 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS){
 				return true;
 			}
 			if(i > 0){
-				if (boundSizes[i] >= boundSizes[i-1]){
-					LOG.err("ERROR: User provided size boundaries must be in increasing order.");
+				if (boundSizes[i] <= boundSizes[i-1]){
+					LOG.err("ERROR: User provided size boundaries must be in strictly increasing order.");
 					return true;
 				}
 			}
