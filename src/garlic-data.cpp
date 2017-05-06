@@ -1617,7 +1617,7 @@ vector< GenoLikeData * > *readTGLSData(string filename,
             LOG.err("ERROR: line", nloci, false);
             LOG.err(" of", filename, false);
             LOG.err(" has", nhaps, false);
-            LOG.err(" columns, but expected", expectedInd);
+            LOG.err(" columns, but expected", expectedInd + 4);
             throw 0;
         }
     }
@@ -2466,7 +2466,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
     delete [] randInd;
 
     *(subsetHapDataByChr) = newHapDataByChr;
-    *(subsetGLDataByChr) = newGLDataByChr;
+    if(USE_GL) *(subsetGLDataByChr) = newGLDataByChr;
     *(subsetIndData) = newIndData;
     gsl_rng_free(r);
     return;

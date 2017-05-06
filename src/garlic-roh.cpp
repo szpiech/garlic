@@ -928,7 +928,7 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
         Sigma[n] = var * (n + 1) / double(ngaussians);
     }
 
-    GMM gmm(ngaussians, W, Mu, Sigma, maxIter, tolerance, true);
+    GMM gmm(ngaussians, W, Mu, Sigma, maxIter, tolerance, false);
 
     gmm.estimate(rohLength->length, rohLength->size);
 

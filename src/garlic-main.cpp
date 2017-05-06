@@ -369,7 +369,8 @@ int main(int argc, char *argv[])
     }
 
     if (AUTO_CUTOFF){
-        if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
+        //if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
+        if(kdeResult == NULL)
         {
             LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (THIN ? winsize : 1));
         }
