@@ -47,8 +47,8 @@ only a subset of individuals are considered.  Here we introduce some changes to 
 all LOD score windows to the KDE function, we now pass only non-overlapping windows.  This reduces the number of points sent
 to the function by a factor of WINSIZE. If you wish to retain all LOD scores, you may set the --no-kde-thinning flag. We also change the default number of random individuals for KDE (--kde-subsample) to 20, which still may be set to 0 to use all individuals. 
 	We also introduce a lower bound on the size of ROH reported.  Now, an ROH will not be called unless it contains at least
-WINSIZE*OVERLAP_FRAC number of SNPs. For example, for a WINSIZE (--winsize) of 100 and an OVERLAP_FRAC (--overlap-frac) of 0.25
-the smallest possible ROH that will be reported will be 25 SNPs long.
+WINSIZE*OVERLAP_FRAC number of SNPs. For example, for a WINSIZE (--winsize) of 100 and an OVERLAP_FRAC (--overlap-frac) of 0.25 the smallest possible ROH that will be reported will be 25 SNPs long.
+	Finally, if --overlap-frac is set to 0, GARLIC will attempt to guess a good choice.
 
 02MAY2017 - Update to version 1.1.0a. Bug fixed that caused crashes when using TGLS file. 
 
