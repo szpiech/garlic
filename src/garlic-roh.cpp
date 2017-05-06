@@ -642,7 +642,7 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
     else rawWinData = convertSubsetWinData2DoubleData(winDataByChr, indData, KDE_SUBSAMPLE, step);
 
     //Compute KDE of LOD score distribution
-    cout << "Estimating distribution of raw LOD score windows:\n";
+    cerr << "Estimating distribution of raw LOD score windows:\n";
     KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
     releaseDoubleData(rawWinData);
 
