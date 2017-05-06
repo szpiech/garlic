@@ -292,7 +292,7 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
             for (int i = 0; i < nresample; i++){
                 if (gsl_rng_uniform(r) <= freq) count++;
             }
-            freq = count / nresample;
+            freq = double(count) / double(nresample);
         }
         ss.clear();
         
