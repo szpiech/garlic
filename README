@@ -41,7 +41,7 @@ FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
 ---CHANGES---
-
+06MAY2017 - v1.1.1a fixes a bug introduced with 1.1.1 that caused crashed when --resample is used.
 05MAY2017 - Update to version 1.1.1. For some large datasets (e.g. WGS), KDE can take extremely long to complete, even when
 only a subset of individuals are considered.  Here we introduce some changes to speed this calculation up.  Instead of passing
 all LOD score windows to the KDE function, we now pass only non-overlapping windows.  This reduces the number of points sent
