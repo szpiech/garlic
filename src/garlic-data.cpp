@@ -9,7 +9,8 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                                    vector< HapData * > **hapDataByChr,
                                    vector< MapData * > **mapDataByChr,
                                    vector< FreqData * > **freqDataByChr,
-                                   char TPED_MISSING, int nresample, bool PHASED, bool AUTO_FREQ){
+                                   char TPED_MISSING, int nresample, bool PHASED, bool AUTO_FREQ)
+{
     const gsl_rng_type *T;
     gsl_rng *r;
     T = gsl_rng_default;
@@ -2446,7 +2447,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
     {
         int nloci = hapDataByChr->at(chr)->nloci;
         hapData = initHapData(nind, nloci, PHASED);
-        GLData = initGLData(nind, nloci);
+        if (USE_GL) GLData = initGLData(nind, nloci);
 
         for (int locus = 0; locus < nloci; locus++)
         {

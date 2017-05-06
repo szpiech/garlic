@@ -37,6 +37,8 @@ double calculateWiggle(KDEResult *kdeResult, int winsize) {
 
 KDEResult *computeKDE(double *data, int size)
 {
+    LOG.log("KDE with ", size, false);
+    LOG.logn(" points.");
 
     //Used, as in the R function density, to extend the range of the fixed width points
     //used to compute the KDE
