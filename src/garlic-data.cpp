@@ -140,7 +140,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                 for (int i = 0; i < nresample; i++){
                     if (gsl_rng_uniform(r) <= freqtmp) count++;
                 }
-                freqtmp = count / nresample;
+                freqtmp = double(count) / double(nresample);
             }
             freq.push_back(freqtmp);
         }
