@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
     centromere *centro;
     centro = new centromere(BUILD, centromereFile, DEFAULT_CENTROMERE_FILE);
 
-    int numLoci, numInd, numCols;
+    int numLoci, numInd;
     double variantDensity = -1;;
     //vector< int_pair_t > *chrCoordList = NULL;
     vector< MapData * > *mapDataByChr = NULL;
@@ -404,12 +404,12 @@ int main(int argc, char *argv[])
     cout << "Writing ROH tracts.\n";
     writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, boundSizes, popName, VERSION, CM);
 
-    //releaseIndData(indData);
-    //releaseROHLength(rohLength);
-    //releaseROHData(rohDataByInd);
-    //releaseKDEResult(kdeResult);
-    //releaseMapData(mapDataByChr);
-    //delete params;
+    releaseIndData(indData);
+    releaseROHLength(rohLength);
+    releaseROHData(rohDataByInd);
+    if(kdeResult != NULL) releaseKDEResult(kdeResult);
+    releaseMapData(mapDataByChr);
+    delete params;
     cout << "Finished.\n";
     
     #ifdef PTW32_STATIC_LIB

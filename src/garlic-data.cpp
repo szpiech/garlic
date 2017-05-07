@@ -166,6 +166,8 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
     freq.clear();
 
+    gsl_rng_free(r);
+
     return;
 }
 
@@ -374,6 +376,7 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
 
     orders.clear();
 
+    delete [] NUM_PER_THREAD;
     delete [] peer;
 
     return LD;
@@ -415,6 +418,7 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
 
     orders.clear();
 
+    delete [] NUM_PER_THREAD;
     delete [] peer;
 
     return LD;

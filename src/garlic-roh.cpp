@@ -184,6 +184,7 @@ void calcwLOD(MapData *mapData,
     }
 
     orders.clear();
+    delete [] NUM_PER_THREAD;
     delete [] peer;
     return;
 }
