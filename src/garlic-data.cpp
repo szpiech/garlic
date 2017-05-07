@@ -4,7 +4,6 @@ double selectOverlapFrac(double variantDensity){
     return (6.375*log(variantDensity)+63.888);
 }
 
-
 void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                                    vector< HapData * > **hapDataByChr,
                                    vector< MapData * > **mapDataByChr,
@@ -80,8 +79,10 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
             hap.clear();
             fc.clear();
 
-            (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
-            freq.clear();
+            if(AUTO_FREQ){
+                (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
+                freq.clear();
+            }
 
             prevChr = chr;
             currChrLoci = 0;
@@ -163,9 +164,11 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     hap.clear();
     fc.clear();
 
-    (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
-    freq.clear();
-
+    if(AUTO_FREQ){
+        (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
+        freq.clear();
+    }
+    
     gsl_rng_free(r);
 
     return;
@@ -183,9 +186,7 @@ FreqData *initFreqData(const vector<double> &freq, int nloci){
     return freqData;
 }
 
-HapData *initHapData(const vector< short * > &hap,
-                     const vector< bool * > &fc,
-                     int nloci, int nind, bool PHASED){
+HapData *initHapData(const vector< short * > &hap, const vector< bool * > &fc, int nloci, int nind, bool PHASED){
     HapData *hapData = new HapData;
     hapData->nind = nind;
     hapData->nloci = nloci;
@@ -201,11 +202,7 @@ HapData *initHapData(const vector< short * > &hap,
     return hapData;
 }
 
-MapData *initMapData(const vector<double> &geneticPos,
-                     const vector<double> &physicalPos,
-                     const vector<string> &locusNames,
-                     const vector<char> &allele,
-                     int nloci, string chr){
+MapData *initMapData(const vector<double> &geneticPos, const vector<double> &physicalPos, const vector<string> &locusNames, const vector<char> &allele, int nloci, string chr){
 
     MapData *mapData = new MapData;
     mapData->physicalPos = new double[nloci];
@@ -330,7 +327,8 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
                                int winsize,
                                int MAX_GAP,
                                bool PHASED,
-                               int numThreads){
+                               int numThreads)
+{
     vector< LDData * > *ldDataByChr = new vector< LDData * >;
     for(unsigned int chr = 0; chr < hapDataByChr->size(); chr++){
 
@@ -1476,175 +1474,23 @@ void releaseIndData(IndData *data)
     return;
 }
 
-vector< HapData * > *readTPEDHapData3(string filename,
-                                      int expectedLoci,
-                                      int expectedInd,
-                                      char TPED_MISSING,
-                                      vector< MapData * > *mapDataByChr, bool PHASED)
-{
-    int expectedHaps = 2 * expectedInd;
-    igzstream fin;
-    //cerr << "Checking " << filename << "...\n";
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        LOG.err("ERROR: Failed to open", filename);
-        throw 0;
-    }
-
-    cout << "Loading genotypes from " << filename << "\n";
-
-    //int fileStart = fin.tellg();
-    string line;
-    int nhaps = -1;
-    int nloci = 0;
-    while (getline(fin, line))
-    {
-        nloci++;
-        nhaps = countFields(line);
-        //cout << "nhaps: " << current_nhaps << endl;
-        if (nhaps != expectedHaps + 4)
-        {
-            cerr << "ERROR: line " << nloci << " of " << filename << " has " << nhaps
-                 << " columns, but expected " << expectedHaps + 4 << ".\n";
-            LOG.err("ERROR: line", nloci, false);
-            LOG.err(" of", filename, false);
-            LOG.err(" has", nhaps, false);
-            LOG.err(" columns, but expected", expectedHaps);
-            throw 0;
-        }
-    }
-    if (nloci != expectedLoci)
-    {
-        cerr << "ERROR: " << filename << " has " << nloci
-             << " loci, but expected " << expectedLoci << ".\n";
-        LOG.err("ERROR:", filename, false);
-        LOG.err(" has", nloci, false);
-        LOG.err(" loci, but expected", expectedLoci);
-        throw 0;
-    }
-
-    fin.close();
-    fin.clear();
-
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        LOG.err("ERROR: Failed to open", filename);
-        throw 0;
-    }
-
-    vector< HapData * > *hapDataByChr = new vector< HapData * >;
-    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
-    {
-        HapData *data = initHapData(expectedInd, mapDataByChr->at(chr)->nloci, PHASED);
-        hapDataByChr->push_back(data);
-    }
-
-    //string alleleStr1, alleleStr2;
-    char alleleStr1, alleleStr2;
-    string junk;//, oneAllele;
-    char oneAllele;
-    short allele;
-    //For each chromosome
-    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
-    {
-        //For each locus on the chromosome
-        for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
-        {
-            oneAllele = mapDataByChr->at(chr)->allele[locus];
-            fin >> junk;
-            fin >> junk;
-            fin >> junk;
-            fin >> junk;
-            for (int ind = 0; ind < expectedInd; ind++)
-            {
-                fin >> alleleStr1 >> alleleStr2;
-                allele = 0;
-
-                if (alleleStr1 == TPED_MISSING) allele += -9;
-                else if (alleleStr1 == oneAllele) allele += 1;
-
-                if (alleleStr2 == TPED_MISSING) allele += -9;
-                else if (alleleStr2 == oneAllele) allele += 1;
-
-                if (allele < 0) hapDataByChr->at(chr)->data[locus][ind] = -9;
-                else hapDataByChr->at(chr)->data[locus][ind] = allele;
-
-                if(PHASED) hapDataByChr->at(chr)->firstCopy[locus][ind] = (alleleStr1 == oneAllele);
-            }
-        }
-    }
-
-    fin.close();
-    return hapDataByChr;
-}
-
 vector< GenoLikeData * > *readTGLSData(string filename,
                                        int expectedLoci,
                                        int expectedInd,
                                        vector< MapData * > *mapDataByChr,
                                        string GL_TYPE)
 {
-    //int expectedHaps = 2 * expectedInd;
     igzstream fin;
-    //cerr << "Checking " << filename << "...\n";
-    /*
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        //cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        LOG.err("ERROR: Failed to open", filename);
-        throw 0;
-    }
-
-    
-    //int fileStart = fin.tellg();
-    string line;
-    int nhaps = -1;
-    int nloci = 0;
-    while (getline(fin, line))
-    {
-        nloci++;
-        nhaps = countFields(line);
-        //cout << "nhaps: " << current_nhaps << endl;
-        if (nhaps != expectedInd + 4)
-        {
-            LOG.err("ERROR: line", nloci, false);
-            LOG.err(" of", filename, false);
-            LOG.err(" has", nhaps, false);
-            LOG.err(" columns, but expected", expectedInd + 4);
-            throw 0;
-        }
-    }
-    if (nloci != expectedLoci)
-    {
-        LOG.err("ERROR:", filename, false);
-        LOG.err(" has", nloci, false);
-        LOG.err(" loci, but expected", expectedLoci);
-        throw 0;
-    }
-
-    fin.close();
-    fin.clear();
-    */
     cerr << "Loading genotype likelihoods from " << filename << "\n";
     fin.open(filename.c_str());
 
-    if (fin.fail())
-    {
-        //cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        LOG.err("ERROR: Failed to open", filename);
+    if (fin.fail()){
+         LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
 
     vector< GenoLikeData * > *GLDataByChr = new vector< GenoLikeData * >;
-    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
-    {
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++){
         GenoLikeData *data = initGLData(expectedInd, mapDataByChr->at(chr)->nloci);
         GLDataByChr->push_back(data);
     }
@@ -1653,17 +1499,14 @@ vector< GenoLikeData * > *readTGLSData(string filename,
     string junk;//, oneAllele;
     double gl;
     //For each chromosome
-    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
-    {
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++){
         //For each locus on the chromosome
-        for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
-        {
+        for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++){
             fin >> junk;
             fin >> junk;
             fin >> junk;
             fin >> junk;
-            for (int ind = 0; ind < expectedInd; ind++)
-            {
+            for (int ind = 0; ind < expectedInd; ind++){
                 fin >> gl;
                 if (GL_TYPE.compare("GL") == 0) {
                 }
@@ -1976,76 +1819,6 @@ int countFields(const string &str)
     return numFields;
 }
 
-vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci, int &numCols)
-{
-    igzstream fin;
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        LOG.err("ERROR: Failed to open", filename);
-        throw 0;
-    }
-
-    cout << "Reading " << filename << "\n";
-
-    vector< int_pair_t > *chrStartStop = new vector< int_pair_t >;
-    stringstream ss;
-    string line;
-    int nloci = 0;
-    int index;
-    int prevCols = -1;
-    int currCols = -1;
-    string emptyChr = "_nochr";
-    string prevChr = emptyChr;
-    string currChr = prevChr;
-    int_pair_t currChrCoordinates;
-    while (getline(fin, line))
-    {
-        nloci++;
-        index = nloci - 1;
-        currCols = countFields(line);
-        if (currCols != prevCols && nloci > 1)
-        {
-            cerr << "ERROR: line " << nloci << " of " << filename
-                 << " has different number of columns from earlier lines.\n";
-            LOG.err("ERROR: line", nloci, false);
-            LOG.err(" has different number of columns from earlier lines in ", filename);
-            throw 0;
-        }
-
-        ss.str(line);
-        ss >> currChr;
-        if (prevChr.compare(emptyChr) == 0 && index == 0)
-        {
-            prevChr = currChr;
-            currChrCoordinates.first = index;
-        }
-
-        if (currChr.compare(prevChr) != 0)
-        {
-            currChrCoordinates.second = index - 1;
-            chrStartStop->push_back(currChrCoordinates);
-            currChrCoordinates.first = index;
-            prevChr = currChr;
-        }
-        ss.clear();
-        prevCols = currCols;
-    }
-
-    fin.close();
-
-    numLoci = nloci;
-
-    currChrCoordinates.second = index;
-    chrStartStop->push_back(currChrCoordinates);
-
-    numCols = currCols;
-
-    return chrStartStop;
-}
-
 string lc(string str) {
     char c[2] = {' ', '\0'};
     for (unsigned int i = 0; i < str.size(); i++) {
@@ -2061,67 +1834,6 @@ string checkChrName(string chr) {
     }
     return chr;
 }
-
-vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_pair_t > *chrCoordList, char TPED_MISSING)
-{
-    vector< MapData * > *mapDataByChr = new vector< MapData * >;
-
-    igzstream fin;
-    fin.open(filename.c_str());
-
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
-        LOG.err("ERROR: Failed to open", filename);
-        throw 0;
-    }
-
-    cout << "Loading map from " << filename << "\n";
-
-    string junk;
-    char oneAllele;
-    int count = 4;
-    //For each chromosome
-    for (unsigned int i = 0; i < chrCoordList->size(); i++)
-    {
-        int size = chrCoordList->at(i).second - chrCoordList->at(i).first + 1;
-        MapData *data = initMapData(size);
-        for (int locus = 0; locus < size; locus++)
-        {
-            fin >> data->chr;
-            fin >> data->locusName[locus];
-            fin >> data->geneticPos[locus];
-            fin >> data->physicalPos[locus];
-
-            //assign 'one' allele coding
-            oneAllele = TPED_MISSING;
-            count = 4;
-            while (oneAllele == TPED_MISSING && count < numCols) {
-                fin >> junk;
-                if (junk[0] != TPED_MISSING) oneAllele = junk.c_str()[0];
-                count++;
-            }
-
-            if (count >= numCols && oneAllele == TPED_MISSING) {
-                cerr << "ERROR: locus " << data->locusName[locus] << " appears to have no data.\n";
-                LOG.err("ERROR: Locus appears to have no data:", data->locusName[locus]);
-                throw 0;
-            }
-
-            data->allele[locus] = oneAllele;
-            if (count < numCols) getline(fin, junk);
-        }
-        data->chr = lc(data->chr);
-        data->chr = checkChrName(data->chr);
-        cout << size << " loci on chromosome " << data->chr << endl;
-        mapDataByChr->push_back(data);
-    }
-
-    fin.close();
-
-    return mapDataByChr;
-}
-
 
 void scanIndData3(string filename, int &numInd, string &popName) {
     igzstream fin;

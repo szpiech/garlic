@@ -1,29 +1,5 @@
 #include "garlic-kde.h"
 
-//pthread_mutex_t kde_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-KDEWinsizeReport *initKDEWinsizeReport()
-{
-    KDEWinsizeReport *winsizeReport = new KDEWinsizeReport;
-    winsizeReport->kdeResultByWinsize = new map<int, KDEResult * >;
-    winsizeReport->win2mse = new map<int, double>;
-    return winsizeReport;
-}
-
-void releaseKDEWinsizeReport(KDEWinsizeReport *winsizeReport)
-{
-    map<int, KDEResult * >::iterator it;
-    for (it = winsizeReport->kdeResultByWinsize->begin(); it != winsizeReport->kdeResultByWinsize->end(); it++)
-    {
-        releaseKDEResult(it->second);
-    }
-    winsizeReport->win2mse->clear();
-    winsizeReport->kdeResultByWinsize->clear();
-    delete winsizeReport->kdeResultByWinsize;
-    delete winsizeReport->win2mse;
-    delete winsizeReport;
-}
-
 double calculateWiggle(KDEResult *kdeResult, int winsize) {
     double tot = 0;
     for (int i = 0; i < kdeResult->size; i++) kdeResult->y[i] = kdeResult->y[i] * 100;
@@ -71,8 +47,8 @@ KDEResult *computeKDE(double *data, int size)
     min -= CUT * h;
 
 
-//    cout << "\n\tMin LOD: " << min << "\n\tMax LOD: " << max
-//         << "\n\th: " << h << "\n\tsize: " << size << endl;
+    //cout << "\n\tMin LOD: " << min << "\n\tMax LOD: " << max
+    //<< "\n\th: " << h << "\n\tsize: " << size << endl;
 
     //Results
     double *kde_points = new double[M];

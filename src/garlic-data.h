@@ -224,9 +224,6 @@ FreqData *filterMonomorphicAndOOBSites(FreqData *freqData, MapData *mapData, Gen
 string getPost(int num);
 bool goodDouble(string str);
 
-//map<string, double> readLODCutoff(string lodCutoffFile, map<string, int> &pop2size);
-//void readBoundSizes(string boundSizeFile, map<string, double> &pop2SMbound, map<string, double> &pop2MLbound, map<string, int> &pop2size);
-
 FreqData *initFreqData(int nloci);
 void releaseFreqData(FreqData *data);
 void releaseFreqData(vector< FreqData * > *freqDataByChr);
@@ -240,25 +237,6 @@ void writeFreqData(string freqOutfile, string popName,
 
 vector< FreqData * > *readFreqData(string freqfile, string popName,
                                    vector< MapData * > *mapDataByChr);
-
-vector< int_pair_t > *scanTFAMData(string filename, int &numInd);
-vector< IndData * > *readTFAMData(string filename, vector< int_pair_t > *indCoordList);
-
-vector< int_pair_t > *scanTPEDMapData(string filename, int &numLoci, int &numCols);
-vector< MapData * > *readTPEDMapData(string filename, int numCols, vector< int_pair_t > *chrCoordList, char TPED_MISSING);
-/*
-void writeTPEDDataByPop(string outfile,
-                        vector< vector< HapData * >* > *hapDataByPopByChr,
-                        vector< MapData * > *mapDataByChr,
-                        map<string, int> &pop2index);
-void writeTFAMDataByPop(string outfile, vector< IndData * > *indDataByPop, map<string, int> &pop2index);
-*/
-
-vector< HapData * > *readTPEDHapData3(string filename,
-                                      int expectedLoci,
-                                      int expectedInd,
-                                      char TPED_MISSING,
-                                      vector< MapData * > *mapDataByChr, bool PHASED);
 
 vector< GenoLikeData * > *readTGLSData(string filename,
                                        int expectedLoci,

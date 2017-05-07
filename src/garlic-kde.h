@@ -23,21 +23,6 @@ struct KDEResult
     double *y;
 };
 
-struct KDEWork
-{
-	vector < DoubleData * > *rawWinDataByPop;
-	int id;
-	int numThreads;
-	vector< IndData * > *indDataByPop;
-	vector < KDEResult * > *kdeResultByPop;
-};
-
-struct KDEWinsizeReport
-{
-  map<int, KDEResult * > *kdeResultByWinsize;
-  map<int, double> *win2mse;
-};
-
 double nrd0(double *data, const int n);
 
 KDEResult *computeKDE(double *data, int size);
@@ -53,9 +38,10 @@ double slope(double x0, double y0, double x1, double y1);
 
 double calculateWiggle(KDEResult *kdeResult, int size = 20);
 
+/*
 KDEWinsizeReport *initKDEWinsizeReport();
 void releaseKDEWinsizeReport(KDEWinsizeReport *winsizeReport);
-
+*/
 //extern pthread_mutex_t io_mutex;
 
 #endif

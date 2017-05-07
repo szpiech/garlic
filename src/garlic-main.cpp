@@ -203,13 +203,9 @@ int main(int argc, char *argv[])
     bool USE_GL = false;
     try
     {
-
-        //chrCoordList = scanTPEDMapData(tpedfile, numLoci, numCols);
-        //mapDataByChr = readTPEDMapData(tpedfile, numCols, chrCoordList, TPED_MISSING);
-
         hapDataByChr = new vector< HapData * >;
         mapDataByChr = new vector< MapData * >;
-        freqDataByChr = new vector< FreqData * >;
+        if(AUTO_FREQ) freqDataByChr = new vector< FreqData * >;
 
         loadTPEDData(tpedfile, numLoci, numInd,
                      &hapDataByChr, &mapDataByChr, &freqDataByChr,
@@ -222,8 +218,6 @@ int main(int argc, char *argv[])
 
         LOG.log("Population:", popName);
         LOG.log("Total diploid individuals:", numInd);
-
-        //hapDataByChr = readTPEDHapData3(tpedfile, numLoci, numInd, TPED_MISSING, mapDataByChr, PHASED);
 
         if (tglsfile.compare(DEFAULT_TGLS) != 0) {
             GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr, GL_TYPE);
