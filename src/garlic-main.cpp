@@ -199,7 +199,7 @@ int main(int argc, char *argv[])
     vector< GenoLikeData * > *GLDataByChr = NULL;
     vector< GenMapScaffold *> *scaffoldMapByChr = NULL;
     vector< LDData * > *ldDataByChr = NULL;
-    KDEResult *kdeResult;
+    KDEResult *kdeResult = NULL;
     bool USE_GL = false;
     try
     {

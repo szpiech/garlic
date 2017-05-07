@@ -1588,6 +1588,7 @@ vector< GenoLikeData * > *readTGLSData(string filename,
     //int expectedHaps = 2 * expectedInd;
     igzstream fin;
     //cerr << "Checking " << filename << "...\n";
+    /*
     fin.open(filename.c_str());
 
     if (fin.fail())
@@ -1597,8 +1598,7 @@ vector< GenoLikeData * > *readTGLSData(string filename,
         throw 0;
     }
 
-    cout << "Loading genotype likelihoods from " << filename << "\n";
-
+    
     //int fileStart = fin.tellg();
     string line;
     int nhaps = -1;
@@ -1610,10 +1610,6 @@ vector< GenoLikeData * > *readTGLSData(string filename,
         //cout << "nhaps: " << current_nhaps << endl;
         if (nhaps != expectedInd + 4)
         {
-            /*
-            cerr << "ERROR: line " << nloci << " of " << filename << " has " << nhaps
-                 << " columns, but expected " << expectedInd + 4 << ".\n";
-            */
             LOG.err("ERROR: line", nloci, false);
             LOG.err(" of", filename, false);
             LOG.err(" has", nhaps, false);
@@ -1623,10 +1619,6 @@ vector< GenoLikeData * > *readTGLSData(string filename,
     }
     if (nloci != expectedLoci)
     {
-        /*
-        cerr << "ERROR: " << filename << " has " << nloci
-             << " loci, but expected " << expectedLoci << ".\n";
-        */
         LOG.err("ERROR:", filename, false);
         LOG.err(" has", nloci, false);
         LOG.err(" loci, but expected", expectedLoci);
@@ -1635,7 +1627,8 @@ vector< GenoLikeData * > *readTGLSData(string filename,
 
     fin.close();
     fin.clear();
-
+    */
+    cerr << "Loading genotype likelihoods from " << filename << "\n";
     fin.open(filename.c_str());
 
     if (fin.fail())
