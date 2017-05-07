@@ -145,7 +145,7 @@ int main(int argc, char *argv[])
     argerr = argerr || checkOverlapFrac(OVERLAP_FRAC);
     if (argerr) return -1;
     if(OVERLAP_FRAC != 0) LOG.log("Overlap fraction:", OVERLAP_FRAC);
-    else LOG.logn("Overlap fraction: automatic");
+    else LOG.log("Overlap fraction: automatic");
 
     double mu = params->getDoubleFlag(ARG_MU);
     argerr = argerr || checkMU(mu);
