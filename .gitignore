@@ -9,3 +9,4 @@
 *.toc
 *.aux
 *.blg
+.DS_Store
