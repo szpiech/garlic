@@ -174,6 +174,17 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     return;
 }
 
+GenoLikeData *initGLData(const vector< double * > &GL, int nloci, int nind){
+    GenoLikeData *glData = new GenoLikeData;
+    glData->nind = nind;
+    glData->nloci = nloci;
+    glData->data = new double*[nloci];
+  
+    for(int i = 0; i < nloci; i++) glData->data[i] = GL[i];
+
+    return glData;
+}
+
 FreqData *initFreqData(const vector<double> &freq, int nloci){
     FreqData *freqData = new FreqData;
     freqData->freq = new double[nloci];
@@ -1500,26 +1511,33 @@ vector< GenoLikeData * > *readTGLSData(string filename,
          LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
-
+    
+    string junk;
+    double gl;
+    string line;
+    stringstream ss;
     vector< GenoLikeData * > *GLDataByChr = new vector< GenoLikeData * >;
+
+    //For each chromosome
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++){
         GenoLikeData *data = initGLData(expectedInd, mapDataByChr->at(chr)->nloci);
         GLDataByChr->push_back(data);
-    }
-
-    //string alleleStr1, alleleStr2;
-    string junk;//, oneAllele;
-    double gl;
-    //For each chromosome
-    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++){
         //For each locus on the chromosome
         for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++){
-            fin >> junk;
-            fin >> junk;
-            fin >> junk;
-            fin >> junk;
+            getline(fin,line);
+            int num = countFields(line); 
+            if(num != expectedInd+4){
+                LOG.err("ERROR: Incorrect number of columns in tgls file: ", num, false);
+                LOG.err(". Expected: ", expectedInd);
+                throw 0;
+            }
+            ss.str(line);
+            ss >> junk;
+            ss >> junk;
+            ss >> junk;
+            ss >> junk;
             for (int ind = 0; ind < expectedInd; ind++){
-                fin >> gl;
+                ss >> gl;
                 if (GL_TYPE.compare("GL") == 0) {
                 }
                 else if (GL_TYPE.compare("PL") == 0) {
@@ -1535,6 +1553,7 @@ vector< GenoLikeData * > *readTGLSData(string filename,
                 GLDataByChr->at(chr)->data[locus][ind] = gl;
 
             }
+            ss.clear();
         }
     }
 
