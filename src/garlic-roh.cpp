@@ -36,12 +36,16 @@ void calcLOD(MapData *mapData,
     int cStart = centro->centromereStart(mapData->chr);
     int cEnd = centro->centromereEnd(mapData->chr);
 
+    Bar bar;
+    barInit(bar,hapData->nloci,100);
+
     //Check if the last window would overshoot the last locus in the data
     if (nloci - stop < winsize) stop = nloci - winsize + 1;
 
     //For each individual
     for (int ind = 0; ind < nind; ind++)
     {
+        advanceBar(bar,1);
         //starting locus of the window
         for (int locus = start; locus < stop; locus++)
         {
@@ -121,6 +125,7 @@ void calcLOD(MapData *mapData,
         }
     }
 
+    finalize(bar);
     //winData->nmiss = nmiss;
 
     return;
@@ -146,6 +151,9 @@ void calcwLOD(MapData *mapData,
 {
     unsigned int *NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
 
+    Bar bar;
+    barInit(bar,hapData->nind,100);
+
     WLOD_work_order_t *order;
     pthread_t *peer = new pthread_t[numThreads];
     vector< WLOD_work_order_t * > orders;
@@ -168,8 +176,10 @@ void calcwLOD(MapData *mapData,
         order->mu = mu;
         order->M = M;
         order->start = previous;
+        order->bar = &bar;
         previous += NUM_PER_THREAD[i];
         order->stop = previous;
+        order->numThreads = numThreads;
 
         pthread_create(&(peer[i]),
                        NULL,
@@ -182,6 +192,8 @@ void calcwLOD(MapData *mapData,
         pthread_join(peer[i], NULL);
         delete orders[i];
     }
+
+    finalize(bar);
 
     orders.clear();
     delete [] NUM_PER_THREAD;
@@ -201,6 +213,8 @@ void parallelwLOD(void *order){
     int M = p->M;
     int start = p->start;
     int stop = p->stop;
+    Bar *bar = p->bar;
+    int numThreads = p->numThreads;
 
     short **data = p->hapData->data;
     int nloci = p->hapData->nloci;
@@ -225,6 +239,7 @@ void parallelwLOD(void *order){
 
     //For each individual
     for (int ind = 0; ind < nind; ind++){
+        advanceBar(*bar,1.0/double(numThreads));
         score = new double[size];
         for (int locus = start; locus < ((stop+winsize+1 > nloci) ? nloci : stop+winsize+1); locus++){
             if (USE_GL) error = GLData->data[locus][ind];
@@ -268,10 +283,13 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     centromere *centro,
                                     int winsize, double error, int MAX_GAP, bool USE_GL)
 {
+    cerr << "Calculating LOD scores with winsize " << winsize << ".\n";
+
     vector< WinData * > *winDataByChr = initWinData(mapDataByChr, hapDataByChr->at(0)->nind);
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
+        cerr << mapDataByChr->at(chr)->chr << "    ";
         if(USE_GL){
             calcLOD(mapDataByChr->at(chr),
                     hapDataByChr->at(chr), freqDataByChr->at(chr),
@@ -299,10 +317,13 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                                      int winsize, double error, int MAX_GAP, bool USE_GL, 
                                      int M, double mu, int numThreads)
 {
+    cerr << "Calculating LOD scores with winsize " << winsize << ".\n";
+
     vector< WinData * > *winDataByChr = initWinData(mapDataByChr, hapDataByChr->at(0)->nind);
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
+        cerr << mapDataByChr->at(chr)->chr << "    ";
         if(USE_GL){
             calcwLOD(mapDataByChr->at(chr),
                      hapDataByChr->at(chr),

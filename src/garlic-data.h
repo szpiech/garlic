@@ -17,6 +17,7 @@
 #include "gsl/gsl_randist.h"
 #include "garlic-errlog.h"
 #include "garlic-centromeres.h"
+#include "garlic-pbar.h"
 
 using namespace std;
 
@@ -115,6 +116,7 @@ struct HR2_work_order_t
   HapData *hapData;
   GenoFreqData *genoFreqData;
   LDData *LD;
+  Bar *bar;
 };
 
 struct R2_work_order_t
@@ -126,6 +128,7 @@ struct R2_work_order_t
   HapData *hapData;
   FreqData *freqData;
   LDData *LD;
+  Bar *bar;
 };
 
 double selectOverlapFrac(double variantDensity);

@@ -331,7 +331,7 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
 {
     vector< LDData * > *ldDataByChr = new vector< LDData * >;
     for(unsigned int chr = 0; chr < hapDataByChr->size(); chr++){
-
+        cerr << mapDataByChr->at(chr)->chr << "    ";
         if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), winsize, numThreads));
         else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), winsize, numThreads));
     }
@@ -344,6 +344,9 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
 
     unsigned int *NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
 
+    Bar bar;
+    barInit(bar,hapData->nloci,100);
+
     HR2_work_order_t *order;
     pthread_t *peer = new pthread_t[numThreads];
     vector< HR2_work_order_t * > orders;
@@ -355,7 +358,7 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
         order->genoFreqData = genoFreqData;
         order->LD = LD;
         order->winsize = winsize;
-        //order->id = i;
+        order->bar = &bar;
         order->start = previous;
         previous += NUM_PER_THREAD[i];
         order->stop = previous;
@@ -372,6 +375,8 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
         delete orders[i];
     }
 
+    finalize(bar);
+
     orders.clear();
 
     delete [] NUM_PER_THREAD;
@@ -386,6 +391,9 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
 
     unsigned int *NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
 
+    Bar bar;
+    barInit(bar,hapData->nloci,100);
+
     R2_work_order_t *order;
     pthread_t *peer = new pthread_t[numThreads];
     vector< R2_work_order_t * > orders;
@@ -397,7 +405,7 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
         order->freqData = freqData;
         order->LD = LD;
         order->winsize = winsize;
-        //order->id = i;
+        order->bar = &bar;
         order->start = previous;
         previous += NUM_PER_THREAD[i];
         order->stop = previous;
@@ -414,11 +422,11 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
         delete orders[i];
     }
 
-    orders.clear();
+    finalize(bar);
 
+    orders.clear();
     delete [] NUM_PER_THREAD;
     delete [] peer;
-
     return LD;
 }
 
@@ -431,10 +439,12 @@ void parallelHR2(void *order){
     int winsize = p->winsize;
     int start = p->start;
     int stop = p->stop;
+    Bar *bar = p->bar;
 
     if (hapData->nloci - stop < winsize) stop = hapData->nloci - winsize + 1;
 
     for (int locus = start; locus < stop; locus++){
+        advanceBar(*bar,1);
         for (int i = locus; i < locus + winsize; i++){
             ldHR2(LD, hapData, genoFreqData, i, locus, locus + winsize - 1);
         }
@@ -449,10 +459,12 @@ void parallelR2(void *order){
     int winsize = p->winsize;
     int start = p->start;
     int stop = p->stop;
+    Bar *bar = p->bar;
 
     if (hapData->nloci - stop < winsize) stop = hapData->nloci - winsize + 1;
 
     for (int locus = start; locus < stop; locus++){
+        advanceBar(*bar,1);
         for (int i = locus; i < locus + winsize; i++){
             ldR2(LD, hapData, freqData, i, locus, locus + winsize - 1);
         }

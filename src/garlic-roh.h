@@ -14,6 +14,7 @@
 #include "gsl/gsl_sort.h"
 #include "BoundFinder.h"
 #include <limits>
+#include "garlic-pbar.h"
 
 using namespace std;
 
@@ -35,6 +36,8 @@ struct WLOD_work_order_t
   int M;
   int start;
   int stop;
+  Bar *bar;
+  int numThreads;
 };
 
 struct ROHData
