@@ -53,7 +53,7 @@ garlic-centromeres.o : garlic-centromeres.cpp garlic-centromeres.h
 	$(CC) $(G++FLAG) -c garlic-centromeres.cpp -I$(I_PATH) $(I_PATH2)
 
 garlic-pbar.o :	garlic-pbar.cpp garlic-pbar.h
-        $(CC) $(G++FLAG) -c garlic-pbar.cpp -I$(I_PATH) $(I_PATH2)
+	$(CC) $(G++FLAG) -c garlic-pbar.cpp -I$(I_PATH) $(I_PATH2)
 
 param_t.o : param_t.cpp param_t.h
 	$(CC) $(G++FLAG) -c param_t.cpp
