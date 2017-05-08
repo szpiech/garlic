@@ -41,14 +41,16 @@ FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
 ---CHANGES---
+
+07MAY2017 - v1.1.2 fixes a bug that causes a crash when a tgls file indicates a genotype has 0 likelihood. Add progress bars for LD calculations and LOD score calculations. Improve efficiency of tgls file loading.
+
 06MAY2017 - v1.1.1a fixes a bug introduced with 1.1.1 that caused crashed when --resample is used.
-05MAY2017 - Update to version 1.1.1. For some large datasets (e.g. WGS), KDE can take extremely long to complete, even when
-only a subset of individuals are considered.  Here we introduce some changes to speed this calculation up.  Instead of passing
-all LOD score windows to the KDE function, we now pass only non-overlapping windows.  This reduces the number of points sent
-to the function by a factor of WINSIZE. If you wish to retain all LOD scores, you may set the --no-kde-thinning flag. We also change the default number of random individuals for KDE (--kde-subsample) to 20, which still may be set to 0 to use all individuals. 
-	We also introduce a lower bound on the size of ROH reported.  Now, an ROH will not be called unless it contains at least
-WINSIZE*OVERLAP_FRAC number of SNPs. For example, for a WINSIZE (--winsize) of 100 and an OVERLAP_FRAC (--overlap-frac) of 0.25 the smallest possible ROH that will be reported will be 25 SNPs long.
-	Finally, if --overlap-frac is set to 0, GARLIC will attempt to guess a good choice.
+
+05MAY2017 - Update to version 1.1.1. For some large datasets (e.g. WGS), KDE can take extremely long to complete, even when only a subset of individuals are considered.  Here we introduce some changes to speed this calculation up.  Instead of passing all LOD score windows to the KDE function, we now pass only non-overlapping windows.  This reduces the number of points sent to the function by a factor of WINSIZE. If you wish to retain all LOD scores, you may set the --no-kde-thinning flag. We also change the default number of random individuals for KDE (--kde-subsample) to 20, which still may be set to 0 to use all individuals. 
+
+We also introduce a lower bound on the size of ROH reported.  Now, an ROH will not be called unless it contains at least WINSIZE*OVERLAP_FRAC number of SNPs. For example, for a WINSIZE (--winsize) of 100 and an OVERLAP_FRAC (--overlap-frac) of 0.25 the smallest possible ROH that will be reported will be 25 SNPs long.
+
+Finally, if --overlap-frac is set to 0, GARLIC will attempt to guess a good choice.
 
 02MAY2017 - Update to version 1.1.0a. Bug fixed that caused crashes when using TGLS file. 
 
@@ -59,7 +61,7 @@ This update also introduces a new command-line flag --overlap-frac which is desi
 least OVERLAP_FRAC (default 0.25) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
 
-Garlic v1.1.1
+Garlic v1.1.2
 ----------Command Line Arguments----------
 
 --M <int>: The expected number of meioses since a recent common ancestor.
