@@ -170,7 +170,7 @@ int main(int argc, char *argv[])
     LOG.log("Output raw LOD scores:", RAW_LOD);
 
     bool PHASED = params->getBoolFlag(ARG_PHASED);
-    LOG.log("Use r2 for phaed data:", PHASED);
+    LOG.log("Use r2 for weighting phased data:", PHASED);
 
     bool THIN = !(params->getBoolFlag(ARG_KDE_THINNING));
     LOG.log("Use thinning for KDE estimation:", THIN);
