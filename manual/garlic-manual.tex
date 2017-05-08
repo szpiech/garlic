@@ -18,7 +18,7 @@
 
 \newcommand{\negspace}{\!\!\!\!\!\!\!\!\!\!\!\!}
 
-\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.2a User Manual}
+\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.2b User Manual}
 \date{\today}
 \author{Zachary A Szpiech}
 
@@ -247,14 +247,17 @@ Use {\tt --out <string>} to provide a base name for an output file.  This will b
 \subsection{Controlling GARLIC}
 
 \subsubsection{{\tt --M}}
-{\tt --M <int>} The expected number of meioses since a recent common ancestor for --weighted calculations. Default: 7.
+{\tt --M <int>} The expected number of meioses since a recent common ancestor for {\tt --weighted} calculations. Default: 7.
+
+\subsubsection{{\tt --auto-overlap-frac}}
+{\tt --auto-overlap-frac <bool>} If set, GARLIC attempts to guess based on marker density. Default: false.
 
 \subsubsection{{\tt --auto-winsize}}
 
-{\tt --auto-winsize} If {\tt --weighted} is set, guesses the best window size based on SNP density, otherwise initiates an ad hoc method for automatically selecting the \# of SNPs in which to calculate LOD scores. Starts at the value specified by {\tt --winsize} and increases by <step size> SNPs until finished. Default: false.
+{\tt --auto-winsize <bool>} If {\tt --weighted} is set, guesses the best window size based on SNP density, otherwise initiates an ad hoc method for automatically selecting the \# of SNPs in which to calculate LOD scores. Starts at the value specified by {\tt --winsize} and increases by <step size> SNPs until finished. Default: false.
 
 \subsubsection{{\tt --auto-winsize-size}}
-{\tt --auto-winsize-step} Step size for auto winsize algorithm. Default: 10.
+{\tt --auto-winsize-step <bool>} Step size for auto winsize algorithm. Default: 10.
 
 \subsubsection{{\tt --build}}
 
@@ -296,7 +299,7 @@ Use {\tt --out <string>} to provide a base name for an output file.  This will b
 {\tt --no-kde-thinning <bool>} Set this flag to send all LOD score data to KDE function. This may dramatically increase runtime. Default: false.
 
 \subsubsection{{\tt --overlap-frac}}
-{\tt --overlap-frac <double>} The minimum fraction of overlapping windows above the LOD cutoff required to begin constructing a run. This is similar to PLINK's {\tt --homozyg-window-threshold} option. ROH will have a lower bound size threshold of WINSIZE*OVERLAP\_FRAC. If set to 0, GARLIC attempts to guess based on marker density. Default: 0.25
+{\tt --overlap-frac <double>} The minimum fraction of overlapping windows above the LOD cutoff required to begin constructing a run. This is similar to PLINK's {\tt --homozyg-window-threshold} option. ROH will have a lower bound size threshold of WINSIZE*OVERLAP\_FRAC. If set to 0, GARLIC sets the value to the lowest sensible value: 1/winsize. Default: 0.25
 
 \subsubsection{{\tt --phased}}
 {\tt --phased <bool>} Set if data are phased and you want to calculate r2 instead of hr2 while --weighted is set.
@@ -323,6 +326,9 @@ Uses extra RAM. Has no effect on computations without --weighted. Default: false
 \section{Change Log}
 
 \begin{lstlisting}
+
+08MAY2017 - v1.1.2b fixes a bug that causes a crash when --overlap-frac is set to 0. Setting to zero now chooses the smallest sensible overlap fraction (1/winsize).  If you wish to let garlic automatically guess overlap fraction, use the new command line option: --auto-overlap-frac. Also includes an interation counter to monitor progress of GMM portion of the code.
+
 07MAY2017 - v1.1.2 fixes a bug that causes a crash when a tgls file indicates a genotype has 0 likelihood. Add progress bars for LD calculations and LOD score calculations. Improve efficiency of tgls file loading.
 
 06MAY2017 - v1.1.1a fixes a bug introduced with 1.1.1 that caused crashed when --resample is used.

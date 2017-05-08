@@ -42,6 +42,8 @@ zlib: http://zlib.net/
 
 ---CHANGES---
 
+08MAY2017 - v1.1.2b fixes a bug that causes a crash when --overlap-frac is set to 0. Setting to zero now chooses the smallest sensible overlap fraction (1/winsize).  If you wish to let garlic automatically guess overlap fraction, use the new command line option: --auto-overlap-frac. Also includes an interation counter to monitor progress of GMM portion of the code.
+
 07MAY2017 - v1.1.2 fixes a bug that causes a crash when a tgls file indicates a genotype has 0 likelihood. Add progress bars for LD calculations and LOD score calculations. Improve efficiency of tgls file loading.
 
 06MAY2017 - v1.1.1a fixes a bug introduced with 1.1.1 that caused crashed when --resample is used.
@@ -61,13 +63,24 @@ This update also introduces a new command-line flag --overlap-frac which is desi
 least OVERLAP_FRAC (default 0.25) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
 
-Garlic v1.1.2
+garlic v1.1.2b -- a program to call runs of homozygosity in genetic data.
+Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.
+
+Citations:
+
+ZA Szpiech, et al. (2017) Bioinformatics, doi: 10.1093/bioinformatics/btx102.
+TJ Pemberton, et al. (2012) AJHG, 91: 275–292.
+
 ----------Command Line Arguments----------
 
---M <int>: The expected number of meioses since a recent common ancestor.
+--M <int>: The expected number of meioses since a recent common ancestor for --weighted calcualtion.
 	Default: 7
 
---auto-winsize <bool>: Initiates an ad hoc method for automatically selecting the # of SNPs in which to
+--auto-overlap-frac <bool>: If set, GARLIC attempts to guess based on marker density.
+	Default: false
+
+--auto-winsize <bool>: If --weighted is set, guesses the best window size based on SNP density, otherwise
+	initiates an ad hoc method for automatically selecting the # of SNPs in which to
 	calculate LOD scores. Starts at the value specified by --winsize and increases
 	by <step size> SNPs until finished.
 	Default: false
@@ -76,11 +89,9 @@ Garlic v1.1.2
 	Default: 10
 
 --build <string>: Choose which genome build to use for centromere locations (hg18, hg19, or hg38).
-
 	Default: none
 
 --centromere <string>: Provide custom centromere boundaries. Format <chr> <start> <end>.
-
 	Default: none
 
 --cm <bool>: Construct ROH in genetic distance units. This requires a mapfile.
@@ -110,14 +121,16 @@ in VCFv4.2 documentation.
 --kde-subsample <int>: The number of individuals to randomly sample for LOD score KDE. If there
 	are fewer individuals in the population all are used.
 Set <= 0 to use all individuals (may use large amounts of RAM).
-	Default: 10
+	Default: 20
 
 --lod-cutoff <double>: For LOD based ROH calling, specify a single LOD score cutoff
 	above which ROH are called in all populations.  By default, this is chosen
 	automatically with KDE.
 	Default: -9.999990e+05
 
---map <string>: Provide a scaffold genetic map, sites that aren't present within this file are interpolated.  Sites outside the bounds are filtered. This is required for wLOD calcualtions and any runs for which you wish to report ROH in units of cM. Formatted <chr> <snpid> <genetic pos> <physical pos>.
+--map <string>: Provide a scaffold genetic map, sites that aren't present within this file are interpolated.
+	Sites outside the bounds are filtered. This is required for wLOD calcualtions
+	and any runs for which you wish to report ROH in units of cM.
 	Default: none
 
 --max-gap <int>: A LOD score window is not calculated if the gap (in bps)
@@ -130,18 +143,20 @@ Set <= 0 to use all individuals (may use large amounts of RAM).
 --nclust <int>: Set number of clusters for GMM classification of ROH lengths.
 	Default: 3
 
---no-kde-thinning <bool>: Set this flag to send all LOD score data to KDE function. This may dramatically increase runtime.
+--no-kde-thinning <bool>: Set this flag to send all LOD score data to KDE function. This may dramatically
+	increase runtime.
 	Default: false
 
 --out <string>: The base name for all output files.
 	Default: outfile
 
 --overlap-frac <double>: The minimum fraction of overlapping windows above the LOD cutoff required
-	to begin constructing a run.
+	to begin constructing a run. ROH will have a lower bound size threshold of WINSIZE*OVERLAP_FRAC.
+	If set to 0, GARLIC sets the value to the lowest sensible value: 1/winsize.
 	Default: 2.500000e-01
 
 --phased <bool>: Set if data are phased and you want to calculate r2 instead of hr2 while --weighted is set.
-Uses extra RAM. Has no effect on computations without --weighted.
+	Uses extra RAM. Has no effect on computations without --weighted.
 	Default: false
 
 --raw-lod <bool>: If set, LOD scores will be output to gzip compressed files.
@@ -152,9 +167,9 @@ Uses extra RAM. Has no effect on computations without --weighted.
 	frequencies as calculated from the data.
 	Default: 0
 
---size-bounds <double1> ... <doubleN>: Specify the short/medium and medium/long
+--size-bounds <double1> ... <doubleN>: Specify the size class boundaries
 	ROH boundaries.  By default, this is chosen automatically
-	with a 3-component GMM.  Must provide 2 numbers.
+	with a 3-component GMM.  Must provide numbers in increasing order.
 	Default: -1.000000
 
 --tfam <string>: A tfam formatted file containing population and individual IDs.

@@ -421,6 +421,7 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
 
     double OVERLAP_THRESHOLD = OVERLAP_FRAC * winSize;
     OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD >= 1) ? OVERLAP_THRESHOLD : 1;
+    OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD <= winSize) ? OVERLAP_THRESHOLD : winSize;
 
     for (int ind = 0; ind < indData->nind; ind++)
     {

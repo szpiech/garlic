@@ -4,7 +4,7 @@ double selectOverlapFrac(double variantDensity, int winsize){
     double frac = (6.375*log(variantDensity)+63.888)/100.0;
     if(frac > 1) frac = 1.0;
     if(frac <= 0) frac = 1.0/double(winsize);
-    return ;
+    return frac;
 }
 
 void loadTPEDData(string tpedfile, int &numLoci, int &numInd,

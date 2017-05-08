@@ -1,7 +1,7 @@
 #include "garlic-cli.h"
 #include <iostream>
 
-const string VERSION = "1.1.2a";
+const string VERSION = "1.1.2b";
 
 const string PREAMBLE = "\ngarlic v" + VERSION + " -- a program to call runs of homozygosity in genetic data.\n\
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.\n\
@@ -15,7 +15,11 @@ const string ARG_OVERLAP_FRAC = "--overlap-frac";
 const double DEFAULT_OVERLAP_FRAC = 0.25;
 const string HELP_OVERLAP_FRAC = "The minimum fraction of overlapping windows above the LOD cutoff required\n\
 \tto begin constructing a run. ROH will have a lower bound size threshold of WINSIZE*OVERLAP_FRAC.\n\
-\tIf set to 0, GARLIC attempts to guess based on marker density.";
+\tIf set to 0, GARLIC sets the value to the lowest sensible value: 1/winsize.";
+
+const string ARG_AUTO_OVERLAP_FRAC = "--auto-overlap-frac";
+const bool DEFAULT_AUTO_OVERLAP_FRAC = false;
+const string HELP_AUTO_OVERLAP_FRAC = "If set, GARLIC attempts to guess based on marker density.";
 
 const string ARG_OUTFILE = "--out";
 const string DEFAULT_OUTFILE = "outfile";
@@ -182,6 +186,7 @@ param_t *getCLI(int argc, char *argv[])
 	param_t *params = new param_t;
 	params->setPreamble(PREAMBLE);
 	params->addFlag(ARG_OVERLAP_FRAC, DEFAULT_OVERLAP_FRAC, "", HELP_OVERLAP_FRAC);
+	params->addFlag(ARG_AUTO_OVERLAP_FRAC, DEFAULT_AUTO_OVERLAP_FRAC, "", HELP_AUTO_OVERLAP_FRAC);
 	params->addFlag(ARG_OUTFILE, DEFAULT_OUTFILE, "", HELP_OUTFILE);
 	params->addFlag(ARG_THREADS, DEFAULT_THREADS, "", HELP_THREADS);
 	params->addFlag(ARG_ERROR, DEFAULT_ERROR, "", HELP_ERROR);

@@ -15,6 +15,10 @@ extern const string ARG_OVERLAP_FRAC;
 extern const double DEFAULT_OVERLAP_FRAC;
 extern const string HELP_OVERLAP_FRAC;
 
+extern const string ARG_AUTO_OVERLAP_FRAC;
+extern const bool DEFAULT_AUTO_OVERLAP_FRAC;
+extern const string HELP_AUTO_OVERLAP_FRAC;
+
 extern const string ARG_OUTFILE;
 extern const string DEFAULT_OUTFILE;
 extern const string HELP_OUTFILE;

@@ -144,8 +144,10 @@ int main(int argc, char *argv[])
     double OVERLAP_FRAC = params->getDoubleFlag(ARG_OVERLAP_FRAC);
     argerr = argerr || checkOverlapFrac(OVERLAP_FRAC);
     if (argerr) return -1;
-    if(OVERLAP_FRAC != 0) LOG.log("Overlap fraction:", OVERLAP_FRAC);
-    else LOG.log("Overlap fraction: automatic");
+    bool AUTO_OVERLAP_FRAC = params->getBoolFlag(ARG_AUTO_OVERLAP_FRAC);
+    if(AUTO_OVERLAP_FRAC) LOG.log("Overlap fraction: automatic");
+    else if(OVERLAP_FRAC != 0) LOG.log("Overlap fraction:", OVERLAP_FRAC);
+    else LOG.log("Overlap fraction: 1/winsize");
 
     double mu = params->getDoubleFlag(ARG_MU);
     argerr = argerr || checkMU(mu);
@@ -278,7 +280,7 @@ int main(int argc, char *argv[])
 
     numLoci = newLoci;
 
-    if((AUTO_WINSIZE && WEIGHTED) || OVERLAP_FRAC == 0){
+    if((AUTO_WINSIZE && WEIGHTED) || AUTO_OVERLAP_FRAC){
         variantDensity = calcDensity(numLoci, mapDataByChr, centro);
     }
 
@@ -331,7 +333,7 @@ int main(int argc, char *argv[])
 
     cout << "Window size: " << winsize << endl;
 
-    if(OVERLAP_FRAC == 0){
+    if(AUTO_OVERLAP_FRAC){
         OVERLAP_FRAC = selectOverlapFrac(variantDensity, winsize);
         LOG.log("Selected overlap fraction:", OVERLAP_FRAC);
     }
