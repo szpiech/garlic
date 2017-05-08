@@ -282,11 +282,6 @@ int main(int argc, char *argv[])
         variantDensity = calcDensity(numLoci, mapDataByChr, centro);
     }
 
-    if(OVERLAP_FRAC == 0){
-        OVERLAP_FRAC = selectOverlapFrac(variantDensity);
-        LOG.log("Selected overlap fraction:", OVERLAP_FRAC);
-    }
-
     //chrCoordList->clear();
     //delete chrCoordList;
 
@@ -335,6 +330,12 @@ int main(int argc, char *argv[])
     }
 
     cout << "Window size: " << winsize << endl;
+
+    if(OVERLAP_FRAC == 0){
+        OVERLAP_FRAC = selectOverlapFrac(variantDensity, winsize);
+        LOG.log("Selected overlap fraction:", OVERLAP_FRAC);
+    }
+
 
     if(WEIGHTED){
         cerr << "Calculating LD matrix.\n";

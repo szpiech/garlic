@@ -131,7 +131,7 @@ struct R2_work_order_t
   Bar *bar;
 };
 
-double selectOverlapFrac(double variantDensity);
+double selectOverlapFrac(double variantDensity, int winsize);
 
 FreqData *initFreqData(const vector<double> &freq, int nloci);
 
