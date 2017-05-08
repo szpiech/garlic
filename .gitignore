@@ -3,3 +3,8 @@
 *.roh
 *.gz
 *.kde
+*.dvi
+*.log
+*.bbl
+*.toc
+*.aux
