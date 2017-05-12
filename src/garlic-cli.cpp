@@ -1,7 +1,7 @@
 #include "garlic-cli.h"
 #include <iostream>
 
-const string VERSION = "1.1.2b";
+const string VERSION = "1.1.3";
 
 const string PREAMBLE = "\ngarlic v" + VERSION + " -- a program to call runs of homozygosity in genetic data.\n\
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.\n\
@@ -77,9 +77,11 @@ const string DEFAULT_TGLS = "none";
 const string HELP_TGLS = "A tgls file containing per-genotype likelihoods.";
 
 const string ARG_GL_TYPE = "--gl-type";
-const string DEFAULT_GL_TYPE = "GL";
-const string HELP_GL_TYPE = "Specify the form of the genotype likelihood data: GL or PL, as defined\n\
-in VCFv4.2 documentation.";
+const string DEFAULT_GL_TYPE = "none";
+const string HELP_GL_TYPE = "Specify the form of the genotype likelihood data: GQ, GL, or PL.\n\
+\tGQ is a phred-scaled likelihood of the genotype being incorrect.\n\
+\tPL is a phred-scaled likelihood of the genotype being correct.\n\
+\tGL is a log10-scaled likelihood of the genotype being correct.";
 
 const string ARG_MAP = "--map";
 const string DEFAULT_MAP = "none";
@@ -411,10 +413,10 @@ bool checkError(double error, string tglsfile)
 	return false;
 }
 
-bool checkGLType(string TYPE)
+bool checkGLType(string TYPE, string tglsfile)
 {
-	if (TYPE.compare("GL") != 0 && TYPE.compare("PL") != 0 ) {
-		LOG.err("ERROR: Must choose GL/PL for genotype likelihood format or provide a single error rate with --error.");
+	if ( TYPE.compare("GQ") != 0 && TYPE.compare("GL") != 0 && TYPE.compare("PL") != 0 && tglsfile.compare(DEFAULT_TGLS) != 0 ) {
+		LOG.err("ERROR: Must choose GQ/GL/PL for genotype likelihood format or provide a single error rate with --error.");
 		return true;
 	}
 	return false;

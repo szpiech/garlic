@@ -1541,16 +1541,24 @@ vector< GenoLikeData * > *readTGLSData(string filename,
             ss >> junk;
             for (int ind = 0; ind < expectedInd; ind++){
                 ss >> gl;
-                if (GL_TYPE.compare("GL") == 0) {
+                if(GL_TYPE.compare("GQ") == 0){
+                    gl /= (-10.0);
+                    gl = ( gl > -10 ) ? gl : -10;
+                    gl = pow(10,gl);
+                }
+                else if (GL_TYPE.compare("GL") == 0) {
+                    gl = ( gl > -10 ) ? gl : -10;
+                    gl = 1 - pow(10,gl);
                 }
                 else if (GL_TYPE.compare("PL") == 0) {
-                    gl = -gl / 10;
+                    gl /= (-10.0);
+                    gl = ( gl > -10 ) ? gl : -10;
+                    gl = 1 - pow(10,gl);
                 }
                 else {
                     LOG.err("ERROR: This error should never get triggered. Something really bad happened.");
                 }
-                gl = ( gl > -10 ) ? gl : -10;
-                gl = 1 - pow(10,gl);
+                
                 if(gl <= 0) gl = 0.0000000000000001;
                 if(gl > 1) gl = 1;
                 GLDataByChr->at(chr)->data[locus][ind] = gl;
