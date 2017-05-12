@@ -27,6 +27,8 @@ map (required when --weighted or --cm are set):
 tgls (optional):
 	<chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
 
+	Per-genotype likelihoods should be given as either a phred-scaled (--gl-type PL) or a log10-scaled (--gl-type GL) representing the probability that the genotype is correct or a phred-scaled likelihood that the genotype is wrong (--gl-type GQ).  For example, if p = 0.999 is the probability that the genotype is correct, then PL = -10*log10(p) = 0.00434511774018, GL = log10(p) = -0.000434511774018, and GQ = -10*log10(1-p) = 30.
+
 freq (optional, output during computation, can be generated without running whole pipeling with --freq-only): 
 	CHR SNP POS ALLELE FREQ
 	<chr> <locus ID> <allele> <freq>
@@ -41,6 +43,8 @@ FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
 ---CHANGES---
+
+12MAY2017 - v1.1.3 adds a new option for --gl-type called GQ, which is a phred-scaled probability that the genotype is wrong. If p = 0.999 is the probability that the genotype is correct, then GQ = -10*log10(1-p) = 30.  The default for --gl-type is now set to none, so if you provide a TGLS file you will be required to choose between GQ, PL, and GL.
 
 08MAY2017 - v1.1.2b fixes a bug that causes a crash when --overlap-frac is set to 0. Setting to zero now chooses the smallest sensible overlap fraction (1/winsize).  If you wish to let garlic automatically guess overlap fraction, use the new command line option: --auto-overlap-frac. Also includes an interation counter to monitor progress of GMM portion of the code.
 
@@ -63,7 +67,7 @@ This update also introduces a new command-line flag --overlap-frac which is desi
 least OVERLAP_FRAC (default 0.25) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
 
-garlic v1.1.2b -- a program to call runs of homozygosity in genetic data.
+garlic v1.1.3 -- a program to call runs of homozygosity in genetic data.
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.
 
 Citations:
@@ -111,9 +115,11 @@ TJ Pemberton, et al. (2012) AJHG, 91: 275–292.
 --freq-only <bool>: If set, calculates a freq file from provided data and then exits. Uses minimal RAM.
 	Default: false
 
---gl-type <string>: Specify the form of the genotype likelihood data: GL or PL, as defined
-in VCFv4.2 documentation.
-	Default: GL
+--gl-type <string>: Specify the form of the genotype likelihood data: GQ, GL, or PL.
+	GQ is a phred-scaled likelihood of the genotype being incorrect.
+	PL is a phred-scaled likelihood of the genotype being correct.
+	GL is a log10-scaled likelihood of the genotype being correct.
+	Default: none
 
 --help <bool>: Prints this help dialog.
 	Default: false

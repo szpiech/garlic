@@ -18,7 +18,7 @@
 
 \newcommand{\negspace}{\!\!\!\!\!\!\!\!\!\!\!\!}
 
-\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.2b User Manual}
+\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.3 User Manual}
 \date{\today}
 \author{Zachary A Szpiech}
 
@@ -192,6 +192,8 @@ Use {\tt --tfam <string>} to specify a .tfam (transposed PLINK; \cite{PurcellEtA
 
 Use {\tt --tgls <string>} A tgls file containing per-genotype likelihoods. Formatted: <chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>. Default: none.
 
+Per-genotype likelihoods should be given as either a phred-scaled ({\tt --gl-type PL}) or a $\log_{10}$-scaled ({\tt --gl-type GL}) representing the probability that the genotype is correct or a phred-scaled likelihood that the genotype is wrong ({\tt --gl-type GQ}).  For example, if $p = 0.999$ is the probability that the genotype is correct, then $PL = -10\log_{10}(p) = 0.00434511774018$, $GL = \log_{10}(p) = -0.000434511774018$, and $GQ = -10\log_{10}(1-p) = 30$.
+
 \subsubsection{{\tt --centromere}}
 
 Use {\tt --centromere <string>} to specify a file containing custom centromere boundaries formatted as
@@ -277,7 +279,9 @@ Use {\tt --out <string>} to provide a base name for an output file.  This will b
 
 \subsubsection{{\tt --gl-type}}
 
-{\tt --gl-tyle <string>} Specify the form of the genotype likelihood data: GL or PL, as defined in VCFv4.2 documentation. Default: GL.
+{\tt --gl-type <string>} Specify the form of the genotype likelihood data: GQ, GL, PL, as defined in VCFv4.2 documentation. Default: none.
+
+Per-genotype likelihoods should be given as either a phred-scaled ({\tt --gl-type PL}) or a $\log_{10}$-scaled ({\tt --gl-type GL}) representing the probability that the genotype is correct or a phred-scaled likelihood that the genotype is wrong ({\tt --gl-type GQ}).  For example, if $p = 0.999$ is the probability that the genotype is correct, then $PL = -10\log_{10}(p) = 0.00434511774018$, $GL = \log_{10}(p) = -0.000434511774018$, and $GQ = -10\log_{10}(1-p) = 30$.
 
 \subsubsection{{\tt --kde-subsample}}
 
@@ -326,6 +330,8 @@ Uses extra RAM. Has no effect on computations without --weighted. Default: false
 \section{Change Log}
 
 \begin{lstlisting}
+
+12MAY2017 - v1.1.3 adds a new option for --gl-type called GQ, which is a phred-scaled probability that the genotype is wrong. If p = 0.999 is the probability that the genotype is correct, then GQ = -10*log10(1-p) = 30.  The default for --gl-type is now set to none, so if you provide a TGLS file you will be required to choose between GQ, PL, and GL.
 
 08MAY2017 - v1.1.2b fixes a bug that causes a crash when --overlap-frac is set to 0. Setting to zero now chooses the smallest sensible overlap fraction (1/winsize).  If you wish to let garlic automatically guess overlap fraction, use the new command line option: --auto-overlap-frac. Also includes an interation counter to monitor progress of GMM portion of the code.
 
