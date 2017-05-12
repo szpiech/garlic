@@ -167,7 +167,7 @@ bool checkRequiredFiles(string tpedfile, string tfamfile);
 bool checkMapFile(string mapfile, bool WEIGHTED);
 bool checkThreads(int numThreads);
 bool checkError(double error, string tglsfile);
-bool checkGLType(string TYPE);
+bool checkGLType(string TYPE, string tglsfile);
 bool checkWinsize(int winsize);
 bool checkMaxGap(int MAX_GAP);
 bool checkOverlapFrac(double OVERLAP_FRAC);

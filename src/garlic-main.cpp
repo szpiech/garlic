@@ -51,7 +51,7 @@ int main(int argc, char *argv[])
     LOG.log("TGLS file:", tglsfile);
 
     string GL_TYPE = params->getStringFlag(ARG_GL_TYPE);
-    argerr = argerr || checkGLType(GL_TYPE);
+    argerr = argerr || checkGLType(GL_TYPE, tglsfile);
     LOG.log("Genotype likelihood format:", GL_TYPE);
 
     bool WEIGHTED = params->getBoolFlag(ARG_WEIGHTED);
