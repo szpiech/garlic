@@ -1308,86 +1308,66 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
     int minCols = 5;
     int expectedRows = 1;
 
-    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
-    {
+    //allocate
+    vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++){
         expectedRows += mapDataByChr->at(chr)->nloci;
+        FreqData *data = initFreqData(mapDataByChr->at(chr)->nloci);
+        freqDataByChr->push_back(data);
     }
 
     igzstream fin;
+
     fin.open(freqfile.c_str());
-    if (fin.fail())
-    {
+    if (fin.fail()){
         LOG.err("ERROR: Failed to open", freqfile);
         throw 0;
     }
+
     cerr << "Reading " << freqfile << "\n";
     string line;
     int currentRows = 0;
     int currentCols = 0;
     int previousCols = -1;
-    while (getline(fin, line))
-    {
-        currentRows++;
-        currentCols = countFields(line);
-        if (currentCols < minCols)
-        {
-            LOG.err("ERROR: Found", currentCols, false);
-            LOG.err(" in", freqfile, false);
-            LOG.err(" on line", currentRows, false);
-            LOG.err(" but expected at least", minCols);
-            throw 0;
-        }
-        if (currentCols != previousCols && previousCols != -1)
-        {
-            LOG.err("ERROR: Differing number of columns across rows found in", freqfile);
-            throw 0;
-        }
-        previousCols = currentCols;
-    }
-
-    if (currentRows != expectedRows)
-    {
-        LOG.err("ERROR:", freqfile, false);
-        LOG.err(" has", currentRows, false);
-        LOG.err(" rows but expected", expectedRows);
-        throw 0;
-    }
-
-    fin.close();
-    fin.clear();
-
-    //allocate
-    vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
-    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
-    {
-        FreqData *data = initFreqData(mapDataByChr->at(chr)->nloci);
-        freqDataByChr->push_back(data);
-    }
-
-    fin.open(freqfile.c_str());
-    if (fin.fail())
-    {
-        LOG.err("ERROR: Failed to open", freqfile);
-        throw 0;
-    }
 
     string header, junk;
-    //int popsFound = 0;
     getline(fin, header);
-    //int headerSize = countFields(header) - 2;
     stringstream ss;
 
-    string locusID;//, allele;
+    string locusID;
     char allele;
     string chromosome;
     double position;
-    int lineNum = 0;
+    int lineNum = 1;
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
         {
             lineNum++;
-            fin >> chromosome >> locusID >> position >> allele >> freqDataByChr->at(chr)->freq[locus];
+            getline(fin, line);
+            if(fin.fail()){
+                LOG.err("ERROR: at line", lineNum, false);
+                LOG.err(" in", freqfile, false);
+                LOG.err(". Perhaps too few lines?");
+                throw 0;
+            }
+            ss.str(line);
+
+            currentCols = countFields(line);
+            if (currentCols < minCols){
+                LOG.err("ERROR: Found", currentCols, false);
+                LOG.err(" in", freqfile, false);
+                LOG.err(" on line", lineNum, false);
+                LOG.err(" but expected at least", minCols);
+                throw 0;
+            }
+            if (currentCols != previousCols && previousCols != -1){
+                LOG.err("ERROR: Differing number of columns across rows found in", freqfile);
+                throw 0;
+            }
+            previousCols = currentCols;
+
+            ss >> chromosome >> locusID >> position >> allele >> freqDataByChr->at(chr)->freq[locus];
             if (mapDataByChr->at(chr)->locusName[locus].compare(locusID) != 0){
                 LOG.err("ERROR: Loci appear mismatched in:", freqfile);
                 LOG.err("ERROR: at line:", lineNum);
@@ -1401,7 +1381,16 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
             if(mapDataByChr->at(chr)->allele[locus] != allele){
                 freqDataByChr->at(chr)->freq[locus] = 1 - freqDataByChr->at(chr)->freq[locus];
             }
+            ss.clear();
         }
+    }
+
+    if (lineNum != expectedRows)
+    {
+        LOG.err("ERROR:", freqfile, false);
+        LOG.err(" has", currentRows, false);
+        LOG.err(" rows but expected", expectedRows);
+        throw 0;
     }
 
     fin.close();
