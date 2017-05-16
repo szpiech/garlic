@@ -18,7 +18,7 @@
 
 \newcommand{\negspace}{\!\!\!\!\!\!\!\!\!\!\!\!}
 
-\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.3 User Manual}
+\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.4 User Manual}
 \date{\today}
 \author{Zachary A Szpiech}
 
@@ -330,6 +330,8 @@ Uses extra RAM. Has no effect on computations without --weighted. Default: false
 \section{Change Log}
 
 \begin{lstlisting}
+
+16MAY2017 - v1.1.4 If a freq file is provided, GARLIC now ensures that internal coding of alleles is consistent with the allele specified in the file. Improved handling of loci with 100% missing data. Improved reading of gzipped freq files.
 
 12MAY2017 - v1.1.3 adds a new option for --gl-type called GQ, which is a phred-scaled probability that the genotype is wrong. If p = 0.999 is the probability that the genotype is correct, then GQ = -10*log10(1-p) = 30.  The default for --gl-type is now set to none, so if you provide a TGLS file you will be required to choose between GQ, PL, and GL.
 
