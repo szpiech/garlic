@@ -24,7 +24,6 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
 
     if (fin.fail())
     {
-        cerr << "ERROR: Failed to open " << tpedfile << " for reading.\n";
         LOG.err("ERROR: Failed to open", tpedfile);
         throw 0;
     }
@@ -1321,7 +1320,6 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
     fin.open(freqfile.c_str());
     if (fin.fail())
     {
-        cerr << "ERROR: Failed to open " << freqfile << " for reading.\n";
         LOG.err("ERROR: Failed to open", freqfile);
         throw 0;
     }
@@ -1336,9 +1334,6 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
         currentCols = countFields(line);
         if (currentCols < minCols)
         {
-            cerr << "ERROR: Found " << currentCols << " in " << freqfile
-                 << " on line " << currentRows << " but expected at least "
-                 << minCols << ".\n";
             LOG.err("ERROR: Found", currentCols, false);
             LOG.err(" in", freqfile, false);
             LOG.err(" on line", currentRows, false);
@@ -1347,7 +1342,6 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
         }
         if (currentCols != previousCols && previousCols != -1)
         {
-            cerr << "ERROR: " << freqfile << " has differing number of columns across rows.\n";
             LOG.err("ERROR: Differing number of columns across rows found in", freqfile);
             throw 0;
         }
@@ -1356,8 +1350,6 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
 
     if (currentRows != expectedRows)
     {
-        cerr << "ERROR: " << freqfile << " has " << currentRows << " rows but expected "
-             << expectedRows << ".\n";
         LOG.err("ERROR:", freqfile, false);
         LOG.err(" has", currentRows, false);
         LOG.err(" rows but expected", expectedRows);
@@ -1414,6 +1406,7 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
         {
             fin >> chromosome >> locusID >> position >> allele >> freqDataByChr->at(chr)->freq[locus];
             if (mapDataByChr->at(chr)->locusName[locus].compare(locusID) != 0){
+                cerr << mapDataByChr->at(chr)->locusName[locus] << " " << locusID << endl;
                 LOG.err("ERROR: Loci appear out of order in", freqfile);
                 throw 0;
             }
