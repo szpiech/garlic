@@ -138,8 +138,8 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         }
 
         if(AUTO_FREQ){
-            double freqtmp = double(nalleles)/double(total);
-            if (nresample > 0){
+            double freqtmp = (total == 0) ? 0 : (double(nalleles)/double(total)) ;
+            if (nresample > 0 && total != 0){
                 int count = 0;
                 for (int i = 0; i < nresample; i++){
                     if (gsl_rng_uniform(r) <= freqtmp) count++;
@@ -247,9 +247,7 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
 
     ogzstream fout;
     fout.open(freqoutfile.c_str());
-    if (fout.fail())
-    {
-        cerr << "ERROR: Failed to open " << freqoutfile << " for writing.\n";
+    if (fout.fail()){
         LOG.err("ERROR: Failed to open", freqoutfile);
         throw 0;
     }
@@ -259,9 +257,7 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
     igzstream fin;
     fin.open(filename.c_str());
 
-    if (fin.fail())
-    {
-        cerr << "ERROR: Failed to open " << filename << " for reading.\n";
+    if (fin.fail()){
         LOG.err("ERROR: Failed to open", filename);
         throw 0;
     }
@@ -299,8 +295,8 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
             }
         }
 
-        double freq = nalleles/total;
-        if (nresample > 0){
+        double freq = (total == 0) ? 0 : (nalleles/total);
+        if (nresample > 0 && total != 0){
             count = 0;
             for (int i = 0; i < nresample; i++){
                 if (gsl_rng_uniform(r) <= freq) count++;
@@ -1172,6 +1168,7 @@ bool goodDouble(string str)
     return 1;
 }
 
+/*
 FreqData *calcFreqData(HapData *hapData, int nresample, const gsl_rng *r)
 {
     FreqData *freqData = initFreqData(hapData->nloci);
@@ -1224,7 +1221,7 @@ vector< FreqData * > *calcFreqData2(vector< HapData * > *hapDataByChr, int nresa
 
     return freqDataByChr;
 }
-
+*/
 //allocates the arrays and populates them with MISSING
 FreqData *initFreqData(int nloci)
 {
@@ -1379,38 +1376,31 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
     getline(fin, header);
     //int headerSize = countFields(header) - 2;
     stringstream ss;
-    //ss.str(header);
-    //ss >> junk >> junk >> junk >> junk;
-    //int popLocation = -1;
-    //string popStr;
-    //for (int i = 0; i < headerSize; i++)
-    //{
-    //    ss >> popStr;
-    //    if (popStr.compare(popName) == 0) popLocation = i;
-    //}
-
-    //if (popLocation < 0) {
-    //    cerr << "ERROR: Could not find " << popName << " in " << freqfile << endl;
-    //    LOG.err("ERROR: Could not find", popName, false);
-    //    LOG.err(" in", freqfile);
-    //    throw 0;
-    //}
 
     string locusID;//, allele;
     char allele;
     string chromosome;
     double position;
+    int lineNum = 0
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
         {
+            lineNum++;
             fin >> chromosome >> locusID >> position >> allele >> freqDataByChr->at(chr)->freq[locus];
             if (mapDataByChr->at(chr)->locusName[locus].compare(locusID) != 0){
-                cerr << mapDataByChr->at(chr)->locusName[locus] << " " << locusID << endl;
-                LOG.err("ERROR: Loci appear out of order in", freqfile);
+                LOG.err("ERROR: Loci appear mismatched in:", freqfile);
+                LOG.err("ERROR: at line:", lineNum);
+                LOG.err("ERROR: freq file locus name:", locusID);
+                LOG.err("ERROR: tped file locus name:", mapDataByChr->at(chr)->locusName[locus]);
                 throw 0;
             }
-            else mapDataByChr->at(chr)->allele[locus] = allele;
+            //check if the internal coding of the '1' allele for this tped file 
+            //matches the '1' allele coding in the freq file
+            //If not, take 1-freq.
+            if(mapDataByChr->at(chr)->allele[locus] != allele){
+                freqDataByChr->at(chr)->freq[locus] = 1 - freqDataByChr->at(chr)->freq[locus];
+            }
         }
     }
 
