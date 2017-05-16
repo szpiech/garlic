@@ -1381,7 +1381,7 @@ vector< FreqData * > *readFreqData(string freqfile, string popName,
     char allele;
     string chromosome;
     double position;
-    int lineNum = 0
+    int lineNum = 0;
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
