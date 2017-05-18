@@ -811,7 +811,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
         releaseDoubleData(rawWinData);
 
         mse = calculateWiggle(kdeResult);
-        LOG.logn(winsizeQuery,false);
+        LOG.log("",winsizeQuery,false);
         LOG.log("\t",mse);
 
         if (mse <= AUTO_WINSIZE_THRESHOLD)
@@ -894,7 +894,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
         releaseDoubleData(rawWinData);
 
         mse = calculateWiggle(kdeResult);
-        LOG.logn(multiWinsizes->at(i),false);
+        LOG.log("",multiWinsizes->at(i),false);
         LOG.log("\t",mse);
 
         if (mse <= AUTO_WINSIZE_THRESHOLD || i == multiWinsizes->size() - 1)
