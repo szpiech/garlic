@@ -331,7 +331,7 @@ Uses extra RAM. Has no effect on computations without --weighted. Default: false
 
 \begin{lstlisting}
 
-18MAY2017 - v1.1.4 If a freq file is provided, GARLIC now ensures that internal coding of alleles is consistent with the allele specified in the file. Improved handling of loci with 100% missing data. Improved reading of gzipped freq files. Improved lod score cutoff discovery. Removed default setting for --winsize, which must now be specified.
+18MAY2017 - v1.1.4 If a freq file is provided, GARLIC now ensures that internal coding of alleles is consistent with the allele specified in the file. Improved handling of loci with 100% missing data. Improved reading of gzipped freq files. Improved lod score cutoff discovery. Removed default setting for --winsize, which must now be specified. Now allows --auto-winsize to be used with --winsize-multi, will choose best from the list.
 
 12MAY2017 - v1.1.3 adds a new option for --gl-type called GQ, which is a phred-scaled probability that the genotype is wrong. If p = 0.999 is the probability that the genotype is correct, then GQ = -10*log10(1-p) = 30.  The default for --gl-type is now set to none, so if you provide a TGLS file you will be required to choose between GQ, PL, and GL.
 
