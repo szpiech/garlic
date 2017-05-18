@@ -34,7 +34,7 @@ const double DEFAULT_ERROR = -1;
 const string HELP_ERROR = "The assumed genotyping error rate.";
 
 const string ARG_WINSIZE = "--winsize";
-const int DEFAULT_WINSIZE = 10;
+const int DEFAULT_WINSIZE = 0;
 const string HELP_WINSIZE = "The window size in # of SNPs in which to calculate LOD scores.";
 
 const string ARG_WINSIZE_MULTI = "--winsize-multi";
