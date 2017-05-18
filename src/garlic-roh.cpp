@@ -762,7 +762,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
                          bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, bool THIN)
 {
-    double AUTO_WINSIZE_THRESHOLD = 0.5;
+    double AUTO_WINSIZE_THRESHOLD = 0.25;
     vector< WinData * > *winDataByChr = NULL;
     vector< HapData * > *hapDataByChrToCalc = NULL;
     vector< GenoLikeData * > *GLDataByChrToCalc = NULL;
@@ -848,7 +848,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
                                  bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, bool THIN)
 {
-    double AUTO_WINSIZE_THRESHOLD = 0.5;
+    double AUTO_WINSIZE_THRESHOLD = 0.25;
     vector< WinData * > *winDataByChr = NULL;
     vector< HapData * > *hapDataByChrToCalc = NULL;
     vector< GenoLikeData * > *GLDataByChrToCalc = NULL;
