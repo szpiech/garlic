@@ -142,19 +142,89 @@ double nrd0(double x[], const int N)
 double get_min_btw_modes(double *x, double *y, int size)
 {
     //double initialGuess = 0;
-    double *x_abs = new double[size];
-
-    for (int i = 0; i < size; i++)
-    {
-        x_abs[i] = fabs(x[i]);
+    
+    int winsize = 20;
+    double maxes;
+    double *uniq_maxes = new double[size-winsize];
+    double *uniq_counts = new double[size-winsize];
+    for(int i = 0; i < size-winsize; i++){
+        uniq_counts[i] = 0;
+        uniq_maxes[i] = 0;
     }
 
-    int minGuessIndex = get_arg_min(x_abs, size);
+    int index = 0;
+    for(int i = 0; i < size-winsize; i++){
+        maxes = y[get_arg_max(&(y[i]),winsize)+i];
+        if(i == 1){
+            uniq_maxes[i] = maxes;
+            uniq_counts[i]++;
+        }
+        else if(uniq_maxes[index] == maxes){
+            uniq_counts[index]++;    
+        }
+        else if(uniq_maxes[index] != maxes){
+            index++;
+            uniq_maxes[index] = maxes;
+            uniq_counts[index]++;    
+        }
+    }
 
-    delete [] x_abs;
+    int maxCount = uniq_counts[0];
+    int secondMaxCount = 0;
+    for(int i = 1; i < size-winsize; i++){
+        if(maxCount <= uniq_counts[i]){
+            secondMaxCount = maxCount;
+            maxCount = uniq_counts[i];
+        }
+        else if (secondMaxCount <= uniq_counts[i]){
+            secondMaxCount == uniq_counts[i];
+        }
+    }
 
-    int rightMaxIndex = get_arg_max(&(y[minGuessIndex]), size - minGuessIndex) + minGuessIndex;
-    int leftMaxIndex = get_arg_max(&(y[0]), minGuessIndex + 1);
+    vector<double> values;
+    for(int i = 0; i < size-winsize; i++){
+        if(maxCount == uniq_counts[i] || secondMaxCount == uniq_counts[i]){
+            values.push_back(uniq_maxes[i]);
+        }
+    }
+
+    int maxIndex = -1;
+    int secondMaxIndex = -1;
+    double firstMax = -1;
+    double secondMax = -1;
+    for(unsigned int i = 0; i < values.size(); i++){
+        if(firstMax <= values[i]){
+            secondMax = firstMax;
+            firstMax = values[i];
+        }
+        else if (secondMax <= values[i]){
+            secondMax = values[i];
+        }
+    }
+
+    int leftMaxIndex = -1;
+    int rightMaxIndex = -1;
+
+    for(int i = 0; i < size; i++){
+        if(y[i] == firstMax){
+            leftMaxIndex = i;
+        }
+        if(y[i] == secondMax){
+            rightMaxIndex = i;
+        }
+    }
+
+    int tmp;
+    if(rightMaxIndex < leftMaxIndex){
+        tmp = rightMaxIndex;
+        rightMaxIndex = leftMaxIndex;
+        leftMaxIndex = tmp;
+    }
+
+    
+    delete [] uniq_maxes;
+    delete [] uniq_counts;
+
     int minIndex = get_arg_min(&(y[leftMaxIndex]), rightMaxIndex - leftMaxIndex + 1) + leftMaxIndex;
 
     return x[minIndex];
