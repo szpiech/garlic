@@ -99,8 +99,8 @@ int main(int argc, char *argv[])
     if (WINSIZE_EXPLORE) LOG.logv("User defined window sizes:", multiWinsizes);
 
     bool AUTO_WINSIZE = params->getBoolFlag(ARG_AUTO_WINSIZE);
-    argerr = argerr || checkAutoWinsize(WINSIZE_EXPLORE, AUTO_WINSIZE);
-    if (argerr) return -1;
+    //argerr = argerr || checkAutoWinsize(WINSIZE_EXPLORE, AUTO_WINSIZE);
+    //if (argerr) return -1;
     LOG.log("Automatic window size:", AUTO_WINSIZE);
 
     int AUTO_WINSIZE_STEP = params->getIntFlag(ARG_AUTO_WINSIZE_STEP);
@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
     LOG.log("Automatic window step size:", AUTO_WINSIZE_STEP);
 
     int winsize = params->getIntFlag(ARG_WINSIZE);
-    argerr = argerr || checkWinsize(winsize);
+    argerr = argerr || checkWinsize(winsize, WINSIZE_EXPLORE);
     if (argerr) return -1;
     if (!WINSIZE_EXPLORE && !AUTO_WINSIZE) LOG.log("User defined window size:", winsize);
 

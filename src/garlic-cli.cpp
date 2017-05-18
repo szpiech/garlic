@@ -422,13 +422,10 @@ bool checkGLType(string TYPE, string tglsfile)
 	return false;
 }
 
-
-bool checkWinsize(int winsize)
+bool checkWinsize(int winsize, bool WINSIZE_EXPLORE)
 {
-	if (winsize <= 1)
-	{
-		//cerr << "ERROR: SNP window size must be > 1.\n";
-		LOG.err("ERROR: SNP window size must be > 1.");
+	if (winsize <= 1 && !WINSIZE_EXPLORE){
+		LOG.err("ERROR: SNP window size must be > 1. If using --auto-winsize, this is the starting value.");
 		return true;
 	}
 	return false;
@@ -436,16 +433,11 @@ bool checkWinsize(int winsize)
 
 bool checkMaxGap(int MAX_GAP)
 {
-	if (MAX_GAP < 0)
-	{
-		//cerr << "ERROR: Max gap must be > 0.\n";
+	if (MAX_GAP < 0){
 		LOG.err("ERROR: Max gap must be > 0.");
 		return true;
 	}
-	else if (MAX_GAP < 1000)
-	{
-		//cerr << "WARNING: max gap set very low: " << MAX_GAP << endl;
-		//LOG.err("WARNING: max gap set very low:", MAX_GAP);
+	else if (MAX_GAP < 1000){
 		LOG.err("WARNING: max gap set very low:", MAX_GAP);
 	}
 	return false;
