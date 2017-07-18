@@ -168,6 +168,10 @@ int main(int argc, char *argv[])
     if (KDE_SUBSAMPLE <= 0) LOG.log("# of rand individuals for KDE: ALL");
     else LOG.log("# of rand individuals for KDE:", KDE_SUBSAMPLE);
 
+    int LD_SUBSAMPLE = params->getIntFlag(ARG_LD_SUBSAMPLE);
+    if (LD_SUBSAMPLE <= 0) LOG.log("# of rand individuals for LD: ALL");
+    else LOG.log("# of rand individuals for LD:", LD_SUBSAMPLE);
+
     bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
     LOG.log("Output raw LOD scores:", RAW_LOD);
 
@@ -307,7 +311,7 @@ int main(int argc, char *argv[])
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
                         GLDataByChr, genoFreqDataByChr, USE_GL,
-                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, THIN);
+                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, THIN, LD_SUBSAMPLE);
 
         return 0;
     }
@@ -341,7 +345,7 @@ int main(int argc, char *argv[])
 
     if(WEIGHTED){
         cerr << "Calculating LD matrix.\n";
-        ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads);
+        ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads, LD_SUBSAMPLE);
         if(!PHASED) releaseGenoFreq(genoFreqDataByChr);
         winDataByChr = calcwLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
                                        GLDataByChr, ldDataByChr,

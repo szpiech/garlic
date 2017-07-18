@@ -132,6 +132,12 @@ const string HELP_KDE_SUBSAMPLE = "The number of individuals to randomly sample 
 \tare fewer individuals in the population all are used.\n\
 Set <= 0 to use all individuals (may use large amounts of RAM).";
 
+extern const string ARG_LD_SUBSAMPLE = "--ld-subsample";
+extern const int DEFAULT_LD_SUBSAMPLE = 0;
+extern const string HELP_LD_SUBSAMPLE = "The number of individuals to randomly sample for LD calculation during wLOD. If there\n\
+\tare fewer individuals in the population all are used.\n\
+Set <= 0 to use all individuals (will increase runtime).";
+
 const string ARG_BUILD = "--build";
 const string DEFAULT_BUILD = "none";
 const string HELP_BUILD = "Choose which genome build to use for centromere locations (hg18, hg19, or hg38).";
@@ -209,6 +215,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_FREQ_ONLY, DEFAULT_FREQ_ONLY, "", HELP_FREQ_ONLY);
 	params->addListFlag(ARG_WINSIZE_MULTI, DEFAULT_WINSIZE_MULTI, "", HELP_WINSIZE_MULTI);
 	params->addFlag(ARG_KDE_SUBSAMPLE, DEFAULT_KDE_SUBSAMPLE , "", HELP_KDE_SUBSAMPLE);
+	params->addFlag(ARG_LD_SUBSAMPLE, DEFAULT_LD_SUBSAMPLE , "", HELP_LD_SUBSAMPLE);
 	params->addFlag(ARG_AUTO_WINSIZE, DEFAULT_AUTO_WINSIZE, "", HELP_AUTO_WINSIZE);
 	params->addFlag(ARG_AUTO_WINSIZE_STEP, DEFAULT_AUTO_WINSIZE_STEP, "", HELP_AUTO_WINSIZE_STEP);
 	params->addFlag(ARG_BUILD, DEFAULT_BUILD, "", HELP_BUILD);

@@ -696,7 +696,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< GenoLikeData * > *GLDataByChr,
                      vector< GenoFreqData * > *genoFreqDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, bool THIN)
+                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, bool THIN, int LD_SUBSAMPLE)
 {
     vector< WinData * > *winDataByChr;
     vector< HapData * > *hapDataByChrToCalc;
@@ -716,7 +716,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
     for (unsigned int i = 0; i < multiWinsizes.size(); i++)
     {
         if (WEIGHTED) {
-            ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, multiWinsizes[i], MAX_GAP, PHASED, numThreads);
+            ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, multiWinsizes[i], MAX_GAP, PHASED, numThreads, LD_SUBSAMPLE);
             winDataByChr = calcwLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
                                            GLDataByChrToCalc,
                                            ldDataByChr,

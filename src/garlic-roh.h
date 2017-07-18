@@ -149,7 +149,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< GenoLikeData * > *GLDataByChr,
                      vector< GenoFreqData * > *genoFreqDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, bool THIN);
+                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, bool THIN, int LD_SUBSAMPLE);
 
 KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector< FreqData * > *freqDataByChr,

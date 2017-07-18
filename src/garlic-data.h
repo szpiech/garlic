@@ -117,6 +117,8 @@ struct HR2_work_order_t
   GenoFreqData *genoFreqData;
   LDData *LD;
   Bar *bar;
+  int *indIndex;
+  int ldSubsample;
 };
 
 struct R2_work_order_t
@@ -129,6 +131,8 @@ struct R2_work_order_t
   FreqData *freqData;
   LDData *LD;
   Bar *bar;
+  int *indIndex;
+  int ldSubsample;
 };
 
 double selectOverlapFrac(double variantDensity, int winsize);
@@ -160,15 +164,15 @@ void parallelR2(void *order);
 
 unsigned int *make_thread_partition(int &num_threads, int nloci);
 
-void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end);
-void ldR2(LDData *LD, HapData *hapData, FreqData *freqData, int site, int start, int end);
+void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end, int *indIndex, int ldSubsample);
+void ldR2(LDData *LD, HapData *hapData, FreqData *freqData, int site, int start, int end, int *indIndex, int ldSubsample);
 
-LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads);
-LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThreads);
+LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads, int *indIndex, int ldSubsample);
+LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThreads, int *indIndex, int ldSubsample);
 
 //double ld(HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end, int ind);
-double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j);
-double r2(HapData *hapData, FreqData *freqData, int i, int j);
+double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j, int *indIndex, int ldSubsample);
+double r2(HapData *hapData, FreqData *freqData, int i, int j, int *indIndex, int ldSubsample);
 
 vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr, 
                                vector< FreqData * > *freqDataByChr,
@@ -178,7 +182,8 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
                                int winsize,
                                int MAX_GAP,
                                bool PHASED,
-                               int numThreads);
+                               int numThreads,
+                               int ldSubsample);
 
 LDData *initLDData(int nloci, int winsize);
 void releaseLDData(LDData *data);

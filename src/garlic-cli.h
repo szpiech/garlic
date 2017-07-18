@@ -107,6 +107,10 @@ extern const string ARG_KDE_SUBSAMPLE;
 extern const int DEFAULT_KDE_SUBSAMPLE;
 extern const string HELP_KDE_SUBSAMPLE;
 
+extern const string ARG_LD_SUBSAMPLE;
+extern const int DEFAULT_LD_SUBSAMPLE;
+extern const string HELP_LD_SUBSAMPLE;
+
 extern const string ARG_BUILD;
 extern const string DEFAULT_BUILD;
 extern const string HELP_BUILD;

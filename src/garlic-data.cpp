@@ -336,18 +336,46 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
                                int winsize,
                                int MAX_GAP,
                                bool PHASED,
-                               int numThreads)
+                               int numThreads,
+                               int ldSubsample)
 {
+
+    const gsl_rng_type *T;
+    gsl_rng *r;
+    T = gsl_rng_default;
+    r = gsl_rng_alloc (T);
+    gsl_rng_set(r, time(NULL));
+
+    //to hold the indicies of the randomly selected individuals
+    int nind = hapDataByChr->at(0)->nind;
+    int *randInd;
+    if (ldSubsample >= nind || ldSubsample <= 0)
+    {
+        ldSubsample = nind;
+        randInd = new int[nind];
+        for (int i = 0; i < nind; i++) randInd[i] = i;
+    }
+    else
+    {
+        int* indIndex = new int[nind];
+        for (int i = 0; i < nind; i++) indIndex[i] = i;
+        randInd = new int[ldSubsample];
+        gsl_ran_choose(r, randInd, ldSubsample, indIndex, nind, sizeof(int));
+        delete [] indIndex;
+        nind = ldSubsample;
+    }
+
+
     vector< LDData * > *ldDataByChr = new vector< LDData * >;
     for(unsigned int chr = 0; chr < hapDataByChr->size(); chr++){
         cerr << mapDataByChr->at(chr)->chr << "    ";
-        if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), winsize, numThreads));
-        else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), winsize, numThreads));
+        if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), winsize, numThreads, randInd, ldSubsample));
+        else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), winsize, numThreads, randInd, ldSubsample));
     }
     return ldDataByChr;
 }
 
-LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads){
+LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads, int *indIndex, int ldSubsample){
     
     LDData *LD = initLDData(hapData->nloci, winsize);
 
@@ -371,6 +399,8 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
         order->start = previous;
         previous += NUM_PER_THREAD[i];
         order->stop = previous;
+        order->indIndex = indIndex;
+        order->ldSubsample = ldSubsample;
 
         pthread_create(&(peer[i]),
                        NULL,
@@ -394,7 +424,7 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
     return LD;
 }
 
-LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThreads){
+LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThreads, int *indIndex, int ldSubsample){
     
     LDData *LD = initLDData(hapData->nloci, winsize);
 
@@ -418,6 +448,8 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
         order->start = previous;
         previous += NUM_PER_THREAD[i];
         order->stop = previous;
+        order->indIndex = indIndex;
+        order->ldSubsample = ldSubsample;
 
         pthread_create(&(peer[i]),
                        NULL,
@@ -449,13 +481,16 @@ void parallelHR2(void *order){
     int start = p->start;
     int stop = p->stop;
     Bar *bar = p->bar;
+    int *indIndex = p->indIndex;
+    int ldSubsample = p->ldSubsample;
+
 
     if (hapData->nloci - stop < winsize) stop = hapData->nloci - winsize + 1;
 
     for (int locus = start; locus < stop; locus++){
         advanceBar(*bar,1);
         for (int i = locus; i < locus + winsize; i++){
-            ldHR2(LD, hapData, genoFreqData, i, locus, locus + winsize - 1);
+            ldHR2(LD, hapData, genoFreqData, i, locus, locus + winsize - 1, indIndex, ldSubsample);
         }
     }
 }
@@ -469,29 +504,32 @@ void parallelR2(void *order){
     int start = p->start;
     int stop = p->stop;
     Bar *bar = p->bar;
+    int *indIndex = p->indIndex;
+    int ldSubsample = p->ldSubsample;
+
 
     if (hapData->nloci - stop < winsize) stop = hapData->nloci - winsize + 1;
 
     for (int locus = start; locus < stop; locus++){
         advanceBar(*bar,1);
         for (int i = locus; i < locus + winsize; i++){
-            ldR2(LD, hapData, freqData, i, locus, locus + winsize - 1);
+            ldR2(LD, hapData, freqData, i, locus, locus + winsize - 1, indIndex, ldSubsample);
         }
     }
 }
 
 
-void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end) {
+void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end, int *indIndex, int ldSubsample) {
     for (int i = start; i <= end; i++) {
-        if (i != site) LD->LD[start][site-start] += hr2(hapData, genoFreqData, i, site);
+        if (i != site) LD->LD[start][site-start] += hr2(hapData, genoFreqData, i, site, indIndex, ldSubsample);
         else LD->LD[start][site-start] += 1;
     }
     return;
 }
 
-void ldR2(LDData *LD, HapData *hapData, FreqData *freqData, int site, int start, int end) {
+void ldR2(LDData *LD, HapData *hapData, FreqData *freqData, int site, int start, int end, int *indIndex, int ldSubsample) {
     for (int i = start; i <= end; i++) {
-        if (i != site) LD->LD[start][site-start] += r2(hapData, freqData, i, site);
+        if (i != site) LD->LD[start][site-start] += r2(hapData, freqData, i, site, indIndex, ldSubsample);
         else LD->LD[start][site-start] += 1;
     }
     return;
@@ -518,13 +556,15 @@ unsigned int *make_thread_partition(int &numThreads, int ncols) {
 }
 
 
-double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j) {
+double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j, int *indIndex, int ldSubsample) {
     double HA = genoFreqData->homFreq[i];
     double HB = genoFreqData->homFreq[j];
     if(HA > 0 && HA < 1 && HB > 0 && HB < 1){
         double HAB = 0;
         double total = 0;
-        for (int ind = 0; ind < hapData->nind; ind++) {
+        //for (int ind = 0; ind < hapData->nind; ind++) {
+        for (int k = 0; k < ldSubsample; k++) {
+            int ind = indIndex[k];
             if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
                 total++;
                 if (hapData->data[i][ind] != 1 && hapData->data[j][ind] != 1) {
@@ -543,7 +583,7 @@ double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j) {
     }
 }
 
-double r2(HapData *hapData, FreqData *freqData, int i, int j) {
+double r2(HapData *hapData, FreqData *freqData, int i, int j, int *indIndex, int ldSubsample) {
     
     double pi = freqData->freq[i];
     double pj = freqData->freq[j];
@@ -551,7 +591,9 @@ double r2(HapData *hapData, FreqData *freqData, int i, int j) {
     if(pi > 0 && pi < 1 && pj > 0 && pj < 1){
         double x11 = 0;
         double total = 0;
-        for (int ind = 0; ind < hapData->nind; ind++) {
+        //for (int ind = 0; ind < hapData->nind; ind++) {
+        for (int k = 0; k < ldSubsample; k++) {
+            int ind = indIndex[k];
             if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
                 total+=2;
                 if (hapData->data[i][ind] == 2 && hapData->data[j][ind] == 2) x11+=2;
