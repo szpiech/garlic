@@ -373,9 +373,9 @@ int main(int argc, char *argv[])
         //if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
         if(kdeResult == NULL)
         {
-            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (THIN ? winsize : 1));
+            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (THIN ? winsize : 1), winsize);
         }
-        else LOD_CUTOFF = selectLODCutoff(kdeResult);
+        else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize);
 
         LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
     }

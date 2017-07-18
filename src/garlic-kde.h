@@ -33,7 +33,7 @@ string makeKDEFilename(string basename, int winsize);
 
 int get_arg_max(double *nums, int size);
 int get_arg_min(double *nums, int size);
-double get_min_btw_modes(double *x, double *y, int size);
+double get_min_btw_modes(double *x, double *y, int size, int wsize);
 double slope(double x0, double y0, double x1, double y1);
 
 double calculateWiggle(KDEResult *kdeResult, int size = 20);

@@ -139,7 +139,7 @@ double nrd0(double x[], const int N)
     return (bw);
 }
 
-double get_min_btw_modes(double *x, double *y, int size)
+double get_min_btw_modes(double *x, double *y, int size, int wsize)
 {
     //double initialGuess = 0;
     
@@ -227,7 +227,9 @@ double get_min_btw_modes(double *x, double *y, int size)
 
     int minIndex = get_arg_min(&(y[leftMaxIndex]), rightMaxIndex - leftMaxIndex + 1) + leftMaxIndex;
 
-    return x[minIndex];
+
+    if(abs(x[minIndex]/wsize) < 1) return x[minIndex];
+    else return 0;
 
 }
 

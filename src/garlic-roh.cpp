@@ -639,10 +639,10 @@ string makeROHFilename(string outfile)
     return outfile;
 }
 
-double selectLODCutoff(KDEResult *kdeResult)
+double selectLODCutoff(KDEResult *kdeResult, int wsize)
 {
     double LOD_CUTOFF;
-    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512); }
+    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512, wsize); }
     catch (...)
     {
         LOG.err("ERROR: Failed to find the minimum between modes in the LOD score density.");
@@ -654,7 +654,7 @@ double selectLODCutoff(KDEResult *kdeResult)
 }
 
 
-double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step)
+double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wsize)
 {
     //Format the LOD window data into a single array per pop with no missing data
     //Prepped for KDE
@@ -673,7 +673,7 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
     try { writeKDEResult(kdeResult, kdeoutfile); }
     catch (...) { return -1; }
 
-    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512); }
+    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512, wsize); }
     catch (...)
     {
         LOG.err("ERROR: Failed to find the minimum between modes in the LOD score density.");

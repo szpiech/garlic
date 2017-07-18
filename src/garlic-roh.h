@@ -136,8 +136,8 @@ void releaseROHData(vector< ROHData * > *rohDataByInd);
 
 string makeROHFilename(string outfile);
 
-double selectLODCutoff(KDEResult *kdeResult);
-double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step);
+double selectLODCutoff(KDEResult *kdeResult, int wisize);
+double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wisize);
 
 void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< FreqData * > *freqDataByChr,
