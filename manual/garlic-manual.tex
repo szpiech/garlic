@@ -18,7 +18,7 @@
 
 \newcommand{\negspace}{\!\!\!\!\!\!\!\!\!\!\!\!}
 
-\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.4 User Manual}
+\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.5 User Manual}
 \date{\today}
 \author{Zachary A Szpiech}
 
@@ -286,6 +286,10 @@ Per-genotype likelihoods should be given as either a phred-scaled ({\tt --gl-typ
 \subsubsection{{\tt --kde-subsample}}
 
 {\tt --kde-subsample <int>} The number of individuals to randomly sample for LOD score KDE. If there are fewer individuals in the population all are used. Set $\le 0$ to use all individuals (may use large amounts of RAM). Default: $20$.
+
+\subsubsection{{\tt --ld-subsample}}
+
+{\tt --ld-subsample <int>} The number of individuals to randomly sample for LD computation during wLOD. If there are fewer individuals in the population all are used. Set $\le 0$ to use all individuals (will increase runtime). Default: $0$.
 
 \subsubsection{{\tt --lod-cutoff}}
 {\tt --lod-cutoff <double>} For LOD based ROH calling, specify a single LOD score cutoff above which ROH are called in all populations.  By default, this is chosen automatically with KDE.
