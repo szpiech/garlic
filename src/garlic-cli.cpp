@@ -429,11 +429,13 @@ bool checkGLType(string TYPE, string tglsfile)
 	return false;
 }
 
-bool checkWinsize(int winsize, bool WINSIZE_EXPLORE)
+bool checkWinsize(int winsize, bool WINSIZE_EXPLORE, bool AUTO_WINSIZE, bool WEIGHTED)
 {
-	if (winsize <= 1 && !WINSIZE_EXPLORE){
-		LOG.err("ERROR: SNP window size must be > 1. If using --auto-winsize, this is the starting value.");
-		return true;
+	if (winsize <= 1){
+		if(!WINSIZE_EXPLORE && !(AUTO_WINSIZE && WEIGHTED)){
+			LOG.err("ERROR: SNP window size must be > 1. If using --auto-winsize, this is the starting value.");
+			return true;
+		}
 	}
 	return false;
 }

@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
     LOG.log("Automatic window step size:", AUTO_WINSIZE_STEP);
 
     int winsize = params->getIntFlag(ARG_WINSIZE);
-    argerr = argerr || checkWinsize(winsize, WINSIZE_EXPLORE);
+    argerr = argerr || checkWinsize(winsize, WINSIZE_EXPLORE, AUTO_WINSIZE, WEIGHTED);
     if (argerr) return -1;
     if (!WINSIZE_EXPLORE && !AUTO_WINSIZE) LOG.log("User defined window size:", winsize);
 
