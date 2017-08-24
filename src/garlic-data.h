@@ -50,7 +50,7 @@ struct GenMapScaffold {
 
 struct MapData
 {
-  double *physicalPos;
+  int *physicalPos;
   double *geneticPos;
   string *locusName;
   char *allele;

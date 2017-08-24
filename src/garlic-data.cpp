@@ -218,7 +218,7 @@ HapData *initHapData(const vector< short * > &hap, const vector< bool * > &fc, i
 MapData *initMapData(const vector<double> &geneticPos, const vector<double> &physicalPos, const vector<string> &locusNames, const vector<char> &allele, int nloci, string chr){
 
     MapData *mapData = new MapData;
-    mapData->physicalPos = new double[nloci];
+    mapData->physicalPos = new int[nloci];
     mapData->geneticPos = new double[nloci];
     mapData->locusName = new string[nloci];
     mapData->allele = new char[nloci];
@@ -1453,7 +1453,7 @@ MapData *initMapData(int nloci)
     MapData *data = new MapData;
     data->nloci = nloci;
     data->locusName = new string[nloci];
-    data->physicalPos = new double[nloci];
+    data->physicalPos = new int[nloci];
     data->geneticPos = new double[nloci];
     data->allele = new char[nloci];
     //data->allele0 = new char[nloci];

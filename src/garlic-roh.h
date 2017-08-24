@@ -46,6 +46,7 @@ struct ROHData
   vector<int> chr;
   vector<double> start;
   vector<double> stop;
+  vector<double> length;
 };
 
 struct ROHLength

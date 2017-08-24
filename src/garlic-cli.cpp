@@ -1,15 +1,16 @@
 #include "garlic-cli.h"
 #include <iostream>
 
-const string VERSION = "1.1.5";
+const string VERSION = "1.1.6";
 
 const string PREAMBLE = "\ngarlic v" + VERSION + " -- a program to call runs of homozygosity in genetic data.\n\
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.\n\
 \n\
 Citations:\n\
 \n\
-ZA Szpiech, et al. (2017) Bioinformatics, doi: 10.1093/bioinformatics/btx102.\n\
-TJ Pemberton, et al. (2012) AJHG, 91: 275–292.\n";
+A Blant, et al. (2017) bioRxiv, doi: 10.1101/177352\n\
+ZA Szpiech, et al. (2017) Bioinformatics, doi: 10.1093/bioinformatics/btx102\n\
+TJ Pemberton, et al. (2012) AJHG, 91: 275–292\n";
 
 const string ARG_OVERLAP_FRAC = "--overlap-frac";
 const double DEFAULT_OVERLAP_FRAC = 0.25;
@@ -165,7 +166,7 @@ const string HELP_NCLUST = "Set number of clusters for GMM classification of ROH
 
 const string ARG_CM = "--cm";
 const bool DEFAULT_CM = false;
-const string HELP_CM = "Construct ROH in genetic distance units. This requires a mapfile.";
+const string HELP_CM = "Measure ROH lengths in genetic distance units. This requires a mapfile.";
 
 const string ARG_KDE_THINNING = "--no-kde-thinning";
 const bool DEFAULT_KDE_THINNING = false;

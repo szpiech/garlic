@@ -24,7 +24,7 @@ void calcLOD(MapData *mapData,
     short **data = hapData->data;
     int nloci = hapData->nloci;
     int nind = hapData->nind;
-    double *physicalPos = mapData->physicalPos;
+    int *physicalPos = mapData->physicalPos;
     //double *geneticPos = mapData->geneticPos;
     //string *locusName = mapData->locusName;
     double *freq = freqData->freq;
@@ -219,7 +219,7 @@ void parallelwLOD(void *order){
     short **data = p->hapData->data;
     int nloci = p->hapData->nloci;
     int nind = p->hapData->nind;
-    double *physicalPos = p->mapData->physicalPos;
+    int *physicalPos = p->mapData->physicalPos;
     double *geneticPos = p->mapData->geneticPos;
     double *freq = p->freqData->freq;
     double **win = p->winData->data;
@@ -432,10 +432,10 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
         {
             WinData *winData = winDataByChr->at(chr);
             MapData *mapData = mapDataByChr->at(chr);
-            double *pos;
-
-            if(CM) pos = mapData->geneticPos;
-            else pos = mapData->physicalPos;
+            int *pos;
+            double *gpos;
+            gpos = mapData->geneticPos;
+            pos = mapData->physicalPos;
 
             int cStart = centro->centromereStart(mapData->chr);
             int cEnd = centro->centromereEnd(mapData->chr);
@@ -453,9 +453,11 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                 }
             }
 
-            double winStart = -1;
+            double gwinStart = -1;
+            double gwinStop = -1;
+            int winStart = -1;
             int winStartIndex = -1;
-            double winStop = -1;
+            int winStop = -1;
             int winStopIndex = -1;
             for (int w = 0; w < mapData->nloci; w++)
             {
@@ -463,59 +465,67 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                 //Start the window
                 if (winStart < 0 && inWin[w] >= OVERLAP_THRESHOLD)
                 {
-                    //winStart = mapData->physicalPos[w];
+                    gwinStart = gpos[w];
                     winStart = pos[w];
                     winStartIndex = w;
                 }
                 else if (inWin[w] >= OVERLAP_THRESHOLD && (mapData->physicalPos[w] - mapData->physicalPos[w - 1] > MAX_GAP ||
                          inGap(mapData->physicalPos[w - 1], mapData->physicalPos[w], cStart, cEnd)) ) {
-                    //winStop = mapData->physicalPos[w - 1];
+                    gwinStop = gpos[w - 1];
                     winStop = pos[w - 1];
                     winStopIndex = w - 1;
                     if(winStopIndex - winStartIndex + 1 >= OVERLAP_THRESHOLD){
-                        double size = winStop - winStart + (!CM ? 1 : 0);
+                        double size = CM ? gwinStop - gwinStart : winStop - winStart + 1;
                         lengths.push_back(size);
+                        rohData->length.push_back(size);
                         rohData->chr.push_back(chr);
                         rohData->start.push_back(winStart);
                         rohData->stop.push_back(winStop);
                     }
+                    gwinStop = -1;
                     winStop = -1;
                     winStopIndex = -1;
+                    gwinStart = gpos[w];
                     winStart = pos[w];
                     winStartIndex = w;
                 }
                 else if (winStart > 0 && ! (inWin[w] >= OVERLAP_THRESHOLD) )
                 {
-                    //winStop = mapData->physicalPos[w - 1];
+                    gwinStop = gpos[w - 1];
                     winStop = pos[w - 1];
                     winStopIndex = w - 1;
                     if(winStopIndex - winStartIndex + 1 >= OVERLAP_THRESHOLD){
-                        double size = winStop - winStart + (!CM ? 1 : 0);
+                        double size = CM ? gwinStop - gwinStart : winStop - winStart + 1;
                         lengths.push_back(size);
+                        rohData->length.push_back(size);
                         rohData->chr.push_back(chr);
                         rohData->start.push_back(winStart);
                         rohData->stop.push_back(winStop);
                     }
+                    gwinStart = -1;
                     winStart = -1;
                     winStartIndex = -1;
+                    gwinStop = -1;
                     winStop = -1;
                     winStopIndex = -1;
-
                 }
                 else if (winStart > 0 && w + 1 >= mapData->nloci)
                 {
-                    //winStop = mapData->physicalPos[w];
+                    gwinStop = gpos[w];
                     winStop = pos[w];
                     winStopIndex = w;
                     if(winStopIndex - winStartIndex + 1 >= OVERLAP_THRESHOLD){
-                        double size = winStop - winStart + (!CM ? 1 : 0);
+                        double size = CM ? gwinStop - gwinStart : winStop - winStart + 1;
                         lengths.push_back(size);
+                        rohData->length.push_back(size);
                         rohData->chr.push_back(chr);
                         rohData->start.push_back(winStart);
                         rohData->stop.push_back(winStop);
                     }
+                    gwinStart = -1;
                     winStart = -1;
                     winStartIndex = -1;
+                    gwinStop = -1;
                     winStop = -1;
                     winStopIndex = -1;
                 }
@@ -596,7 +606,7 @@ void writeROHData(string outfile,
 
         for (unsigned int roh = 0; roh < rohData->chr.size(); roh++)
         {
-            double size = (rohData->stop[roh] - rohData->start[roh]);
+            double size = rohData->length[roh];
             char sc = 'A';
             char sizeClass = 'X';
             string color = "X";
@@ -619,7 +629,7 @@ void writeROHData(string outfile,
             string chr = mapDataByChr->at(rohData->chr[roh])->chr;
             if (chr[0] != 'c' && chr[0] != 'C') chr = "chr" + chr;
             if(CM){
-                out << chr << "\t" << rohData->start[roh] << "\t" << rohData->stop[roh]
+                out << chr << "\t" << int(rohData->start[roh]) << "\t" << int(rohData->stop[roh])
                     << "\t" << sizeClass << "\t" << size << "\t.\t0\t0\t" << color << endl;
             }
             else{
