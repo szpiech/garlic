@@ -43,6 +43,8 @@ FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
 ---CHANGES---
+24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
+
 18JUL2017 - v1.1.5 Introduced --ld-subsample argument. If set > 0, will use only a subset of individuals for computing LD statistics when calculating wLOD scores. 
 
 18MAY2017 - v1.1.4 If a freq file is provided, GARLIC now ensures that internal coding of alleles is consistent with the allele specified in the file. Improved handling of loci with 100% missing data. Improved reading of gzipped freq files. Improved lod score cutoff discovery. Removed default setting for --winsize, which must now be specified. Now allows --auto-winsize to be used with --winsize-multi, will choose best from the list.

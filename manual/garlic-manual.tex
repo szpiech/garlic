@@ -18,7 +18,7 @@
 
 \newcommand{\negspace}{\!\!\!\!\!\!\!\!\!\!\!\!}
 
-\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.5 User Manual}
+\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v1.1.6 User Manual}
 \date{\today}
 \author{Zachary A Szpiech}
 
@@ -267,7 +267,7 @@ Use {\tt --out <string>} to provide a base name for an output file.  This will b
 
 \subsubsection{{\tt --cm}}
 
-{\tt --cm <bool>} Construct ROH in genetic distance units. This requires a mapfile.
+{\tt --cm <bool>} Measure ROH lengths in genetic distance units. This requires a mapfile.
 
 \subsubsection{{\tt --error}}
 
@@ -334,6 +334,9 @@ Uses extra RAM. Has no effect on computations without --weighted. Default: false
 \section{Change Log}
 
 \begin{lstlisting}
+24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
+
+18JUL2017 - v1.1.5 Introduced --ld-subsample argument. If set > 0, will use only a subset of individuals for computing LD statistics when calculating wLOD scores. 
 
 18MAY2017 - v1.1.4 If a freq file is provided, GARLIC now ensures that internal coding of alleles is consistent with the allele specified in the file. Improved handling of loci with 100% missing data. Improved reading of gzipped freq files. Improved lod score cutoff discovery. Removed default setting for --winsize, which must now be specified. Now allows --auto-winsize to be used with --winsize-multi, will choose best from the list.
 
