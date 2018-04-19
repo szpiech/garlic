@@ -2037,8 +2037,9 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
+                double x = winDataByChr->at(chr)->data[ind][locus];
                 //if (winDataByChr->at(chr)->data[ind][locus] == MISSING) nmiss++;
-                if (winDataByChr->at(chr)->data[ind][locus] != MISSING) size++;
+                if (x != MISSING && !(isnan(x)) ) size++;
             }
         }
 
@@ -2055,9 +2056,10 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
-                if (winDataByChr->at(chr)->data[ind][locus] != MISSING)
+                double x = winDataByChr->at(chr)->data[ind][locus];
+                if (x != MISSING && !(isnan(x)) )
                 {
-                    rawWinData->data[i] = winDataByChr->at(chr)->data[ind][locus];
+                    rawWinData->data[i] = x;
                     i++;
                 }
             }
@@ -2112,7 +2114,8 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
                 //if (winDataByChr->at(chr)->data[randInd[ind]][locus] == MISSING) nmiss++;
-                if (winDataByChr->at(chr)->data[randInd[ind]][locus] != MISSING) size++;
+                double x = winDataByChr->at(chr)->data[randInd[ind]][locus];
+                if (x != MISSING && !(isnan(x))) size++;
             }
         }
 
@@ -2129,9 +2132,10 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
-                if (winDataByChr->at(chr)->data[randInd[ind]][locus] != MISSING)
+                double x = winDataByChr->at(chr)->data[randInd[ind]][locus];
+                if (x != MISSING && !(isnan(x)))
                 {
-                    rawWinData->data[i] = winDataByChr->at(chr)->data[randInd[ind]][locus];
+                    rawWinData->data[i] = x;
                     i++;
                 }
             }
