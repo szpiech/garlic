@@ -319,9 +319,8 @@ double calcDensity(int numLoci, vector< MapData * > *mapDataByChr, centromere *c
     double density = numLoci;
     double length = 0;
     for(unsigned int i = 0; i < mapDataByChr->size(); i++){
-        char str[3];
-        sprintf(str,"%d",i+1);
-        string chrstr = checkChrName(string(str));
+        string str = mapDataByChr->at(i)->chr; 
+        string chrstr = checkChrName(str);
         int nloci = mapDataByChr->at(i)->nloci;
         length += mapDataByChr->at(i)->physicalPos[nloci-1] - mapDataByChr->at(i)->physicalPos[0] + 1 - (centro->centromereEnd(chrstr) - centro->centromereStart(chrstr));
     }
