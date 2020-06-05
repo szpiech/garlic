@@ -177,7 +177,7 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
             maxCount = uniq_counts[i];
         }
         else if (secondMaxCount <= uniq_counts[i]){
-            secondMaxCount == uniq_counts[i];
+            secondMaxCount = uniq_counts[i];
         }
     }
 
