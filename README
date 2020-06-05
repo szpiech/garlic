@@ -44,7 +44,7 @@ FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
 ---CHANGES---
-05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers.
+05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers. ***I'm having trouble getting mscOS versions to compile, so the current binary for mscOS is still v1.6.0 and still has this bug.***
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 
