@@ -1,9 +1,9 @@
-GARLIC is a program for calling runs of homozygosity in genotype data.  It implements the ROH calling method of Pemberton et al. AJHG (2012).
+GARLIC is a program for calling runs of homozygosity in genotype data.  It implements the ROH calling method of Pemberton et al. AJHG (2012) and Blant et al. (2017).
 
 Citations:
 
-A Blant, et al. (2017) bioRxiv, doi: 10.1101/177352
-ZA Szpiech, et al. (2017) Bioinformatics, doi: 10.1093/bioinformatics/btx102
+A Blant, et al. (2017) BMC genomics 18 (1), 928.
+ZA Szpiech, et al. (2017) Bioinformatics 33 (13), 2059-2062.
 TJ Pemberton, et al. (2012) AJHG, 91: 275–292
 
 **NOTE TO WINDOWS USERS: In order to successfully run GARLIC you must have ann_figtree_version.dll and figtree.dll in the same folder as garlic.exe 
@@ -44,6 +44,8 @@ FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
 ---CHANGES---
+05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers.
+
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 
 18JUL2017 - v1.1.5 Introduced --ld-subsample argument. If set > 0, will use only a subset of individuals for computing LD statistics when calculating wLOD scores. 
