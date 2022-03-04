@@ -535,7 +535,7 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
         }
     }
 
-    ROHLength *rohLengths = initROHLength(lengths.size(), indData->pop);
+    ROHLength *rohLengths = initROHLength(lengths.size());
     for (unsigned int i = 0; i < lengths.size(); i++)
     {
         rohLengths->length[i] = lengths[i];
@@ -545,10 +545,10 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
     return rohDataByInd;
 }
 
-ROHLength *initROHLength(int size, string pop)
+ROHLength *initROHLength(int size)
 {
     ROHLength *rohLength = new ROHLength;
-    rohLength->pop = pop;
+    //rohLength->pop = pop;
     rohLength->length = new double[size];
     rohLength->size = size;
     return rohLength;
@@ -575,7 +575,7 @@ void writeROHData(string outfile,
                   vector< ROHData * > *rohDataByInd,
                   vector< MapData * > *mapDataByChr,
                   vector< double > bounds,
-                  string popName,
+                  string* pop,
                   string version, bool CM)
 {
     string colors[9];
@@ -597,9 +597,12 @@ void writeROHData(string outfile,
         throw 0;
     }
 
+    string popName;
+
     for (unsigned int ind = 0; ind < rohDataByInd->size(); ind++)
     {
         ROHData *rohData = rohDataByInd->at(ind);
+        popName = pop[ind];
         out << "track name=\"Ind: " + rohData->indID + " Pop:" + popName +
             " ROH\" description=\"Ind: " + rohData->indID + " Pop:" + popName +
             " ROH from GARLIC v" + version + "\" visibility=2 itemRgb=\"On\"\n";

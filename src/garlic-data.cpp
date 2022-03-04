@@ -1308,7 +1308,7 @@ void releaseFreqData(vector< FreqData * > *freqDataByChr)
     return;
 }
 
-void writeFreqData(string freqOutfile, string popName,
+void writeFreqData(string freqOutfile,
                    vector< FreqData * > *freqDataByChr,
                    vector< MapData * > *mapDataByChr,
                    IndData *indData)
@@ -1342,7 +1342,7 @@ void writeFreqData(string freqOutfile, string popName,
     return;
 }
 
-vector< FreqData * > *readFreqData(string freqfile, string popName,
+vector< FreqData * > *readFreqData(string freqfile,
                                    vector< MapData * > *mapDataByChr)
 {
     //scan file for format integrity
@@ -1509,6 +1509,7 @@ void releaseIndData(vector< IndData * > *indDataByPop)
 void releaseIndData(IndData *data)
 {
     delete [] data->indID;
+    delete [] data->pop;
     delete data;
     return;
 }
@@ -1708,13 +1709,13 @@ void writeWinData(vector< WinData * > *winDataByChr,
 {
     ogzstream fout;
     int numChr = mapDataByChr->size();
-    string popName = indData->pop;
+    //string popName = indData->pop;
 
     for (int chr = 0; chr < numChr; chr++)
     {
         string rawWinOutfile = outfile;
-        rawWinOutfile += ".";
-        rawWinOutfile += popName;
+        //rawWinOutfile += ".";
+        //rawWinOutfile += popName;
         rawWinOutfile += ".";
         rawWinOutfile += mapDataByChr->at(chr)->chr;
         rawWinOutfile += ".raw.lod.windows.gz";
@@ -1890,7 +1891,7 @@ string checkChrName(string chr) {
     return chr;
 }
 
-void scanIndData3(string filename, int &numInd, string &popName) {
+void scanIndData3(string filename, int &numInd) {
     igzstream fin;
     fin.open(filename.c_str());
 
@@ -1937,7 +1938,9 @@ void scanIndData3(string filename, int &numInd, string &popName) {
         }
         else indList[ind] = 1;
 
+
         //Single population only, check to see if more than
+        /*
         if (nind == 1) {
             popName = pop;
         }
@@ -1949,6 +1952,7 @@ void scanIndData3(string filename, int &numInd, string &popName) {
             LOG.err(" ) in", filename);
             throw 0;
         }
+        */
         ss.clear();
     }
 
@@ -1984,11 +1988,11 @@ IndData *readIndData3(string filename, int numInd)
         ss.str(line);
         ss >> pop >> ind;
         indData->indID[i] = ind;
+        indData->pop[i] = pop;
         ss.clear();
     }
     fin.close();
-
-    indData->pop = pop;
+    
     return indData;
 }
 
@@ -2004,6 +2008,7 @@ IndData *initIndData(int nind)
     IndData *data = new IndData;
     data->nind = nind;
     data->indID = new string[nind];
+    data->pop = new string[nind];
 
     for (int ind = 0; ind < nind; ind++)
     {

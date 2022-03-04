@@ -51,7 +51,7 @@ struct ROHData
 
 struct ROHLength
 {
-  string pop;
+  //string pop;
   double *length;
   double size;
 };
@@ -122,7 +122,7 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         double OVERLAP_FRAC,
                                         bool CM);
 
-ROHLength *initROHLength(int size, string pop);
+ROHLength *initROHLength(int size);
 void releaseROHLength(ROHLength *rohLength);
 
 vector< ROHData * > *initROHData(IndData *indData);
@@ -130,7 +130,7 @@ void writeROHData(string outfile,
                   vector< ROHData * > *rohDataByInd,
                   vector< MapData * > *mapDataByChr,
                   vector< double > bounds,
-                  string popName,
+                  string* pop,
                   string version,
                   bool CM);
 void releaseROHData(vector< ROHData * > *rohDataByInd);

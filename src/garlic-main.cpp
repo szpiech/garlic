@@ -196,7 +196,7 @@ int main(int argc, char *argv[])
     double variantDensity = -1;;
     //vector< int_pair_t > *chrCoordList = NULL;
     vector< MapData * > *mapDataByChr = NULL;
-    string popName;
+    //string popName;
     IndData *indData = NULL;
     vector< HapData * > *hapDataByChr = NULL;
     vector< FreqData * > *freqDataByChr = NULL;
@@ -219,10 +219,10 @@ int main(int argc, char *argv[])
 
         LOG.log("Total loci:", numLoci);
 
-        scanIndData3(tfamfile, numInd, popName);
+        scanIndData3(tfamfile, numInd);
         indData = readIndData3(tfamfile, numInd);
 
-        LOG.log("Population:", popName);
+        //LOG.log("Population:", popName);
         LOG.log("Total diploid individuals:", numInd);
 
         if (tglsfile.compare(DEFAULT_TGLS) != 0) {
@@ -249,12 +249,12 @@ int main(int argc, char *argv[])
 
         string freqOutfile = outfile;
         freqOutfile += ".freq";
-        writeFreqData(freqOutfile, popName, freqDataByChr, mapDataByChr, indData);
+        writeFreqData(freqOutfile, freqDataByChr, mapDataByChr, indData);
     }
     else //(!AUTO_FREQ)
     {
         cout << "Loading user provided allele frequencies from " << freqfile << "\n";
-        try { freqDataByChr = readFreqData(freqfile, popName, mapDataByChr); }
+        try { freqDataByChr = readFreqData(freqfile, mapDataByChr); }
         catch (...) { return -1; }
     }
 
@@ -403,7 +403,7 @@ int main(int argc, char *argv[])
     //Output ROH calls to file, one for each individual
     //includes A/B/C/etc size classifications
     cout << "Writing ROH tracts.\n";
-    writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, boundSizes, popName, VERSION, CM);
+    writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, boundSizes, indData->pop, VERSION, CM);
 
     releaseIndData(indData);
     releaseROHLength(rohLength);

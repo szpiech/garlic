@@ -61,7 +61,7 @@ struct MapData
 
 struct IndData
 {
-  string pop;
+  string *pop;
   string *indID;
   int nind;
 };
@@ -238,12 +238,12 @@ void releaseFreqData(vector< FreqData * > *freqDataByChr);
 
 FreqData *calcFreqData(HapData *data, int nresample, const gsl_rng *r);
 vector< FreqData * > *calcFreqData2(vector< HapData * > *hapDataByChr, int nresample);
-void writeFreqData(string freqOutfile, string popName,
+void writeFreqData(string freqOutfile,
                    vector< FreqData * > *freqDataByChr,
                    vector< MapData * > *mapDataByChr,
                    IndData *indData);
 
-vector< FreqData * > *readFreqData(string freqfile, string popName,
+vector< FreqData * > *readFreqData(string freqfile,
                                    vector< MapData * > *mapDataByChr);
 
 vector< GenoLikeData * > *readTGLSData(string filename,
@@ -256,7 +256,7 @@ MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);
 void releaseMapData(vector< MapData * > *mapDataByChr);
 
-void scanIndData3(string filename, int &numInd, string &popName);
+void scanIndData3(string filename, int &numInd);
 IndData *readIndData3(string filename, int numInd);
 IndData *initIndData(int nind);
 void releaseIndData(IndData *data);
