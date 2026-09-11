@@ -994,8 +994,15 @@ double getMapInfo(int queryPos, GenMapScaffold *scaffold, int &count) {
     }
     else
     {
-        int startIndex;
-        int endIndex;
+        //currentIndex is a forward-only cursor, which is correct only while
+        //queries arrive in ascending order.  If a query sits behind the cursor
+        //(TPED positions not sorted within a chromosome) the scan used to fall
+        //through and interpolate on uninitialised indices -- -Wall flags this
+        //as "used uninitialized whenever 'for' loop exits because its condition
+        //is false".  Fall back to a rescan from the start, and fail loudly if
+        //the position really is not bracketed.
+        int startIndex = -1;
+        int endIndex = -1;
         for (/*scaffold->currentIndex*/; scaffold->currentIndex < scaffold->nloci - 1; scaffold->currentIndex++)
         {
             if (queryPos > scaffold->physicalPos[scaffold->currentIndex] && queryPos < scaffold->physicalPos[scaffold->currentIndex + 1])
@@ -1004,6 +1011,25 @@ double getMapInfo(int queryPos, GenMapScaffold *scaffold, int &count) {
                 endIndex = scaffold->currentIndex + 1;
                 break;
             }
+        }
+        if (startIndex < 0)
+        {
+            for (scaffold->currentIndex = 0; scaffold->currentIndex < scaffold->nloci - 1; scaffold->currentIndex++)
+            {
+                if (queryPos > scaffold->physicalPos[scaffold->currentIndex] && queryPos < scaffold->physicalPos[scaffold->currentIndex + 1])
+                {
+                    startIndex = scaffold->currentIndex;
+                    endIndex = scaffold->currentIndex + 1;
+                    break;
+                }
+            }
+        }
+        if (startIndex < 0)
+        {
+            LOG.err("ERROR: Physical position", queryPos, false);
+            LOG.err(" on", scaffold->chr, false);
+            LOG.err(" is not bracketed by the genetic map scaffold.");
+            throw 0;
         }
         count++;
         return interpolate(scaffold->physicalPos[startIndex], scaffold->geneticPos[startIndex],
