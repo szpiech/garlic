@@ -135,6 +135,7 @@ int main(int argc, char *argv[])
     //--threads used to affect only the weighted LD stage; the KDE targets are
     //independent, so give it the same budget.
     setKDEThreads(numThreads);
+    setLODThreads(numThreads);
 
     double error = params->getDoubleFlag(ARG_ERROR);
     argerr = argerr || checkError(error, tglsfile);

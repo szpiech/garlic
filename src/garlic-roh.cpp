@@ -15,43 +15,67 @@ bool inGap(int qStart, int qEnd, int targetStart, int targetEnd)
              (targetStart >= qStart && targetEnd <= qEnd) );
 }
 
-void calcLOD(MapData *mapData,
-             HapData *hapData, FreqData *freqData,
-             GenoLikeData *GLData,
-             WinData *winData, centromere *centro,
-             int winsize, double error, int MAX_GAP, bool USE_GL)
+static int LOD_NUM_THREADS = 1;
+
+void setLODThreads(int n) { LOD_NUM_THREADS = (n > 0 ? n : 1); }
+
+struct LOD_work_order_t
 {
-    geno_t **data = hapData->data;
-    int nloci = hapData->nloci;
-    int nind = hapData->nind;
-    int *physicalPos = mapData->physicalPos;
-    //double *geneticPos = mapData->geneticPos;
-    //string *locusName = mapData->locusName;
-    double *freq = freqData->freq;
+    MapData *mapData;
+    HapData *hapData;
+    FreqData *freqData;
+    GenoLikeData *GLData;
+    WinData *winData;
+    int winsize;
+    double error;
+    int MAX_GAP;
+    bool USE_GL;
+    int cStart;
+    int cEnd;
+    const double *lut;
+    Bar *bar;
+    int indStart;
+    int indStop;
+};
+
+//Per-individual LOD windows.  Each individual writes only win[ind][*], so
+//there is nothing shared between workers except the (mutex-guarded) progress
+//bar; `error` is taken by value so the USE_GL path can overwrite it locally.
+static void *parallelLOD(void *order)
+{
+    LOD_work_order_t *p = (LOD_work_order_t *)order;
+    geno_t **data = p->hapData->data;
+    const int nloci = p->hapData->nloci;
+    const int *physicalPos = p->mapData->physicalPos;
+    const double *freq = p->freqData->freq;
+    double **win = p->winData->data;
+    GenoLikeData *GLData = p->GLData;
+    const double *lut = p->lut;
+    const int winsize = p->winsize;
+    const int MAX_GAP = p->MAX_GAP;
+    const bool USE_GL = p->USE_GL;
+    const int cStart = p->cStart;
+    const int cEnd = p->cEnd;
+
     int start = 0;
-    int stop = mapData->nloci;
-    double **win = winData->data;
-    //int nmiss = 0;
-
-    int cStart = centro->centromereStart(mapData->chr);
-    int cEnd = centro->centromereEnd(mapData->chr);
-
-    Bar bar;
-    barInit(bar,hapData->nloci,100);
-
-    //Check if the last window would overshoot the last locus in the data
+    int stop = p->mapData->nloci;
     if (nloci - stop < winsize) stop = nloci - winsize + 1;
 
-    //For each individual
-    for (int ind = 0; ind < nind; ind++)
+    //lod() depends on the genotype only through {0,1,2,missing}, so with a
+    //scalar error rate there are exactly four possible values per locus.
+    //LODV reads them from the precomputed table; with --tgls the error rate
+    //varies per genotype and the table does not apply.
+    #define LODV(I, IND) ( lut ? lut[4 * (I) + ((data[(I)][(IND)] >= 0 && data[(I)][(IND)] <= 2) ? data[(I)][(IND)] : 3)] \
+                               : lod(data[(I)][(IND)], freq[(I)], error) )
+
+    for (int ind = p->indStart; ind < p->indStop; ind++)
     {
-        advanceBar(bar,1);
-        //starting locus of the window
+        double error = p->error;
+        advanceBar(*(p->bar), 1);
         for (int locus = start; locus < stop; locus++)
         {
             win[ind][locus] = 0;
 
-            //First window?  If so we have to calcualte the whole thing
             if (locus == start)
             {
                 int prevI = locus;
@@ -61,29 +85,22 @@ void calcLOD(MapData *mapData,
                             inGap(physicalPos[prevI], physicalPos[i], cStart, cEnd))
                     {
                         win[ind][locus] = MISSING;
-                        //nmiss++;
                         locus = prevI;
                         break;
                     }
                     if (USE_GL) error = GLData->data[i][ind];
-                    win[ind][locus] += lod(data[i][ind], freq[i], error);
+                    win[ind][locus] += LODV(i, ind);
                     prevI = i;
                 }
-
-                //if(skip) continue;
-
             }
-            else //Otherwise, we can just subtract the locus that falls off and add the new one
+            else
             {
-                //But first we have to check if the previous window was MISSING
                 if (win[ind][locus - 1] != MISSING)
                 {
-                    //If the gap to the next locus is > MAX_GAP then make the window MISSING
                     if (physicalPos[locus + winsize - 1] - physicalPos[locus + winsize - 2] > MAX_GAP ||
                             inGap(physicalPos[locus + winsize - 2], physicalPos[locus + winsize - 1], cStart, cEnd))
                     {
                         win[ind][locus] = MISSING;
-                        //nmiss++;
                         locus = locus + winsize - 2;
                     }
                     else
@@ -92,12 +109,11 @@ void calcLOD(MapData *mapData,
                             win[ind][locus] = win[ind][locus - 1] -
                                               lod(data[locus - 1][ind], freq[locus - 1], GLData->data[locus - 1][ind]) +
                                               lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], GLData->data[locus + winsize - 1][ind]);
-
                         }
                         else {
                             win[ind][locus] = win[ind][locus - 1] -
-                                              lod(data[locus - 1][ind], freq[locus - 1], error) +
-                                              lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], error);
+                                              LODV(locus - 1, ind) +
+                                              LODV(locus + winsize - 1, ind);
                         }
                     }
                 }
@@ -110,24 +126,89 @@ void calcLOD(MapData *mapData,
                                 inGap(physicalPos[prevI], physicalPos[i], cStart, cEnd))
                         {
                             win[ind][locus] = MISSING;
-                            //nmiss++;
                             locus = prevI;
                             break;
                         }
                         if (USE_GL) error = GLData->data[i][ind];
-                        win[ind][locus] += lod(data[i][ind], freq[i], error);
+                        win[ind][locus] += LODV(i, ind);
                         prevI = i;
                     }
-
-                    //if(skip) continue;
                 }
             }
         }
     }
+    #undef LODV
+    return NULL;
+}
 
+void calcLOD(MapData *mapData,
+             HapData *hapData, FreqData *freqData,
+             GenoLikeData *GLData,
+             WinData *winData, centromere *centro,
+             int winsize, double error, int MAX_GAP, bool USE_GL)
+{
+    const int nloci = hapData->nloci;
+    const int nind = hapData->nind;
+
+    Bar bar;
+    barInit(bar, hapData->nind, 100);
+
+    //Four LOD values per locus, computed once instead of once per genotype:
+    //this replaces nind * nloci log10() calls with 4 * nloci.  Not applicable
+    //when --tgls supplies a per-genotype error rate.
+    double *lut = NULL;
+    if (!USE_GL)
+    {
+        lut = new double[4 * size_t(nloci)];
+        const double *freq = freqData->freq;
+        for (int i = 0; i < nloci; i++)
+        {
+            lut[4 * size_t(i) + 0] = lod(0, freq[i], error);
+            lut[4 * size_t(i) + 1] = lod(1, freq[i], error);
+            lut[4 * size_t(i) + 2] = lod(2, freq[i], error);
+            lut[4 * size_t(i) + 3] = lod(-9, freq[i], error);
+        }
+    }
+
+    LOD_work_order_t proto;
+    proto.mapData = mapData; proto.hapData = hapData; proto.freqData = freqData;
+    proto.GLData = GLData; proto.winData = winData; proto.winsize = winsize;
+    proto.error = error; proto.MAX_GAP = MAX_GAP; proto.USE_GL = USE_GL;
+    proto.cStart = centro->centromereStart(mapData->chr);
+    proto.cEnd = centro->centromereEnd(mapData->chr);
+    proto.lut = lut; proto.bar = &bar;
+    proto.indStart = 0; proto.indStop = nind;
+
+    int nt = LOD_NUM_THREADS;
+    if (nt > nind) nt = nind;
+    if (nt < 1) nt = 1;
+
+    if (nt == 1)
+    {
+        parallelLOD(&proto);
+    }
+    else
+    {
+        pthread_t *peer = new pthread_t[nt];
+        LOD_work_order_t *orders = new LOD_work_order_t[nt];
+        int per = nind / nt;
+        int extra = nind % nt;
+        int at = 0;
+        for (int i = 0; i < nt; i++)
+        {
+            orders[i] = proto;
+            orders[i].indStart = at;
+            at += per + (i < extra ? 1 : 0);
+            orders[i].indStop = at;
+            pthread_create(&(peer[i]), NULL, parallelLOD, (void *)&(orders[i]));
+        }
+        for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
+        delete [] peer;
+        delete [] orders;
+    }
+
+    if (lut) delete [] lut;
     finalize(bar);
-    //winData->nmiss = nmiss;
-
     return;
 }
 

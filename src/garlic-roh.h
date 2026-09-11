@@ -63,6 +63,7 @@ int selectWinsizeWeighted(double density);
 
 void parallelwLOD(void *order);
 
+void setLODThreads(int n);
 void calcLOD(MapData *mapData,
              HapData *hapData, FreqData *freqData,
              GenoLikeData *GLData,
