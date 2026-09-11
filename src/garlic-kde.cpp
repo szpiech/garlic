@@ -167,11 +167,19 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
         uniq_maxes[i] = 0;
     }
 
+    //Record WHICH grid point was the windowed maximum alongside its value, so
+    //the mode's location never has to be recovered by scanning y for a float
+    //that compares exactly equal (see below).
+    int *uniq_argmax = new int[size-winsize];
+    for(int i = 0; i < size-winsize; i++) uniq_argmax[i] = -1;
+
     int index = 0;
     for(int i = 0; i < size-winsize; i++){
-        maxes = y[get_arg_max(&(y[i]),winsize)+i];
+        int argmax_i = get_arg_max(&(y[i]),winsize)+i;
+        maxes = y[argmax_i];
         if(i == 1){
             uniq_maxes[i] = maxes;
+            uniq_argmax[i] = argmax_i;
             uniq_counts[i]++;
         }
         else if(uniq_maxes[index] == maxes){
@@ -180,6 +188,7 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
         else if(uniq_maxes[index] != maxes){
             index++;
             uniq_maxes[index] = maxes;
+            uniq_argmax[index] = argmax_i;
             uniq_counts[index]++;    
         }
     }
@@ -197,48 +206,57 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
     }
 
     vector<double> values;
+    vector<int> valueIdx;
     for(int i = 0; i < size-winsize; i++){
-        if(maxCount == uniq_counts[i] || secondMaxCount == uniq_counts[i]){
+        if((maxCount == uniq_counts[i] || secondMaxCount == uniq_counts[i]) && uniq_argmax[i] >= 0){
             values.push_back(uniq_maxes[i]);
+            valueIdx.push_back(uniq_argmax[i]);
         }
     }
 
-    int maxIndex = -1;
-    int secondMaxIndex = -1;
+    //Two distinct candidate modes are required; with fewer there is no
+    //"between the modes" to minimise over.  This used to leave
+    //leftMaxIndex/rightMaxIndex at -1 and index y[-1].
+    if(values.size() < 2){
+        delete [] uniq_maxes;
+        delete [] uniq_counts;
+        delete [] uniq_argmax;
+        LOG.err("ERROR: Found fewer than two modes in the LOD score density (", int(values.size()), false);
+        LOG.err(" candidate(s)).");
+        throw 0;
+    }
+
     double firstMax = -1;
     double secondMax = -1;
+    int leftMaxIndex = -1;
+    int rightMaxIndex = -1;
     for(unsigned int i = 0; i < values.size(); i++){
         if(firstMax <= values[i]){
             secondMax = firstMax;
+            rightMaxIndex = leftMaxIndex;
             firstMax = values[i];
+            leftMaxIndex = valueIdx[i];
         }
         else if (secondMax <= values[i]){
             secondMax = values[i];
+            rightMaxIndex = valueIdx[i];
         }
     }
 
-    int leftMaxIndex = -1;
-    int rightMaxIndex = -1;
+    delete [] uniq_maxes;
+    delete [] uniq_counts;
+    delete [] uniq_argmax;
 
-    for(int i = 0; i < size; i++){
-        if(y[i] == firstMax){
-            leftMaxIndex = i;
-        }
-        if(y[i] == secondMax){
-            rightMaxIndex = i;
-        }
+    if(leftMaxIndex < 0 || rightMaxIndex < 0){
+        LOG.err("ERROR: Could not locate two modes in the LOD score density.");
+        throw 0;
     }
 
-    int tmp;
     if(rightMaxIndex < leftMaxIndex){
-        tmp = rightMaxIndex;
+        int tmp = rightMaxIndex;
         rightMaxIndex = leftMaxIndex;
         leftMaxIndex = tmp;
     }
-
-    
-    delete [] uniq_maxes;
-    delete [] uniq_counts;
 
     int minIndex = get_arg_min(&(y[leftMaxIndex]), rightMaxIndex - leftMaxIndex + 1) + leftMaxIndex;
 
