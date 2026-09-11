@@ -23,6 +23,18 @@ using namespace std;
 
 const int MISSING = -9999;
 
+//Single process-wide RNG, seeded once from main so that runs are reproducible.
+//Previously every consumer allocated its own generator and seeded it from
+//time(NULL), which made results non-reproducible and -- because time(NULL) has
+//one-second resolution -- frequently gave several "independent" generators the
+//same seed.  All consumers are in serial code; do not call these from a worker
+//thread without adding synchronisation.
+void initRNG(unsigned long int seed);
+gsl_rng *getRNG();
+void freeRNG();
+//Draws a nondeterministic seed, for when the user did not supply one.
+unsigned long int drawRandomSeed();
+
 struct int_pair_t
 {
   int first;

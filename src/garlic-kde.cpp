@@ -78,7 +78,22 @@ KDEResult *computeKDE(double *data, int size)
 
     //figtree not thread safe due to dependent libraries using global vars somewhere
     //pthread_mutex_lock(&kde_mutex);
-    figtree( d, n, M, W, data, h, q, targets, epsilon, kde_points );
+
+    //FIGTREE_EVAL_DIRECT rather than the default FIGTREE_EVAL_AUTO.
+    //
+    //AUTO selects the improved fast Gauss transform, whose k-center clustering
+    //(KCenterClustering.o in libfigtree) calls srand(time(NULL)) internally and
+    //picks its initial centre at random.  That made computeKDE give a different
+    //answer on every invocation for byte-identical input -- on the bundled
+    //example, 503 of the 512 grid points differed between runs, which moved the
+    //automatically selected LOD cutoff and therefore the ROH calls.  No seed we
+    //control can fix that, because the library reseeds itself.
+    //
+    //DIRECT evaluates the Gauss transform exactly, so it is both deterministic
+    //and more accurate than the epsilon-bounded approximation (epsilon is
+    //ignored on this path).  Cost is O(n*M); on the bundled example this is
+    //+0.3 s with the default thinning and +9 s under --no-kde-thinning.
+    figtree( d, n, M, W, data, h, q, targets, epsilon, kde_points, FIGTREE_EVAL_DIRECT );
     //pthread_mutex_unlock(&kde_mutex);
 
     delete [] q;

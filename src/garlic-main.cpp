@@ -3,6 +3,7 @@
 #include <iostream>
 #include <cstdio>
 #include <fstream>
+#include <sstream>
 #include <cmath>
 #include <pthread.h>
 #include "garlic-data.h"
@@ -182,9 +183,22 @@ int main(int argc, char *argv[])
     LOG.log("Use thinning for KDE estimation:", THIN);
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
+    int seedFlag = params->getIntFlag(ARG_SEED);
+    argerr = argerr || checkSeed(seedFlag);
+    if (argerr) return -1;
+    unsigned long int SEED = (seedFlag == 0) ? drawRandomSeed() : (unsigned long int)(seedFlag);
+    {   //logged as a string: errlog has no unsigned long overload
+        stringstream seedss;
+        seedss << SEED;
+        LOG.log("Random seed:", seedss.str());
+        if (seedFlag == 0) LOG.log("\t(drawn automatically; pass --seed with this value to reproduce this run)");
+    }
+    initRNG(SEED);
+
 
     if (FREQ_ONLY){//calculated on the fly, as the file is read, to save RAM
         freqOnly(tpedfile,outfile,nresample,TPED_MISSING);
+        freeRNG();
         return 0;
     }
 
@@ -313,6 +327,7 @@ int main(int argc, char *argv[])
                         GLDataByChr, genoFreqDataByChr, USE_GL,
                         MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, THIN, LD_SUBSAMPLE);
 
+        freeRNG();
         return 0;
     }
     else if (AUTO_WINSIZE)
@@ -411,6 +426,7 @@ int main(int argc, char *argv[])
     if(kdeResult != NULL) releaseKDEResult(kdeResult);
     releaseMapData(mapDataByChr);
     delete params;
+    freeRNG();
     cout << "Finished.\n";
     
     #ifdef PTW32_STATIC_LIB

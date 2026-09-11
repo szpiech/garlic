@@ -1,5 +1,46 @@
 #include "garlic-data.h"
+#include <random>
 
+
+static gsl_rng *GARLIC_RNG = NULL;
+
+void initRNG(unsigned long int seed)
+{
+    if (GARLIC_RNG != NULL) gsl_rng_free(GARLIC_RNG);
+    GARLIC_RNG = gsl_rng_alloc(gsl_rng_default);
+    gsl_rng_set(GARLIC_RNG, seed);
+    return;
+}
+
+gsl_rng *getRNG()
+{
+    if (GARLIC_RNG == NULL)
+    {
+        //Should not happen: main calls initRNG before any consumer runs.
+        //Fall back to a reported random seed rather than a silent time(NULL).
+        unsigned long int seed = drawRandomSeed();
+        LOG.err("WARNING: RNG used before initialisation; seeding with", int(seed));
+        initRNG(seed);
+    }
+    return GARLIC_RNG;
+}
+
+void freeRNG()
+{
+    if (GARLIC_RNG != NULL) gsl_rng_free(GARLIC_RNG);
+    GARLIC_RNG = NULL;
+    return;
+}
+
+unsigned long int drawRandomSeed()
+{
+    std::random_device rd;
+    //Must stay inside the range --seed can accept (param_t parses it with
+    //atoi), otherwise the seed we report in the log cannot be replayed.
+    //0 is the "choose for me" sentinel, so map into [1, INT_MAX].
+    unsigned long int seed = (unsigned long int)(rd() % (unsigned int)(0x7FFFFFFF)) + 1UL;
+    return seed;
+}
 double selectOverlapFrac(double variantDensity, int winsize){
     double frac = (6.375*log(variantDensity)+63.888)/100.0;
     if(frac > 1) frac = 1.0;
@@ -13,11 +54,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                                    vector< FreqData * > **freqDataByChr,
                                    char TPED_MISSING, int nresample, bool PHASED, bool AUTO_FREQ)
 {
-    const gsl_rng_type *T;
-    gsl_rng *r;
-    T = gsl_rng_default;
-    r = gsl_rng_alloc (T);
-    gsl_rng_set(r, time(NULL));
+    gsl_rng *r = getRNG();
 
     igzstream fin;
     fin.open(tpedfile.c_str());
@@ -171,8 +208,6 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         freq.clear();
     }
     
-    gsl_rng_free(r);
-
     return;
 }
 
@@ -237,11 +272,7 @@ MapData *initMapData(const vector<double> &geneticPos, const vector<double> &phy
 
 void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING){
     
-    const gsl_rng_type *T;
-    gsl_rng *r;
-    T = gsl_rng_default;
-    r = gsl_rng_alloc (T);
-    gsl_rng_set(r, time(NULL));
+    gsl_rng *r = getRNG();
 
     string freqoutfile = outfile + ".freq.gz";
 
@@ -308,8 +339,6 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
         fout << checkChrName(chr) << "\t" << locusName << "\t" << int(ppos) << "\t" << oneAllele << "\t" << freq << endl;
     }
 
-    gsl_rng_free(r);
-
     fin.close();
     fout.close();
 }
@@ -339,11 +368,7 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
                                int ldSubsample)
 {
 
-    const gsl_rng_type *T;
-    gsl_rng *r;
-    T = gsl_rng_default;
-    r = gsl_rng_alloc (T);
-    gsl_rng_set(r, time(NULL));
+    gsl_rng *r = getRNG();
 
     //to hold the indicies of the randomly selected individuals
     int nind = hapDataByChr->at(0)->nind;
@@ -1258,8 +1283,6 @@ vector< FreqData * > *calcFreqData2(vector< HapData * > *hapDataByChr, int nresa
         freqDataByChr->push_back(data);
     }
 
-    gsl_rng_free(r);
-
     return freqDataByChr;
 }
 */
@@ -2075,11 +2098,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
 
 DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample, int step)
 {
-    const gsl_rng_type *T;
-    gsl_rng *r;
-    T = gsl_rng_default;
-    r = gsl_rng_alloc (T);
-    gsl_rng_set(r, time(NULL));
+    gsl_rng *r = getRNG();
 
     //to hold the indicies of the randomly selected individuals
     int nind = winDataByChr->at(0)->nind;
@@ -2146,8 +2165,6 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
         }
     }
 
-    gsl_rng_free(r);
-
 
     delete [] randInd;
 
@@ -2181,11 +2198,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
                 IndData **subsetIndData,
                 int subsample, bool USE_GL, bool PHASED)
 {
-    const gsl_rng_type *T;
-    gsl_rng *r;
-    T = gsl_rng_default;
-    r = gsl_rng_alloc (T);
-    gsl_rng_set(r, time(NULL));
+    gsl_rng *r = getRNG();
 
     int nind = hapDataByChr->at(0)->nind;
     int *randInd;
@@ -2248,7 +2261,6 @@ void subsetData(vector< HapData * > *hapDataByChr,
     *(subsetHapDataByChr) = newHapDataByChr;
     if(USE_GL) *(subsetGLDataByChr) = newGLDataByChr;
     *(subsetIndData) = newIndData;
-    gsl_rng_free(r);
     return;
 }
 

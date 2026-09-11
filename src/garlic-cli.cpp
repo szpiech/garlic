@@ -173,6 +173,12 @@ const bool DEFAULT_KDE_THINNING = false;
 const string HELP_KDE_THINNING = "Set this flag to send all LOD score data to KDE function. This may dramatically\n\
 \tincrease runtime.";
 
+const string ARG_SEED = "--seed";
+const int DEFAULT_SEED = 0;
+const string HELP_SEED = "Random seed, for reproducible runs. Affects --kde-subsample,\n\
+\t--ld-subsample and --resample. If 0 (default), a nondeterministic seed is drawn\n\
+\tand written to the log file so the run can be repeated exactly.";
+
 /*
 const string ARG_FEATURE_TPED = "--tped-counting";
 const string DEFAULT_FEATURE_TPED = "_none";
@@ -227,6 +233,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_NCLUST, DEFAULT_NCLUST, "", HELP_NCLUST);
 	params->addFlag(ARG_CM, DEFAULT_CM, "", HELP_CM);
 	params->addFlag(ARG_KDE_THINNING, DEFAULT_KDE_THINNING, "", HELP_KDE_THINNING);
+	params->addFlag(ARG_SEED, DEFAULT_SEED, "", HELP_SEED);
 
 	
 	if (!params->parseCommandLine(argc, argv))
@@ -235,6 +242,14 @@ param_t *getCLI(int argc, char *argv[])
 		return NULL;
 	}
 	return params;
+}
+
+bool checkSeed(int seed){
+	if(seed < 0){
+		LOG.err("ERROR: Random seed must be >= 0 (0 means draw one automatically).");
+		return true;
+	}
+	return false;
 }
 
 bool checkCM(string mapfile, bool CM){
