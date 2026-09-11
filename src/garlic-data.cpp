@@ -929,6 +929,37 @@ void releaseGenoFreq(vector< GenoFreqData * > *genoFreqDataByChr)
     return;
 }
 
+bool alignMapScaffold(vector< GenMapScaffold * > *scaffoldMapByChr, vector< MapData * > *mapDataByChr) {
+    map<string, GenMapScaffold *> byName;
+    for (unsigned int i = 0; i < scaffoldMapByChr->size(); i++) {
+        GenMapScaffold *sc = scaffoldMapByChr->at(i);
+        if (byName.count(sc->chr) > 0) {
+            LOG.err("ERROR: Genetic map contains more than one block for", sc->chr);
+            LOG.err("\tAll records for a chromosome must be contiguous in the map file.");
+            return false;
+        }
+        byName[sc->chr] = sc;
+    }
+
+    vector< GenMapScaffold * > ordered;
+    for (unsigned int i = 0; i < mapDataByChr->size(); i++) {
+        string want = mapDataByChr->at(i)->chr;
+        if (byName.count(want) == 0) {
+            LOG.err("ERROR: Genetic map has no data for", want);
+            return false;
+        }
+        ordered.push_back(byName[want]);
+        byName.erase(want);
+    }
+    if (!byName.empty()) {
+        LOG.err("ERROR: Genetic map contains chromosomes absent from the data, e.g.", byName.begin()->first);
+        return false;
+    }
+
+    for (unsigned int i = 0; i < ordered.size(); i++) scaffoldMapByChr->at(i) = ordered[i];
+    return true;
+}
+
 int interpolateGeneticmap(vector< MapData * > **mapDataByChr, vector< GenMapScaffold * > *scaffoldMapByChr) {
     int numInterpolated = 0;
     for (unsigned int i = 0; i < (*mapDataByChr)->size(); i++) {
@@ -1208,7 +1239,7 @@ MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLo
         {
             mapData2->physicalPos[index] = mapData->physicalPos[i];
             mapData2->geneticPos[index] = mapData->geneticPos[i];
-            mapData2->locusName[index] = mapData->physicalPos[i];
+            mapData2->locusName[index] = mapData->locusName[i];
             mapData2->allele[index] = mapData->allele[i];
             index++;
         }
@@ -1318,7 +1349,7 @@ MapData *filterMonomorphicAndOOBSites(MapData *mapData, FreqData *freqData, GenM
         {
             mapData2->physicalPos[index] = mapData->physicalPos[i];
             mapData2->geneticPos[index] = mapData->geneticPos[i];
-            mapData2->locusName[index] = mapData->physicalPos[i];
+            mapData2->locusName[index] = mapData->locusName[i];
             mapData2->allele[index] = mapData->allele[i];
             index++;
         }
