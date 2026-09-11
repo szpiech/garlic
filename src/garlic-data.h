@@ -230,6 +230,11 @@ vector< GenoFreqData * > *calculateGenoFreq(vector <HapData *> *hapDataByChr);
 double getMapInfo(int queryPos, GenMapScaffold *scaffold, int &count);
 double interpolate(double x0, double y0, double x1, double y1, double query);
 int interpolateGeneticmap(vector< MapData * > **mapDataByChr, vector< GenMapScaffold * > *scaffoldMapByChr);
+//Reorders scaffoldMapByChr so entry i is the scaffold for mapDataByChr->at(i).
+//Downstream code zips the two vectors positionally; without this, a map file
+//whose chromosomes appear in a different order than the TPED silently applies
+//the wrong chromosome's genetic map.  Returns false on any mismatch.
+bool alignMapScaffold(vector< GenMapScaffold * > *scaffoldMapByChr, vector< MapData * > *mapDataByChr);
 int interpolateGeneticmap(MapData *mapData, GenMapScaffold *scaffold);
 vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro);
 

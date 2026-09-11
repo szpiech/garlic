@@ -250,6 +250,11 @@ int main(int argc, char *argv[])
                 LOG.err("ERROR: Scaffold genetic map does not have the same number of chromosomes as data.");
                 return -1;
             }
+            //Match scaffolds to data by chromosome NAME.  Everything downstream
+            //zips the two vectors positionally, so a map file sorted
+            //chr1, chr10, chr11, ... against a TPED sorted chr1, chr2, ...
+            //used to apply the wrong chromosome's map to every site, silently.
+            if (!alignMapScaffold(scaffoldMapByChr, mapDataByChr)) return -1;
         }
 
     }
