@@ -173,6 +173,12 @@ const bool DEFAULT_KDE_THINNING = false;
 const string HELP_KDE_THINNING = "Set this flag to send all LOD score data to KDE function. This may dramatically\n\
 \tincrease runtime.";
 
+const string ARG_MAX_WINSIZE = "--max-winsize";
+const int DEFAULT_MAX_WINSIZE = 1000;
+const string HELP_MAX_WINSIZE = "Upper bound on the window size that --auto-winsize will try. The search\n\
+\tpreviously had no bound and would grow past the number of loci if the\n\
+\tsmoothness criterion was never met.";
+
 const string ARG_SEED = "--seed";
 const int DEFAULT_SEED = 0;
 const string HELP_SEED = "Random seed, for reproducible runs. Affects --kde-subsample,\n\
@@ -234,6 +240,7 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_CM, DEFAULT_CM, "", HELP_CM);
 	params->addFlag(ARG_KDE_THINNING, DEFAULT_KDE_THINNING, "", HELP_KDE_THINNING);
 	params->addFlag(ARG_SEED, DEFAULT_SEED, "", HELP_SEED);
+	params->addFlag(ARG_MAX_WINSIZE, DEFAULT_MAX_WINSIZE, "", HELP_MAX_WINSIZE);
 
 	
 	if (!params->parseCommandLine(argc, argv))
@@ -247,6 +254,14 @@ param_t *getCLI(int argc, char *argv[])
 bool checkSeed(int seed){
 	if(seed < 0){
 		LOG.err("ERROR: Random seed must be >= 0 (0 means draw one automatically).");
+		return true;
+	}
+	return false;
+}
+
+bool checkMaxWinsize(int maxWinsize, int winsize){
+	if(maxWinsize < winsize){
+		LOG.err("ERROR: --max-winsize must be >= the starting --winsize.");
 		return true;
 	}
 	return false;

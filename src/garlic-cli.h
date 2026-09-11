@@ -157,6 +157,10 @@ extern const string ARG_KDE_THINNING;
 extern const bool DEFAULT_KDE_THINNING;
 extern const string HELP_KDE_THINNING;
 
+extern const string ARG_MAX_WINSIZE;
+extern const int DEFAULT_MAX_WINSIZE;
+extern const string HELP_MAX_WINSIZE;
+
 extern const string ARG_SEED;
 extern const int DEFAULT_SEED;
 extern const string HELP_SEED;
@@ -164,6 +168,7 @@ extern const string HELP_SEED;
 
 param_t *getCLI(int argc, char *argv[]);
 bool checkSeed(int seed);
+bool checkMaxWinsize(int maxWinsize, int winsize);
 bool checkBuild(string BUILD);
 bool checkBuildAndCentromereFile(string BUILD, string centromereFile);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE);

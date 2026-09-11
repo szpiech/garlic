@@ -715,6 +715,23 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
                      bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, bool THIN, int LD_SUBSAMPLE)
 {
+    //--winsize-multi values come straight from the command line and were never
+    //checked against the data; a size >= the shortest chromosome indexes the
+    //window loops out of bounds (and leaves figtree with N = 0 points).
+    {
+        int dataBound = mapDataByChr->at(0)->nloci;
+        for (unsigned int c = 1; c < mapDataByChr->size(); c++)
+            if (mapDataByChr->at(c)->nloci < dataBound) dataBound = mapDataByChr->at(c)->nloci;
+        for (unsigned int i = 0; i < multiWinsizes.size(); i++) {
+            if (multiWinsizes[i] >= dataBound) {
+                LOG.err("ERROR: --winsize-multi value", multiWinsizes[i], false);
+                LOG.err(" is >= the number of loci on the shortest chromosome (", dataBound, false);
+                LOG.err(").");
+                throw 0;
+            }
+        }
+    }
+
     vector< WinData * > *winDataByChr;
     vector< HapData * > *hapDataByChrToCalc;
     vector< GenoLikeData * > *GLDataByChrToCalc;
@@ -754,7 +771,8 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
         releaseDoubleData(rawWinData);
 
         try { writeKDEResult(kdeResult, makeKDEFilename(outfile, multiWinsizes[i])); }
-        catch (...) { throw 0; }
+        catch (...) { releaseKDEResult(kdeResult); throw 0; }
+        releaseKDEResult(kdeResult);
     }
 
     if (KDE_SUBSAMPLE > 0) {
@@ -777,7 +795,8 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          int &winsize, int step, double error,
                          vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, bool THIN)
+                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, bool THIN,
+                         int MAX_WINSIZE)
 {
     double AUTO_WINSIZE_THRESHOLD = 0.50;
     vector< WinData * > *winDataByChr = NULL;
@@ -799,11 +818,29 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
     LOG.log("Searching for acceptable window size, smoothness threshold:", AUTO_WINSIZE_THRESHOLD);
     LOG.log("winsize\tsmoothness");
 
+    //The search used to be unbounded: if the smoothness criterion was never
+    //met, winsizeQuery grew until it exceeded the number of loci and the
+    //window loops indexed out of bounds.  Bound it by --max-winsize and by the
+    //shortest chromosome, and fail with something actionable.
+    int dataBound = mapDataByChr->at(0)->nloci;
+    for (unsigned int c = 1; c < mapDataByChr->size(); c++)
+        if (mapDataByChr->at(c)->nloci < dataBound) dataBound = mapDataByChr->at(c)->nloci;
+
     int winsizeQuery = winsize;
     double mse;
     bool finished = false;
     while (!finished)
     {
+        if (winsizeQuery > MAX_WINSIZE || winsizeQuery >= dataBound)
+        {
+            LOG.err("ERROR: Automatic window size search reached", winsizeQuery, false);
+            LOG.err(" without meeting the smoothness threshold", AUTO_WINSIZE_THRESHOLD);
+            if (winsizeQuery >= dataBound)
+                LOG.err("\tThe shortest chromosome has only", dataBound, false);
+            if (winsizeQuery >= dataBound) LOG.err(" loci.");
+            LOG.err("\tRaise --max-winsize, set --winsize explicitly, or use --winsize-multi.");
+            throw 0;
+        }
         if (WEIGHTED) {
             /*
             winDataByChr = calcwLODWindows(hapDataByChrToCalc, freqDataByChr, mapDataByChr,
@@ -865,6 +902,22 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
                                  bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, bool THIN)
 {
+    //--winsize-multi values are taken verbatim from the command line and were
+    //never checked against the data; a size >= the shortest chromosome indexes
+    //the window loops out of bounds.
+    {
+        int dataBound = mapDataByChr->at(0)->nloci;
+        for (unsigned int c = 1; c < mapDataByChr->size(); c++)
+            if (mapDataByChr->at(c)->nloci < dataBound) dataBound = mapDataByChr->at(c)->nloci;
+        for (unsigned int i = 0; i < multiWinsizes->size(); i++) {
+            if (multiWinsizes->at(i) >= dataBound) {
+                LOG.err("ERROR: --winsize-multi value", multiWinsizes->at(i), false);
+                LOG.err(" is >= the number of loci on the shortest chromosome (", dataBound, false);
+                LOG.err(").");
+                throw 0;
+            }
+        }
+    }
     double AUTO_WINSIZE_THRESHOLD = 0.50;
     vector< WinData * > *winDataByChr = NULL;
     vector< HapData * > *hapDataByChrToCalc = NULL;

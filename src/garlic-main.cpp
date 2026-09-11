@@ -183,6 +183,10 @@ int main(int argc, char *argv[])
     LOG.log("Use thinning for KDE estimation:", THIN);
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
+    int MAX_WINSIZE = params->getIntFlag(ARG_MAX_WINSIZE);
+    argerr = argerr || checkMaxWinsize(MAX_WINSIZE, winsize);
+    if (argerr) return -1;
+
     int seedFlag = params->getIntFlag(ARG_SEED);
     argerr = argerr || checkSeed(seedFlag);
     if (argerr) return -1;
@@ -342,7 +346,8 @@ int main(int argc, char *argv[])
                 kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, winsize, AUTO_WINSIZE_STEP, error,
                                           GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, THIN);
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, THIN,
+                                          MAX_WINSIZE);
             }
             catch (...){
                 return 1;
