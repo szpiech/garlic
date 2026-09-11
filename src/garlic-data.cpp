@@ -1,7 +1,6 @@
 #include "garlic-data.h"
 #include <random>
 
-
 static gsl_rng *GARLIC_RNG = NULL;
 
 void initRNG(unsigned long int seed)
@@ -41,6 +40,7 @@ unsigned long int drawRandomSeed()
     unsigned long int seed = (unsigned long int)(rd() % (unsigned int)(0x7FFFFFFF)) + 1UL;
     return seed;
 }
+
 //---- fast whitespace-delimited scanning -------------------------------------
 //std::istream extraction (operator>>) constructs a sentry and performs locale
 //lookups on every single token.  On TPED input that machinery, not the actual
@@ -495,22 +495,68 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
     return ldDataByChr;
 }
 
-LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads, int *indIndex, int ldSubsample){
-    
-    LDData *LD = initLDData(hapData->nloci, winsize);
+//Two phases: (1) evaluate every distinct pairwise LD in the band exactly once,
+//(2) assemble the per-window sums from the band with a sliding update.
+//Previously both were fused, so each pair was re-evaluated once per window
+//containing it -- O(nloci * winsize^2 * nind) instead of O(nloci * winsize * nind).
+static void runLDPhases(LDData *LD, int nloci, int winsize, int numThreads,
+                        void *(*bandFn)(void *), void **bandOrders,
+                        double *band, Bar *bar)
+{
+    //phase 2 only; phase 1 is type-specific and done by the caller
+    int nWindows = nloci - winsize + 1;
+    if (nWindows <= 0) return;
 
-    unsigned int *NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
+    int nt = numThreads;
+    unsigned int *NUM_PER_THREAD = make_thread_partition(nt, nWindows);
+    pthread_t *peer = new pthread_t[nt];
+    BAND_work_order_t **orders = new BAND_work_order_t*[nt];
+    unsigned int previous = 0;
+    for (int i = 0; i < nt; i++)
+    {
+        BAND_work_order_t *o = new BAND_work_order_t;
+        o->winsize = winsize;
+        o->nloci = nloci;
+        o->band = band;
+        o->LD = LD;
+        o->bar = bar;
+        o->start = previous;
+        previous += NUM_PER_THREAD[i];
+        o->stop = previous;
+        orders[i] = o;
+        pthread_create(&(peer[i]), NULL, (void *(*)(void *))parallelLDFromBand, (void *)o);
+    }
+    for (int i = 0; i < nt; i++){
+        pthread_join(peer[i], NULL);
+        delete orders[i];
+    }
+    delete [] orders;
+    delete [] NUM_PER_THREAD;
+    delete [] peer;
+    (void)bandFn; (void)bandOrders;
+}
+
+LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads, int *indIndex, int ldSubsample){
+
+    LDData *LD = initLDData(hapData->nloci, winsize);
+    int nloci = hapData->nloci;
+    int nWindows = nloci - winsize + 1;
+    if (nWindows < 0) nWindows = 0;
+
+    double *band = new double[(size_t)nloci * (size_t)winsize];
 
     Bar bar;
-    barInit(bar,hapData->nloci,100);
+    barInit(bar, double(nloci) + double(nWindows), 100);
 
-    HR2_work_order_t *order;
-    pthread_t *peer = new pthread_t[numThreads];
+    //--- phase 1: banded pairwise hr2 ---
+    int nt = numThreads;
+    unsigned int *NUM_PER_THREAD = make_thread_partition(nt, nloci);
+    pthread_t *peer = new pthread_t[nt];
     vector< HR2_work_order_t * > orders;
     unsigned int previous = 0;
-    for (int i = 0; i < numThreads; i++)
+    for (int i = 0; i < nt; i++)
     {
-        order = new HR2_work_order_t;
+        HR2_work_order_t *order = new HR2_work_order_t;
         order->hapData = hapData;
         order->genoFreqData = genoFreqData;
         order->LD = LD;
@@ -521,45 +567,49 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
         order->stop = previous;
         order->indIndex = indIndex;
         order->ldSubsample = ldSubsample;
+        order->band = band;
 
-        pthread_create(&(peer[i]),
-                       NULL,
-                       (void *(*)(void *))parallelHR2,
-                       (void *)order);
+        pthread_create(&(peer[i]), NULL, (void *(*)(void *))parallelHR2, (void *)order);
         orders.push_back(order);
     }
-
-    for (int i = 0; i < numThreads; i++){
+    for (int i = 0; i < nt; i++){
         pthread_join(peer[i], NULL);
         delete orders[i];
     }
-
-    finalize(bar);
-
     orders.clear();
-
     delete [] NUM_PER_THREAD;
     delete [] peer;
+
+    //--- phase 2: window sums from the band ---
+    runLDPhases(LD, nloci, winsize, numThreads, NULL, NULL, band, &bar);
+
+    delete [] band;
+    finalize(bar);
 
     return LD;
 }
 
 LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThreads, int *indIndex, int ldSubsample){
-    
-    LDData *LD = initLDData(hapData->nloci, winsize);
 
-    unsigned int *NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
+    LDData *LD = initLDData(hapData->nloci, winsize);
+    int nloci = hapData->nloci;
+    int nWindows = nloci - winsize + 1;
+    if (nWindows < 0) nWindows = 0;
+
+    double *band = new double[(size_t)nloci * (size_t)winsize];
 
     Bar bar;
-    barInit(bar,hapData->nloci,100);
+    barInit(bar, double(nloci) + double(nWindows), 100);
 
-    R2_work_order_t *order;
-    pthread_t *peer = new pthread_t[numThreads];
+    //--- phase 1: banded pairwise r2 ---
+    int nt = numThreads;
+    unsigned int *NUM_PER_THREAD = make_thread_partition(nt, nloci);
+    pthread_t *peer = new pthread_t[nt];
     vector< R2_work_order_t * > orders;
     unsigned int previous = 0;
-    for (int i = 0; i < numThreads; i++)
+    for (int i = 0; i < nt; i++)
     {
-        order = new R2_work_order_t;
+        R2_work_order_t *order = new R2_work_order_t;
         order->hapData = hapData;
         order->freqData = freqData;
         order->LD = LD;
@@ -570,31 +620,30 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
         order->stop = previous;
         order->indIndex = indIndex;
         order->ldSubsample = ldSubsample;
+        order->band = band;
 
-        pthread_create(&(peer[i]),
-                       NULL,
-                       (void *(*)(void *))parallelR2,
-                       (void *)order);
+        pthread_create(&(peer[i]), NULL, (void *(*)(void *))parallelR2, (void *)order);
         orders.push_back(order);
     }
-
-    for (int i = 0; i < numThreads; i++){
+    for (int i = 0; i < nt; i++){
         pthread_join(peer[i], NULL);
         delete orders[i];
     }
-
-    finalize(bar);
-
     orders.clear();
     delete [] NUM_PER_THREAD;
     delete [] peer;
+
+    //--- phase 2: window sums from the band ---
+    runLDPhases(LD, nloci, winsize, numThreads, NULL, NULL, band, &bar);
+
+    delete [] band;
+    finalize(bar);
+
     return LD;
 }
 
-
 void parallelHR2(void *order){
     HR2_work_order_t *p = (HR2_work_order_t *)order;
-    LDData *LD = p->LD;
     HapData *hapData = p->hapData;
     GenoFreqData *genoFreqData = p->genoFreqData;
     int winsize = p->winsize;
@@ -603,21 +652,24 @@ void parallelHR2(void *order){
     Bar *bar = p->bar;
     int *indIndex = p->indIndex;
     int ldSubsample = p->ldSubsample;
+    double *band = p->band;
+    int nloci = hapData->nloci;
 
-
-    if (hapData->nloci - stop < winsize) stop = hapData->nloci - winsize + 1;
-
-    for (int locus = start; locus < stop; locus++){
+    //Fill the band rows owned by this thread: one hr2 evaluation per distinct
+    //pair, rather than one per (window, pair) as before.
+    for (int i = start; i < stop; i++){
         advanceBar(*bar,1);
-        for (int i = locus; i < locus + winsize; i++){
-            ldHR2(LD, hapData, genoFreqData, i, locus, locus + winsize - 1, indIndex, ldSubsample);
+        band[(size_t)i * winsize] = 1.0;
+        int dMax = (winsize < nloci - i) ? winsize : (nloci - i);
+        for (int d = 1; d < dMax; d++){
+            band[(size_t)i * winsize + d] = hr2(hapData, genoFreqData, i, i + d, indIndex, ldSubsample);
         }
+        for (int d = dMax; d < winsize; d++) band[(size_t)i * winsize + d] = 0.0;
     }
 }
 
 void parallelR2(void *order){
     R2_work_order_t *p = (R2_work_order_t *)order;
-    LDData *LD = p->LD;
     HapData *hapData = p->hapData;
     FreqData *freqData = p->freqData;
     int winsize = p->winsize;
@@ -626,19 +678,76 @@ void parallelR2(void *order){
     Bar *bar = p->bar;
     int *indIndex = p->indIndex;
     int ldSubsample = p->ldSubsample;
+    double *band = p->band;
+    int nloci = hapData->nloci;
 
-
-    if (hapData->nloci - stop < winsize) stop = hapData->nloci - winsize + 1;
-
-    for (int locus = start; locus < stop; locus++){
+    for (int i = start; i < stop; i++){
         advanceBar(*bar,1);
-        for (int i = locus; i < locus + winsize; i++){
-            ldR2(LD, hapData, freqData, i, locus, locus + winsize - 1, indIndex, ldSubsample);
+        band[(size_t)i * winsize] = 1.0;
+        int dMax = (winsize < nloci - i) ? winsize : (nloci - i);
+        for (int d = 1; d < dMax; d++){
+            band[(size_t)i * winsize + d] = r2(hapData, freqData, i, i + d, indIndex, ldSubsample);
         }
+        for (int d = dMax; d < winsize; d++) band[(size_t)i * winsize + d] = 0.0;
     }
 }
 
+//rho(a,b) for |a-b| < winsize, read out of the band (which stores a <= b).
+static inline double bandLD(const double *band, int winsize, int a, int b)
+{
+    return (a <= b) ? band[(size_t)a * winsize + (b - a)]
+                    : band[(size_t)b * winsize + (a - b)];
+}
 
+//LD[p][k] = sum over the window [p, p+winsize-1] of rho(p+k, j).
+//Computing each row from scratch costs O(winsize^2); instead note that
+//    LD[p][k] = LD[p-1][k+1] - rho(p+k, p-1) + rho(p+k, p+winsize-1)
+//because both refer to the same site s = p+k and the window just slid by one.
+//Only the last entry of each row needs a fresh O(winsize) sum, so a row costs
+//O(winsize) rather than O(winsize^2).
+void ldRowsFromBand(double *band, LDData *LD, int nloci, int winsize, int start, int stop, Bar *bar)
+{
+    if (start >= stop) return;
+    int w = winsize;
+
+    //First row of this thread's chunk: computed directly so that chunks are
+    //independent and the recurrence never crosses a thread boundary.
+    {
+        int p0 = start;
+        for (int k = 0; k < w; k++){
+            int site = p0 + k;
+            double sum = 0;
+            for (int j = p0; j < p0 + w; j++) sum += bandLD(band, w, site, j);
+            LD->LD[p0][k] = sum;
+        }
+        advanceBar(*bar,1);
+    }
+
+    for (int p = start + 1; p < stop; p++){
+        advanceBar(*bar,1);
+        double *prev = LD->LD[p - 1];
+        double *cur  = LD->LD[p];
+        int leaving  = p - 1;
+        int entering = p + w - 1;
+        for (int k = 0; k < w - 1; k++){
+            int site = p + k;
+            cur[k] = prev[k + 1]
+                     - bandLD(band, w, site, leaving)
+                     + bandLD(band, w, site, entering);
+        }
+        //last entry: site == entering, no predecessor to slide from
+        double sum = 0;
+        for (int j = p; j < p + w; j++) sum += bandLD(band, w, entering, j);
+        cur[w - 1] = sum;
+    }
+}
+
+void parallelLDFromBand(void *order){
+    BAND_work_order_t *p = (BAND_work_order_t *)order;
+    ldRowsFromBand(p->band, p->LD, p->nloci, p->winsize, p->start, p->stop, p->bar);
+}
+
+//Superseded by the banded implementation above; retained for reference.
 void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end, int *indIndex, int ldSubsample) {
     for (int i = start; i <= end; i++) {
         if (i != site) LD->LD[start][site-start] += hr2(hapData, genoFreqData, i, site, indIndex, ldSubsample);

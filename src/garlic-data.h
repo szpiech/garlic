@@ -131,6 +131,22 @@ struct HR2_work_order_t
   Bar *bar;
   int *indIndex;
   int ldSubsample;
+  double *band;
+};
+
+//Banded pairwise LD: band[i*winsize + d] holds the LD between locus i and
+//locus i+d (d = 0 is the self pair and is 1 by definition).  Every pair that
+//any window needs lies in this band, so each pair is evaluated exactly once
+//instead of once per window that contains it.
+struct BAND_work_order_t
+{
+  int start;
+  int stop;
+  int winsize;
+  int nloci;
+  double *band;
+  LDData *LD;
+  Bar *bar;
 };
 
 struct R2_work_order_t
@@ -145,6 +161,7 @@ struct R2_work_order_t
   Bar *bar;
   int *indIndex;
   int ldSubsample;
+  double *band;
 };
 
 double selectOverlapFrac(double variantDensity, int winsize);
@@ -173,6 +190,8 @@ double calcDensity(int numLoci, vector< MapData * > *mapDataByChr, centromere *c
 
 void parallelHR2(void *order);
 void parallelR2(void *order);
+void parallelLDFromBand(void *order);
+void ldRowsFromBand(double *band, LDData *LD, int nloci, int winsize, int start, int stop, Bar *bar);
 
 unsigned int *make_thread_partition(int &num_threads, int nloci);
 
