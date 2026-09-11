@@ -128,10 +128,12 @@ const bool DEFAULT_FREQ_ONLY = false;
 const string HELP_FREQ_ONLY = "If set, calculates a freq file from provided data and then exits. Uses minimal RAM.";
 
 const string ARG_KDE_SUBSAMPLE = "--kde-subsample";
-const int DEFAULT_KDE_SUBSAMPLE = 20;
+const int DEFAULT_KDE_SUBSAMPLE = 0;
 const string HELP_KDE_SUBSAMPLE = "The number of individuals to randomly sample for LOD score KDE. If there\n\
 \tare fewer individuals in the population all are used.\n\
-Set <= 0 to use all individuals (may use large amounts of RAM).";
+\tThe default, 0, uses every individual, which makes the selected LOD cutoff a\n\
+\tdeterministic function of the data alone. A positive value subsamples, which\n\
+\tsaves memory but makes the cutoff depend on --seed.";
 
 extern const string ARG_LD_SUBSAMPLE = "--ld-subsample";
 extern const int DEFAULT_LD_SUBSAMPLE = 0;
