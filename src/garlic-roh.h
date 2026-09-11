@@ -80,7 +80,7 @@ void calcwLOD(MapData *mapData,
 double nomut(double M, double mu, double interval);
 double norec(double M, double interval);
 
-double lod(const short &genotype, const double &freq, const double &error);
+double lod(const int genotype, const double &freq, const double &error);
 
 /*
 KDEResult *automaticallyChooseWindowSize(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,

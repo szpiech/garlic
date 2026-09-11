@@ -100,9 +100,9 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     char alleleStr1, alleleStr2;
 
     vector< double > freq;
-    vector< short * > hap;
+    vector< geno_t * > hap;
     vector< bool * > fc;
-    short *data;
+    geno_t *data;
     bool *firstCopy;
 
     numLoci = 0;
@@ -208,7 +208,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         //what `ss >> char` did (TPED alleles are single characters).
         nalleles = 0;
         total = 0;
-        data = new short[numInd];
+        data = new geno_t[numInd];
         if(PHASED) firstCopy = new bool[numInd];
         oneAllele = TPED_MISSING;
 
@@ -312,8 +312,13 @@ GenoLikeData *initGLData(const vector< double * > &GL, int nloci, int nind){
     glData->nind = nind;
     glData->nloci = nloci;
     glData->data = new double*[nloci];
-  
-    for(int i = 0; i < nloci; i++) glData->data[i] = GL[i];
+
+    double *block = new double[size_t(nloci) * size_t(nind)];
+    for(int i = 0; i < nloci; i++){
+        glData->data[i] = block + size_t(i) * size_t(nind);
+        memcpy(glData->data[i], GL[i], sizeof(double) * size_t(nind));
+        delete [] GL[i];
+    }
 
     return glData;
 }
@@ -330,17 +335,28 @@ FreqData *initFreqData(const vector<double> &freq, int nloci){
     return freqData;
 }
 
-HapData *initHapData(const vector< short * > &hap, const vector< bool * > &fc, int nloci, int nind, bool PHASED){
+HapData *initHapData(const vector< geno_t * > &hap, const vector< bool * > &fc, int nloci, int nind, bool PHASED){
     HapData *hapData = new HapData;
     hapData->nind = nind;
     hapData->nloci = nloci;
-    hapData->data = new short*[nloci];
+    hapData->data = new geno_t*[nloci];
     if(PHASED) hapData->firstCopy = new bool*[nloci];
     else hapData->firstCopy = NULL;
 
+    //The reader allocates a row per locus because it does not know the locus
+    //count in advance.  Gather them into one block here and release the rows,
+    //so the transient overlap is one chromosome rather than the whole genome.
+    geno_t *block = new geno_t[size_t(nloci) * size_t(nind)];
+    bool *fcBlock = PHASED ? new bool[size_t(nloci) * size_t(nind)] : NULL;
     for(int i = 0; i < nloci; i++){
-        hapData->data[i] = hap[i];
-        if(PHASED) hapData->firstCopy[i] = fc[i];
+        hapData->data[i] = block + size_t(i) * size_t(nind);
+        memcpy(hapData->data[i], hap[i], sizeof(geno_t) * size_t(nind));
+        delete [] hap[i];
+        if(PHASED){
+            hapData->firstCopy[i] = fcBlock + size_t(i) * size_t(nind);
+            memcpy(hapData->firstCopy[i], fc[i], sizeof(bool) * size_t(nind));
+            delete [] fc[i];
+        }
     }
 
     return hapData;
@@ -852,8 +868,9 @@ LDData *initLDData(int nloci, int winsize){
     data->nloci = nloci;
     data->winsize = winsize;
     data->LD = new double*[nloci];
+    double *block = new double[size_t(nloci) * size_t(winsize)];
     for(int i = 0; i < nloci; i++){
-        data->LD[i] = new double[winsize];
+        data->LD[i] = block + size_t(i) * size_t(winsize);
         for(int j = 0; j < winsize; j++){
             data->LD[i][j] = 0;
         }
@@ -861,9 +878,7 @@ LDData *initLDData(int nloci, int winsize){
     return data;
 }
 void releaseLDData(LDData *data){
-    for(int i = 0; i < data->nloci; i++){
-        delete [] data->LD[i];
-    }
+    if(data->nloci > 0) delete [] data->LD[0];
     delete [] data->LD;
     delete data;
 }
@@ -1912,9 +1927,10 @@ WinData *initWinData(unsigned int nind, unsigned int nloci)
     //data->nmiss = 0;
 
     data->data = new double*[nind];
+    double *block = new double[size_t(nind) * size_t(nloci)];
     for (unsigned int i = 0; i < nind; i++)
     {
-        data->data[i] = new double[nloci];
+        data->data[i] = block + size_t(i) * size_t(nloci);
         for (unsigned int j = 0; j < nloci; j++)
         {
             data->data[i][j] = MISSING;
@@ -1927,10 +1943,7 @@ WinData *initWinData(unsigned int nind, unsigned int nloci)
 void releaseWinData(WinData *data)
 {
     if (data == NULL) return;
-    for (int i = 0; i < data->nind; i++)
-    {
-        delete [] data->data[i];
-    }
+    if (data->nind > 0) delete [] data->data[0];
 
     delete [] data->data;
 
@@ -2047,13 +2060,15 @@ HapData *initHapData(unsigned int nind, unsigned int nloci, bool PHASED)
     data->nind = nind;
     data->nloci = nloci;
 
-    data->data = new short*[nloci];
+    data->data = new geno_t*[nloci];
     if(PHASED) data->firstCopy = new bool*[nloci];
     else data->firstCopy = NULL;
+    geno_t *block = new geno_t[size_t(nloci) * size_t(nind)];
+    bool *fcBlock = PHASED ? new bool[size_t(nloci) * size_t(nind)] : NULL;
     for (unsigned int i = 0; i < nloci; i++)
     {
-        data->data[i] = new short[nind];
-        if(PHASED) data->firstCopy[i] = new bool[nind];
+        data->data[i] = block + size_t(i) * size_t(nind);
+        if(PHASED) data->firstCopy[i] = fcBlock + size_t(i) * size_t(nind);
         for (unsigned int j = 0; j < nind; j++)
         {
             data->data[i][j] = MISSING;
@@ -2068,10 +2083,11 @@ void releaseHapData(HapData *data)
 {
     if (data == NULL) return;
 
-    for (int i = 0; i < data->nloci; i++)
+    //one contiguous block per structure: free row 0, not every row
+    if (data->nloci > 0)
     {
-        if(data->firstCopy != NULL) delete [] data->firstCopy[i];
-        delete [] data->data[i];
+        if(data->firstCopy != NULL) delete [] data->firstCopy[0];
+        delete [] data->data[0];
     }
 
     delete [] data->data;
@@ -2101,9 +2117,10 @@ GenoLikeData *initGLData(unsigned int nind, unsigned int nloci) {
     data->nloci = nloci;
 
     data->data = new double*[nloci];
+    double *block = new double[size_t(nloci) * size_t(nind)];
     for (unsigned int i = 0; i < nloci; i++)
     {
-        data->data[i] = new double[nind];
+        data->data[i] = block + size_t(i) * size_t(nind);
         for (unsigned int j = 0; j < nind; j++)
         {
             data->data[i][j] = 1;
@@ -2115,10 +2132,7 @@ GenoLikeData *initGLData(unsigned int nind, unsigned int nloci) {
 
 void releaseGLData(GenoLikeData *data) {
     if (data == NULL) return;
-    for (int i = 0; i < data->nloci; i++)
-    {
-        delete [] data->data[i];
-    }
+    if (data->nloci > 0) delete [] data->data[0];
 
     delete [] data->data;
 

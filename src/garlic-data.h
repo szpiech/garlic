@@ -41,10 +41,19 @@ struct int_pair_t
   int second;
 };
 
+//Genotypes take only the values {0, 1, 2} and MISSING(-9), so one signed byte
+//is enough; they used to be stored as short, twice the size for no benefit.
+//(2.0 GB -> 1.0 GB for a 1000-individual, 1M-locus callset.)
+typedef signed char geno_t;
+
+//All four of the bulk structures below are allocated as ONE contiguous block
+//with the row pointers indexing into it, rather than one allocation per locus
+//(577,489 separate new[] calls on the bundled example).  The release functions
+//therefore free row 0 and the pointer array, not every row.
 struct HapData
 {
   bool **firstCopy;
-  short **data;
+  geno_t **data;
   int nind;
   int nloci;
 };
@@ -168,7 +177,7 @@ double selectOverlapFrac(double variantDensity, int winsize);
 
 FreqData *initFreqData(const vector<double> &freq, int nloci);
 
-HapData *initHapData(const vector< short * > &hap,
+HapData *initHapData(const vector< geno_t * > &hap,
                      const vector< bool * > &fc,
                      int nloci, int nind, bool PHASED);
 

@@ -21,7 +21,7 @@ void calcLOD(MapData *mapData,
              WinData *winData, centromere *centro,
              int winsize, double error, int MAX_GAP, bool USE_GL)
 {
-    short **data = hapData->data;
+    geno_t **data = hapData->data;
     int nloci = hapData->nloci;
     int nind = hapData->nind;
     int *physicalPos = mapData->physicalPos;
@@ -216,7 +216,7 @@ void parallelwLOD(void *order){
     Bar *bar = p->bar;
     int numThreads = p->numThreads;
 
-    short **data = p->hapData->data;
+    geno_t **data = p->hapData->data;
     int nloci = p->hapData->nloci;
     int nind = p->hapData->nind;
     int *physicalPos = p->mapData->physicalPos;
@@ -352,7 +352,7 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
  * Genotype is 0/1/2 counting the number of alternate alleles
  *
  */
-double lod(const short &genotype, const double &freq, const double &error)
+double lod(const int genotype, const double &freq, const double &error)
 {
 
     double autozygous, nonAutozygous;
