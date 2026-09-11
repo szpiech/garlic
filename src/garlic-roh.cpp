@@ -487,24 +487,42 @@ void releaseROHData(vector< ROHData * > *rohDataByInd)
     delete rohDataByInd;
 }
 
-vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
-                                        vector< MapData * > *mapDataByChr,
-                                        IndData *indData,
-                                        centromere *centro,
-                                        double lodScoreCutoff,
-                                        ROHLength **rohLength,
-                                        int winSize,
-                                        int MAX_GAP,
-                                        double OVERLAP_FRAC, bool CM)
+struct ROH_work_order_t
 {
+    vector< WinData * > *winDataByChr;
+    vector< MapData * > *mapDataByChr;
+    IndData *indData;
+    centromere *centro;
+    double lodScoreCutoff;
+    int winSize;
+    int MAX_GAP;
+    double OVERLAP_THRESHOLD;
+    bool CM;
+    vector< ROHData * > *rohDataByInd;
+    //Per-thread so there is no shared push_back; concatenated in thread order
+    //below, which reproduces the serial order exactly because each thread owns
+    //a contiguous block of individuals.
     vector<double> lengths;
-    vector< ROHData * > *rohDataByInd = initROHData(indData);
+    int indStart;
+    int indStop;
+};
 
-    double OVERLAP_THRESHOLD = OVERLAP_FRAC * winSize;
-    OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD >= 1) ? OVERLAP_THRESHOLD : 1;
-    OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD <= winSize) ? OVERLAP_THRESHOLD : winSize;
+static void *parallelAssembleROH(void *order)
+{
+    ROH_work_order_t *p = (ROH_work_order_t *)order;
+    vector< WinData * > *winDataByChr = p->winDataByChr;
+    vector< MapData * > *mapDataByChr = p->mapDataByChr;
+    IndData *indData = p->indData;
+    centromere *centro = p->centro;
+    const double lodScoreCutoff = p->lodScoreCutoff;
+    const int winSize = p->winSize;
+    const int MAX_GAP = p->MAX_GAP;
+    const double OVERLAP_THRESHOLD = p->OVERLAP_THRESHOLD;
+    const bool CM = p->CM;
+    vector< ROHData * > *rohDataByInd = p->rohDataByInd;
+    vector<double> &lengths = p->lengths;
 
-    for (int ind = 0; ind < indData->nind; ind++)
+    for (int ind = p->indStart; ind < p->indStop; ind++)
     {
         ROHData *rohData = rohDataByInd->at(ind);
         rohData->indID = indData->indID[ind];
@@ -635,6 +653,68 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
             delete [] inWin;
         }
     }
+    return NULL;
+}
+
+vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
+                                        vector< MapData * > *mapDataByChr,
+                                        IndData *indData,
+                                        centromere *centro,
+                                        double lodScoreCutoff,
+                                        ROHLength **rohLength,
+                                        int winSize,
+                                        int MAX_GAP,
+                                        double OVERLAP_FRAC, bool CM)
+{
+    vector< ROHData * > *rohDataByInd = initROHData(indData);
+
+    double OVERLAP_THRESHOLD = OVERLAP_FRAC * winSize;
+    OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD >= 1) ? OVERLAP_THRESHOLD : 1;
+    OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD <= winSize) ? OVERLAP_THRESHOLD : winSize;
+
+    //Individuals are independent: each writes only its own ROHData.
+    int nt = LOD_NUM_THREADS;
+    if (nt > indData->nind) nt = indData->nind;
+    if (nt < 1) nt = 1;
+
+    ROH_work_order_t *orders = new ROH_work_order_t[nt];
+    int per = indData->nind / nt;
+    int extra = indData->nind % nt;
+    int at = 0;
+    for (int i = 0; i < nt; i++)
+    {
+        orders[i].winDataByChr = winDataByChr;
+        orders[i].mapDataByChr = mapDataByChr;
+        orders[i].indData = indData;
+        orders[i].centro = centro;
+        orders[i].lodScoreCutoff = lodScoreCutoff;
+        orders[i].winSize = winSize;
+        orders[i].MAX_GAP = MAX_GAP;
+        orders[i].OVERLAP_THRESHOLD = OVERLAP_THRESHOLD;
+        orders[i].CM = CM;
+        orders[i].rohDataByInd = rohDataByInd;
+        orders[i].indStart = at;
+        at += per + (i < extra ? 1 : 0);
+        orders[i].indStop = at;
+    }
+
+    if (nt == 1)
+    {
+        parallelAssembleROH(&(orders[0]));
+    }
+    else
+    {
+        pthread_t *peer = new pthread_t[nt];
+        for (int i = 0; i < nt; i++)
+            pthread_create(&(peer[i]), NULL, parallelAssembleROH, (void *)&(orders[i]));
+        for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
+        delete [] peer;
+    }
+
+    vector<double> lengths;
+    for (int i = 0; i < nt; i++)
+        lengths.insert(lengths.end(), orders[i].lengths.begin(), orders[i].lengths.end());
+    delete [] orders;
 
     ROHLength *rohLengths = initROHLength(lengths.size());
     for (unsigned int i = 0; i < lengths.size(); i++)
