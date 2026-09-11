@@ -443,15 +443,35 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
             //translation of the perl script here###Updated to match trevor's algorithm
             //int winStart = -1;
             //int winStop = -1;
-            short *inWin = new short[mapData->nloci];
-            for (int w = 0; w < mapData->nloci; w++) inWin[w] = 0;
+            //Difference array + prefix sum instead of incrementing winSize
+            //entries per passing window: O(1) per window rather than
+            //O(winSize), and it removes an out-of-bounds write.
+            //
+            //winData->nloci == mapData->nloci (initWinData sizes it from the
+            //map), so the old inner loop reached inWin[nloci + winSize - 2],
+            //up to winSize-1 elements past the end.  It was masked only
+            //because the tail windows hold MISSING (-9999) and so failed the
+            //cutoff test -- passing --lod-cutoff below -9999 wrote past the end.
+            int *inWinDiff = new int[mapData->nloci + 1];
+            for (int w = 0; w <= mapData->nloci; w++) inWinDiff[w] = 0;
             for (int w = 0; w < winData->nloci; w++)
             {
                 if (winData->data[ind][w] >= lodScoreCutoff)
                 {
-                    for (int i = 0; i < winSize; i++) inWin[w + i]++;
+                    int lo = w;
+                    int hi = w + winSize;
+                    if (hi > mapData->nloci) hi = mapData->nloci;
+                    if (lo < mapData->nloci) { inWinDiff[lo]++; inWinDiff[hi]--; }
                 }
             }
+            short *inWin = new short[mapData->nloci];
+            int running = 0;
+            for (int w = 0; w < mapData->nloci; w++)
+            {
+                running += inWinDiff[w];
+                inWin[w] = short(running);
+            }
+            delete [] inWinDiff;
 
             double gwinStart = -1;
             double gwinStop = -1;
@@ -489,7 +509,7 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                     winStart = pos[w];
                     winStartIndex = w;
                 }
-                else if (winStart > 0 && ! (inWin[w] >= OVERLAP_THRESHOLD) )
+                else if (winStart >= 0 && ! (inWin[w] >= OVERLAP_THRESHOLD) )
                 {
                     gwinStop = gpos[w - 1];
                     winStop = pos[w - 1];
