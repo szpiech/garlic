@@ -255,7 +255,11 @@ double slope(double x0, double y0, double x1, double y1)
 
 int get_arg_max(double *nums, int size)
 {
-    double max = numeric_limits<double>::min();
+    //::min() is the smallest POSITIVE normal double (+2.2e-308), not -inf, so
+    //an all-nonpositive input returned arg_max = -1 and the caller indexed
+    //y[-1].  ::lowest() is the intended value.  (get_arg_min below correctly
+    //uses ::max(), which is what makes the asymmetry easy to miss.)
+    double max = numeric_limits<double>::lowest();
     int arg_max = -1;
 
     for (int i = 0; i < size; i++)
