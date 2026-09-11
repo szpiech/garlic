@@ -652,23 +652,26 @@ string makeROHFilename(string outfile)
     return outfile;
 }
 
-double selectLODCutoff(KDEResult *kdeResult, int wsize)
+double selectLODCutoff(KDEResult *kdeResult, int wsize, bool &ok)
 {
     double LOD_CUTOFF;
+    ok = true;
     try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512, wsize); }
     catch (...)
     {
         LOG.err("ERROR: Failed to find the minimum between modes in the LOD score density.");
         LOG.err("\tResults from density estimation have been written to file for inspection.");
         LOG.err("\tA cutoff can be manually specified on the command line with", ARG_LOD_CUTOFF);
+        ok = false;
         return -1;
     }
     return LOD_CUTOFF;
 }
 
 
-double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wsize)
+double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wsize, bool &ok)
 {
+    ok = true;
     //Format the LOD window data into a single array per pop with no missing data
     //Prepped for KDE
     DoubleData *rawWinData;
@@ -684,7 +687,7 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
 
     //Output kde points
     try { writeKDEResult(kdeResult, kdeoutfile); }
-    catch (...) { return -1; }
+    catch (...) { ok = false; return -1; }
 
     try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512, wsize); }
     catch (...)
@@ -692,6 +695,7 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
         LOG.err("ERROR: Failed to find the minimum between modes in the LOD score density.");
         LOG.err("\tResults from density estimation have been written to file for inspection.");
         LOG.err("\tA cutoff can be manually specified on the command line with", ARG_LOD_CUTOFF);
+        ok = false;
         return -1;
     }
 

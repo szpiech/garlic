@@ -391,11 +391,20 @@ int main(int argc, char *argv[])
 
     if (AUTO_CUTOFF){
         //if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
+        bool cutoffOK = true;
         if(kdeResult == NULL)
         {
-            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (THIN ? winsize : 1), winsize);
+            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (THIN ? winsize : 1), winsize, cutoffOK);
         }
-        else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize);
+        else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize, cutoffOK);
+
+        //A failed KDE used to return -1, which main then used as the cutoff and
+        //happily wrote a complete, plausible-looking .roh.bed from it.
+        if (!cutoffOK)
+        {
+            LOG.err("ERROR: Could not select a LOD score cutoff automatically. Stopping.");
+            return 2;
+        }
 
         LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
     }
