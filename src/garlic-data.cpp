@@ -660,6 +660,9 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
 }
 
 void parallelHR2(void *order){
+    //advanceBar takes a global mutex and writes to cerr on every call; at one
+    //call per locus that is ~577k lock/unlock pairs genome-wide.  Batch them.
+    int barPending = 0;
     HR2_work_order_t *p = (HR2_work_order_t *)order;
     HapData *hapData = p->hapData;
     GenoFreqData *genoFreqData = p->genoFreqData;
@@ -675,7 +678,7 @@ void parallelHR2(void *order){
     //Fill the band rows owned by this thread: one hr2 evaluation per distinct
     //pair, rather than one per (window, pair) as before.
     for (int i = start; i < stop; i++){
-        advanceBar(*bar,1);
+        if ((++barPending) == 256) { advanceBar(*bar, 256); barPending = 0; }
         band[(size_t)i * winsize] = 1.0;
         int dMax = (winsize < nloci - i) ? winsize : (nloci - i);
         for (int d = 1; d < dMax; d++){
@@ -683,9 +686,14 @@ void parallelHR2(void *order){
         }
         for (int d = dMax; d < winsize; d++) band[(size_t)i * winsize + d] = 0.0;
     }
+    if (barPending) advanceBar(*bar, barPending);
+
 }
 
 void parallelR2(void *order){
+    //advanceBar takes a global mutex and writes to cerr on every call; at one
+    //call per locus that is ~577k lock/unlock pairs genome-wide.  Batch them.
+    int barPending = 0;
     R2_work_order_t *p = (R2_work_order_t *)order;
     HapData *hapData = p->hapData;
     FreqData *freqData = p->freqData;
@@ -699,7 +707,7 @@ void parallelR2(void *order){
     int nloci = hapData->nloci;
 
     for (int i = start; i < stop; i++){
-        advanceBar(*bar,1);
+        if ((++barPending) == 256) { advanceBar(*bar, 256); barPending = 0; }
         band[(size_t)i * winsize] = 1.0;
         int dMax = (winsize < nloci - i) ? winsize : (nloci - i);
         for (int d = 1; d < dMax; d++){
@@ -707,6 +715,8 @@ void parallelR2(void *order){
         }
         for (int d = dMax; d < winsize; d++) band[(size_t)i * winsize + d] = 0.0;
     }
+    if (barPending) advanceBar(*bar, barPending);
+
 }
 
 //rho(a,b) for |a-b| < winsize, read out of the band (which stores a <= b).
