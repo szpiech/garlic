@@ -2205,10 +2205,14 @@ void subsetData(vector< HapData * > *hapDataByChr,
     }
 
     IndData *newIndData = initIndData(nind);
-    newIndData->pop = indData->pop;
 
+    //NB: assigning newIndData->pop = indData->pop here (as this used to do)
+    //leaked the array initIndData just allocated AND aliased the caller's,
+    //so the subsequent releaseIndData(subset) freed memory that main still
+    //owned and freed again -> abort under --auto-winsize.  Deep copy instead.
     for (int ind = 0; ind < nind; ind++) {
         newIndData->indID[ind] = indData->indID[randInd[ind]];
+        newIndData->pop[ind]   = indData->pop[randInd[ind]];
     }
     LOG.loga("Individuals used for KDE:", newIndData->indID, nind);
 
