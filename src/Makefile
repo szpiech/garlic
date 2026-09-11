@@ -1,31 +1,70 @@
 # Makefile for garlic
+#
+# Platform (library path and link options) is detected automatically from
+# `uname`.  Override any variable on the command line, e.g.
+#
+#     make                       # autodetect
+#     make CXX=clang++           # different compiler
+#     make OPTFLAGS='-O2 -g'     # different optimisation level
+#     make PLATFORM=win32        # cross/explicit platform
+#
+# NOTE: do not use `-fast` here.  It is an Intel/legacy-Apple spelling that
+# clang accepts and silently ignores ("argument unused during compilation"),
+# which left the macOS build at -O0 and ~3.4x slower than -O2.
 
-CC = g++
-#CC = clang++
-#G++FLAG = -g -Wall
-
+CXX ?= g++
 I_PATH = ../include
 
-#osx
-#L_PATH = ../lib/osx
-#macos-arm
-L_PATH = ../lib/macos-arm
-G++FLAG = -fast -m64 -mmmx -msse -msse2
-#For static linking
-LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
 
-#linux
-#L_PATH = ../lib/linux
-#G++FLAG = -O3 -m64 -mmmx -msse -msse2
-#For static linking on linux boxes
-#LINK_OPTS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a -static -pthread
+ifndef PLATFORM
+  ifeq ($(UNAME_S),Darwin)
+    ifeq ($(UNAME_M),arm64)
+      PLATFORM = macos-arm
+    else
+      PLATFORM = osx
+    endif
+  else
+    PLATFORM = linux
+  endif
+endif
 
-#win
-#I_PATH2 = -I ../include/win32
-#L_PATH = ../lib/win32
-#G++FLAG = -O3 -DPTW32_STATIC_LIB
-#For static linking
-#LINK_OPTS = $(L_PATH)/libpthreadGC2.a $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a $(L_PATH)/ann_figtree_version.lib $(L_PATH)/figtree.lib $(L_PATH)/libz.a -static-libgcc -static-libstdc++
+# -- optimisation ------------------------------------------------------------
+# Portable and safe by default.  Add -march=native yourself for a local build.
+OPTFLAGS ?= -O3
+WARNFLAGS ?= -Wall
+STDFLAG ?= -std=c++11
+
+# -- per-platform settings ---------------------------------------------------
+L_PATH = ../lib/$(PLATFORM)
+GSL_LIBS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a
+FIG_LIBS = $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
+
+ifeq ($(PLATFORM),linux)
+  ARCHFLAGS = -m64
+  LINK_OPTS = $(GSL_LIBS) $(FIG_LIBS) -static -pthread
+else ifeq ($(PLATFORM),osx)
+  # x86_64 macOS: SSE2 is baseline on x86_64, kept explicit for older toolchains
+  ARCHFLAGS = -m64 -msse2
+  LINK_OPTS = $(GSL_LIBS) $(FIG_LIBS)
+else ifeq ($(PLATFORM),macos-arm)
+  # arm64: the x86 ISA flags (-m64 -mmmx -msse -msse2) are meaningless here
+  ARCHFLAGS =
+  LINK_OPTS = $(GSL_LIBS) $(FIG_LIBS)
+else ifeq ($(PLATFORM),win32)
+  I_PATH2 = -I ../include/win32
+  ARCHFLAGS = -DPTW32_STATIC_LIB
+  LINK_OPTS = $(L_PATH)/libpthreadGC2.a $(GSL_LIBS) \
+              $(L_PATH)/ann_figtree_version.lib $(L_PATH)/figtree.lib \
+              $(L_PATH)/libz.a -static-libgcc -static-libstdc++
+else
+  $(error Unknown PLATFORM '$(PLATFORM)'; expected linux, osx, macos-arm or win32)
+endif
+
+CXXFLAGS ?= $(OPTFLAGS) $(WARNFLAGS) $(STDFLAG) $(ARCHFLAGS)
+G++FLAG = $(CXXFLAGS)
+CC = $(CXX)
 
 
 all : garlic
@@ -70,4 +109,6 @@ BoundFinder.o : BoundFinder.cpp BoundFinder.h
 	$(CC) $(G++FLAG) -c BoundFinder.cpp -I$(I_PATH) $(I_PATH2)
 
 clean :
-	rm *.o
+	rm -f *.o garlic
+
+.PHONY : all clean
