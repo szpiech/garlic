@@ -445,8 +445,11 @@ bool checkGLType(string TYPE, string tglsfile)
 	return false;
 }
 
-bool checkWinsize(int winsize, bool WINSIZE_EXPLORE, bool AUTO_WINSIZE, bool WEIGHTED)
+bool checkWinsize(int winsize, bool WINSIZE_EXPLORE, bool AUTO_WINSIZE, bool WEIGHTED, bool FREQ_ONLY)
 {
+	//--freq-only never forms a window, so do not make the user invent a
+	//--winsize just to get past this check.
+	if (FREQ_ONLY) return false;
 	if (winsize <= 1){
 		if(!WINSIZE_EXPLORE && !(AUTO_WINSIZE && WEIGHTED)){
 			LOG.err("ERROR: SNP window size must be > 1. If using --auto-winsize, this is the starting value.");

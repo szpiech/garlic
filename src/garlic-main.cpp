@@ -110,7 +110,7 @@ int main(int argc, char *argv[])
     LOG.log("Automatic window step size:", AUTO_WINSIZE_STEP);
 
     int winsize = params->getIntFlag(ARG_WINSIZE);
-    argerr = argerr || checkWinsize(winsize, WINSIZE_EXPLORE, AUTO_WINSIZE, WEIGHTED);
+    argerr = argerr || checkWinsize(winsize, WINSIZE_EXPLORE, AUTO_WINSIZE, WEIGHTED, FREQ_ONLY);
     if (argerr) return -1;
     if (!WINSIZE_EXPLORE && !AUTO_WINSIZE) LOG.log("User defined window size:", winsize);
 
@@ -407,7 +407,26 @@ int main(int argc, char *argv[])
     
     if (AUTO_BOUNDS){
         cout << "Fitting " << NCLUST << "-component GMM for size classification\n";
-        boundSizes = selectSizeClasses(rohLength, NCLUST);
+        //A GMM with more components than observations has no solution; the GMM
+        //used to throw an int that nothing caught, so the process died with
+        //SIGABRT after having already done all the work.  Report it instead.
+        if (rohLength == NULL || rohLength->size < NCLUST)
+        {
+            LOG.err("ERROR: Cannot fit a", NCLUST, false);
+            LOG.err("-component GMM to", int(rohLength == NULL ? 0 : rohLength->size), false);
+            LOG.err(" ROH.");
+            LOG.err("\tNo (or too few) ROH were called, so size classes cannot be chosen automatically.");
+            LOG.err("\tCheck --lod-cutoff, or pass --size-bounds to set the class boundaries yourself.");
+            return 2;
+        }
+        try {
+            boundSizes = selectSizeClasses(rohLength, NCLUST);
+        }
+        catch (...) {
+            LOG.err("ERROR: GMM size-class fitting failed.");
+            LOG.err("\tPass --size-bounds to set the ROH size class boundaries explicitly.");
+            return 2;
+        }
         LOG.logv("Selected ROH size boundaries = (", boundSizes, false);
         LOG.log(" )");
     }
