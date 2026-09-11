@@ -39,24 +39,25 @@ STDFLAG ?= -std=c++11
 # -- per-platform settings ---------------------------------------------------
 L_PATH = ../lib/$(PLATFORM)
 GSL_LIBS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a
-FIG_LIBS = $(L_PATH)/libann_figtree_version.a $(L_PATH)/libfigtree.a
+# figtree/ANN are no longer linked: the KDE evaluates its Gaussian sum directly
+# (see kdeGaussian in garlic-kde.cpp).  The archives remain under lib/ for the
+# moment; nothing references them.
 
 ifeq ($(PLATFORM),linux)
   ARCHFLAGS = -m64
-  LINK_OPTS = $(GSL_LIBS) $(FIG_LIBS) -static -pthread
+  LINK_OPTS = $(GSL_LIBS) -static -pthread
 else ifeq ($(PLATFORM),osx)
   # x86_64 macOS: SSE2 is baseline on x86_64, kept explicit for older toolchains
   ARCHFLAGS = -m64 -msse2
-  LINK_OPTS = $(GSL_LIBS) $(FIG_LIBS)
+  LINK_OPTS = $(GSL_LIBS)
 else ifeq ($(PLATFORM),macos-arm)
   # arm64: the x86 ISA flags (-m64 -mmmx -msse -msse2) are meaningless here
   ARCHFLAGS =
-  LINK_OPTS = $(GSL_LIBS) $(FIG_LIBS)
+  LINK_OPTS = $(GSL_LIBS)
 else ifeq ($(PLATFORM),win32)
   I_PATH2 = -I ../include/win32
   ARCHFLAGS = -DPTW32_STATIC_LIB
   LINK_OPTS = $(L_PATH)/libpthreadGC2.a $(GSL_LIBS) \
-              $(L_PATH)/ann_figtree_version.lib $(L_PATH)/figtree.lib \
               $(L_PATH)/libz.a -static-libgcc -static-libstdc++
 else
   $(error Unknown PLATFORM '$(PLATFORM)'; expected linux, osx, macos-arm or win32)

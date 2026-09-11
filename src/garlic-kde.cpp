@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <pthread.h>
 #include "garlic-kde.h"
 
 double calculateWiggle(KDEResult *kdeResult, int winsize) {
@@ -20,25 +22,11 @@ KDEResult *computeKDE(double *data, int size)
     //used to compute the KDE
     double CUT = 3;
 
-    // The dimensionality of each sample vector.
-    int d = 1;
-
     // The number of targets (vectors at which gauss transform is evaluated).
     int M = 512;
 
     // The number of sources which will be used for the gauss transform.
     int n = size;
-
-    // Desired maximum absolute error after normalizing output by sum of weights.
-    // If the weights, q_i (see below), add up to 1, then this is will be the
-    // maximum absolute error.
-    // The smaller epsilon is, the more accurate the results will be, at the
-    // expense of increased computational complexity.
-    double epsilon = 1e-2;
-
-    // Number of weights.  For each set of weights a different Gauss Transform is computed,
-    // but by giving multiple sets of weights at once some overhead can be shared.
-    int W = 1;
 
     double h = nrd0(data, size); // bandwitdh
     double min, max;
@@ -69,34 +57,7 @@ KDEResult *computeKDE(double *data, int size)
 
     double targetPointSpacing = targets[1] - targets[0];
 
-    //Weights, man what a waste of memory...
-    double *q = new double[n];
-    for (int i = 0; i < n; i++)
-    {
-        q[i] = 1.0 / double(n);
-    }
-
-    //figtree not thread safe due to dependent libraries using global vars somewhere
-    //pthread_mutex_lock(&kde_mutex);
-
-    //FIGTREE_EVAL_DIRECT rather than the default FIGTREE_EVAL_AUTO.
-    //
-    //AUTO selects the improved fast Gauss transform, whose k-center clustering
-    //(KCenterClustering.o in libfigtree) calls srand(time(NULL)) internally and
-    //picks its initial centre at random.  That made computeKDE give a different
-    //answer on every invocation for byte-identical input -- on the bundled
-    //example, 503 of the 512 grid points differed between runs, which moved the
-    //automatically selected LOD cutoff and therefore the ROH calls.  No seed we
-    //control can fix that, because the library reseeds itself.
-    //
-    //DIRECT evaluates the Gauss transform exactly, so it is both deterministic
-    //and more accurate than the epsilon-bounded approximation (epsilon is
-    //ignored on this path).  Cost is O(n*M); on the bundled example this is
-    //+0.3 s with the default thinning and +9 s under --no-kde-thinning.
-    figtree( d, n, M, W, data, h, q, targets, epsilon, kde_points, FIGTREE_EVAL_DIRECT );
-    //pthread_mutex_unlock(&kde_mutex);
-
-    delete [] q;
+    kdeGaussian(data, n, h, targets, M, kde_points);
 
     double sum = 0;
     for (int i = 0; i < M; i++)
@@ -153,6 +114,118 @@ double nrd0(double x[], const int N)
     double bw = 0.9 * lo * pow(N, -0.2);
     return (bw);
 }
+
+//============================ exact Gaussian KDE =============================
+//Replaces the figtree call that used to live in computeKDE.
+//
+//figtree's default (FIGTREE_EVAL_AUTO) was non-deterministic -- its k-center
+//clustering reseeds itself with srand(time(NULL)) -- and FIGTREE_EVAL_DIRECT,
+//which is deterministic and exact, is a flat O(n*M) double loop.  At the
+//defaults that is 0.67 s of a 2.87 s run on the bundled example, and ~31 s
+//under --no-kde-thinning (24.5 M points); it grows linearly with cohort size.
+//
+//Two observations make the exact sum much cheaper:
+//
+//  1. exp(-z^2/h^2) UNDERFLOWS TO EXACTLY 0.0 in IEEE double once
+//     z^2/h^2 > 745.2.  So every source further than h*sqrt(746) from a target
+//     contributes exactly 0.0, and skipping it is not an approximation --
+//     adding 0.0 cannot change a sum.  This is exactness by construction, not
+//     a tolerance.
+//  2. nrd0() sorts `data` in place (gsl_sort) immediately before we need it, so
+//     the contributing range for each target is one binary search.
+//
+//Targets are independent, so the 512 grid points parallelise with no sharing.
+static int KDE_NUM_THREADS = 1;
+
+void setKDEThreads(int n) { KDE_NUM_THREADS = (n > 0 ? n : 1); }
+
+struct KDE_work_order_t
+{
+    const double *data;
+    int n;
+    double h;
+    const double *targets;
+    double *out;
+    int start;
+    int stop;
+    int stride;
+    double R;
+};
+
+static void *parallelKDE(void *order)
+{
+    KDE_work_order_t *p = (KDE_work_order_t *)order;
+    const double *data = p->data;
+    const double *targets = p->targets;
+    const int n = p->n;
+    const double invh2 = 1.0 / (p->h * p->h);
+    const double R = p->R;
+    const double invn = 1.0 / double(n);
+
+    //Strided rather than blocked: the contributing window is widest in the
+    //dense centre of the grid, so contiguous blocks hand one thread most of
+    //the work.
+    for (int i = p->start; i < p->stop; i += p->stride)
+    {
+        const double c = targets[i];
+        //only sources in [c-R, c+R] can contribute a nonzero term
+        const double *lo = std::lower_bound(data, data + n, c - R);
+        const double *hi = std::upper_bound(data, data + n, c + R);
+        double sum = 0.0;
+        for (const double *q = lo; q < hi; q++)
+        {
+            const double z = c - *q;
+            sum += exp(-z * z * invh2);
+        }
+        p->out[i] = sum * invn;
+    }
+    return NULL;
+}
+
+//out[i] = (1/n) * sum_j exp(-(targets[i]-data[j])^2 / h^2), the same quantity
+//figtree was computing with unit weights q_j = 1/n.
+void kdeGaussian(double *data, int n, double h, const double *targets, int M, double *out)
+{
+    if (n < 1 || M < 1) return;
+
+    //nrd0() leaves data sorted; verify rather than assume, and sort if some
+    //future caller changes that.
+    bool sorted = true;
+    for (int i = 1; i < n; i++) { if (data[i] < data[i - 1]) { sorted = false; break; } }
+    if (!sorted) gsl_sort(data, 1, n);
+
+    //exp() underflows to exactly 0.0 beyond this separation, so terms outside
+    //contribute nothing at all -- not merely something small.
+    const double R = h * sqrt(746.0);
+
+    int nt = KDE_NUM_THREADS;
+    if (nt > M) nt = M;
+    if (nt < 1) nt = 1;
+
+    KDE_work_order_t proto;
+    proto.data = data; proto.n = n; proto.h = h; proto.targets = targets;
+    proto.out = out; proto.R = R; proto.start = 0; proto.stop = M; proto.stride = 1;
+
+    if (nt == 1)
+    {
+        parallelKDE(&proto);
+        return;
+    }
+
+    pthread_t *peer = new pthread_t[nt];
+    KDE_work_order_t *orders = new KDE_work_order_t[nt];
+    for (int i = 0; i < nt; i++)
+    {
+        orders[i] = proto;
+        orders[i].start = i;
+        orders[i].stride = nt;
+        pthread_create(&(peer[i]), NULL, parallelKDE, (void *)&(orders[i]));
+    }
+    for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
+    delete [] peer;
+    delete [] orders;
+}
+
 
 double get_min_btw_modes(double *x, double *y, int size, int wsize)
 {
