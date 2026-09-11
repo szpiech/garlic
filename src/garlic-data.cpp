@@ -492,6 +492,7 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
         if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), winsize, numThreads, randInd, ldSubsample));
         else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), winsize, numThreads, randInd, ldSubsample));
     }
+    delete [] randInd;
     return ldDataByChr;
 }
 
@@ -2196,6 +2197,8 @@ void scanIndData3(string filename, int &numInd) {
     int min_cols = 2;
     int current_cols = 0;
     string pop, ind;
+    string popName;
+    bool multiPopWarned = false;
     stringstream ss;
     while (getline(fin, line))
     {
@@ -2223,6 +2226,22 @@ void scanIndData3(string filename, int &numInd) {
         }
         else indList[ind] = 1;
 
+        //Allele frequencies are computed by pooling every individual in the
+        //file, and the LOD ratio is parameterised by population allele
+        //frequency.  Pooling distinct populations inflates heterozygosity
+        //relative to any one of them and biases the autozygous/non-autozygous
+        //ratio, so this is worth saying out loud even though it is allowed.
+        if (nind == 1) popName = pop;
+        else if (!multiPopWarned && pop.compare(popName) != 0) {
+            LOG.err("WARNING: Found multiple population IDs in", filename, false);
+            LOG.err(" (e.g.", popName, false);
+            LOG.err(",", pop, false);
+            LOG.err(").");
+            LOG.err("\tAllele frequencies are computed by pooling ALL individuals in the file,");
+            LOG.err("\twhich biases the LOD scores for every population present.");
+            LOG.err("\tRun each population separately, or supply --freq-file.");
+            multiPopWarned = true;
+        }
 
         //Single population only, check to see if more than
         /*
