@@ -41,6 +41,22 @@ unsigned long int drawRandomSeed()
     unsigned long int seed = (unsigned long int)(rd() % (unsigned int)(0x7FFFFFFF)) + 1UL;
     return seed;
 }
+//---- fast whitespace-delimited scanning -------------------------------------
+//std::istream extraction (operator>>) constructs a sentry and performs locale
+//lookups on every single token.  On TPED input that machinery, not the actual
+//parsing, dominated runtime.  These helpers walk the line buffer directly.
+static inline const char *skipSpace(const char *p, const char *e)
+{
+    while (p < e && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\f' || *p == '\v')) ++p;
+    return p;
+}
+
+static inline const char *tokenEnd(const char *p, const char *e)
+{
+    while (p < e && !(*p == ' ' || *p == '\t' || *p == '\r' || *p == '\f' || *p == '\v')) ++p;
+    return p;
+}
+
 double selectOverlapFrac(double variantDensity, int winsize){
     double frac = (6.375*log(variantDensity)+63.888)/100.0;
     if(frac > 1) frac = 1.0;
@@ -91,19 +107,41 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
 
     numLoci = 0;
 
-    while(getline(fin,line)){
+    bool firstLine = true;
+    while (getline(fin, line)) {
         numLoci++;
-        ncols = countFields(line) - 4;
-        numInd = ncols/2;
+        const char *p    = line.c_str();
+        const char *pEnd = p + line.size();
+        const char *tEnd;
 
-        ss.str(line);
+        //Column count is a property of the file, not of each line.  It used to
+        //be recomputed (and silently overwritten) on every line, so a ragged
+        //TPED produced rows of differing length and out-of-bounds reads later.
+        if (firstLine) {
+            ncols = countFields(line) - 4;
+            if (ncols <= 0 || (ncols % 2) != 0) {
+                LOG.err("ERROR: Expected 4 leading columns and an even number of allele columns in", tpedfile);
+                throw 0;
+            }
+            numInd = ncols / 2;
+            firstLine = false;
+        }
 
-        ss >> chr;
+        //--- chromosome ---
+        p = skipSpace(p, pEnd);
+        tEnd = tokenEnd(p, pEnd);
+        if (tEnd == p) {
+            LOG.err("ERROR: Empty line or missing chromosome field at line", numLoci, false);
+            LOG.err(" of", tpedfile);
+            throw 0;
+        }
+        chr.assign(p, tEnd - p);
+        p = tEnd;
 
         if (prevChr.compare(emptyChr) == 0 && numLoci == 1) prevChr = chr;
 
         if (chr.compare(prevChr) != 0){
-            
+
             LOG.log("Chromosome",checkChrName(prevChr),false);
             LOG.log(":",currChrLoci,false);
             LOG.log(" sites.");
@@ -128,15 +166,46 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         }
 
         currChrLoci++;
-        
-        ss >> locusName;
-        locusNames.push_back(locusName);
-        ss >> gpos;
-        geneticPos.push_back(gpos);
-        ss >> ppos;
-        physicalPos.push_back(ppos);
 
-        //alleles remain in ss
+        //--- locus name ---
+        p = skipSpace(p, pEnd);
+        tEnd = tokenEnd(p, pEnd);
+        if (tEnd == p) {
+            LOG.err("ERROR: Missing locus ID at line", numLoci, false);
+            LOG.err(" of", tpedfile);
+            throw 0;
+        }
+        locusName.assign(p, tEnd - p);
+        locusNames.push_back(locusName);
+        p = tEnd;
+
+        //--- genetic and physical position ---
+        {
+            char *q;
+            p = skipSpace(p, pEnd);
+            gpos = strtod(p, &q);
+            if (q == p) {
+                LOG.err("ERROR: Could not parse genetic position at line", numLoci, false);
+                LOG.err(" of", tpedfile);
+                throw 0;
+            }
+            p = q;
+            geneticPos.push_back(gpos);
+
+            p = skipSpace(p, pEnd);
+            ppos = strtod(p, &q);
+            if (q == p) {
+                LOG.err("ERROR: Could not parse physical position at line", numLoci, false);
+                LOG.err(" of", tpedfile);
+                throw 0;
+            }
+            p = q;
+            physicalPos.push_back(ppos);
+        }
+
+        //--- genotypes ---
+        //Read 2*numInd individual non-whitespace characters, which is exactly
+        //what `ss >> char` did (TPED alleles are single characters).
         nalleles = 0;
         total = 0;
         data = new short[numInd];
@@ -145,7 +214,25 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
 
         for(int i = 0; i < numInd; i++){
             data[i] = 0;
-            ss >> alleleStr1 >> alleleStr2;
+            p = skipSpace(p, pEnd);
+            if (p >= pEnd) {
+                delete [] data;
+                if (PHASED) delete [] firstCopy;
+                LOG.err("ERROR: Too few genotype fields at line", numLoci, false);
+                LOG.err(" of", tpedfile);
+                throw 0;
+            }
+            alleleStr1 = *p++;
+            p = skipSpace(p, pEnd);
+            if (p >= pEnd) {
+                delete [] data;
+                if (PHASED) delete [] firstCopy;
+                LOG.err("ERROR: Too few genotype fields at line", numLoci, false);
+                LOG.err(" of", tpedfile);
+                throw 0;
+            }
+            alleleStr2 = *p++;
+
             if(oneAllele == TPED_MISSING && alleleStr1 != TPED_MISSING) oneAllele = alleleStr1;
             if(oneAllele == TPED_MISSING && alleleStr2 != TPED_MISSING) oneAllele = alleleStr2;
             if (alleleStr1 == TPED_MISSING) data[i] += -9;
@@ -164,6 +251,17 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
             else total++;
             if (data[i] < 0) data[i] = -9;
             if(PHASED) firstCopy[i] = (alleleStr1 == oneAllele);
+        }
+
+        p = skipSpace(p, pEnd);
+        if (p != pEnd) {
+            delete [] data;
+            if (PHASED) delete [] firstCopy;
+            LOG.err("ERROR: Too many columns at line", numLoci, false);
+            LOG.err(" of", tpedfile, false);
+            LOG.err(". Expected genotypes for", numInd, false);
+            LOG.err(" individuals.");
+            throw 0;
         }
 
         allele.push_back(oneAllele);
@@ -185,8 +283,6 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
             }
             freq.push_back(freqtmp);
         }
-
-        ss.clear();
     }
 
     LOG.log("Chromosome",checkChrName(chr),false);
