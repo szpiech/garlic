@@ -1,6 +1,8 @@
 #include "garlic-cli.h"
 #include <iostream>
 #include <fstream>
+#include <sys/stat.h>
+#include <cerrno>
 
 const string VERSION = "1.1.6a";
 
@@ -183,6 +185,21 @@ const string HELP_MAX_WINSIZE = "Upper bound on the window size that --auto-wins
 \tpreviously had no bound and would grow past the number of loci if the\n\
 \tsmoothness criterion was never met.";
 
+const string ARG_CHR = "--chr";
+const string HELP_CHR = "Analyse only these chromosomes, e.g. --chr chr1 chr2 chrX. Names are matched\n\
+\tafter normalisation, so '1' and 'chr1' are the same. It is an error to name a\n\
+\tchromosome that is not in the data.\n\tDefault: all chromosomes in the input";
+
+const string ARG_OUTDIR = "--outdir";
+const string DEFAULT_OUTDIR = "";
+const string HELP_OUTDIR = "Write all output files into this directory, which is created if it does not\n\
+\texist. Equivalent to prefixing --out with the path.";
+
+const string ARG_FROH = "--froh";
+const bool DEFAULT_FROH = false;
+const string HELP_FROH = "Also write <out>.froh.tsv: per-individual autozygous total and fraction,\n\
+\tbroken down by ROH size class. The denominator is stated in the file header.";
+
 const string ARG_AUTO_WINSIZE_THRESHOLD = "--auto-winsize-threshold";
 const double DEFAULT_AUTO_WINSIZE_THRESHOLD = 0.50;
 const string HELP_AUTO_WINSIZE_THRESHOLD = "Smoothness criterion at which the --auto-winsize search stops. Lower values\n\
@@ -306,6 +323,9 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_VERSION, DEFAULT_VERSION, "", HELP_VERSION);
 	params->addFlag(ARG_FORCE, DEFAULT_FORCE, "", HELP_FORCE);
 	params->addFlag(ARG_KDE_THIN_STEP, DEFAULT_KDE_THIN_STEP, "", HELP_KDE_THIN_STEP);
+	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
+	params->addFlag(ARG_OUTDIR, DEFAULT_OUTDIR, "", HELP_OUTDIR);
+	params->addFlag(ARG_FROH, DEFAULT_FROH, "", HELP_FROH);
 	params->addFlag(ARG_AUTO_WINSIZE_THRESHOLD, DEFAULT_AUTO_WINSIZE_THRESHOLD, "", HELP_AUTO_WINSIZE_THRESHOLD);
 	params->addFlag(ARG_KDE_POINTS, DEFAULT_KDE_POINTS, "", HELP_KDE_POINTS);
 	params->addFlag(ARG_KDE_CUT, DEFAULT_KDE_CUT, "", HELP_KDE_CUT);
@@ -562,6 +582,25 @@ bool checkError(double error, string tglsfile, bool wasSet)
 	{
 		LOG.err("ERROR: Genotype error rate must be > 0 and < 1.");
 		return true;
+	}
+	return false;
+}
+
+//mkdir -p, so --outdir can name a nested path.
+bool makeOutdir(string dir){
+	if(dir.empty()) return false;
+	string partial;
+	for(unsigned int i = 0; i < dir.size(); i++){
+		partial += dir[i];
+		if(dir[i] == '/' || i + 1 == dir.size()){
+			if(partial == "/" || partial == "./" || partial == "../") continue;
+			string p = partial;
+			if(p.size() > 1 && p[p.size()-1] == '/') p.erase(p.size()-1);
+			if(mkdir(p.c_str(), 0777) != 0 && errno != EEXIST){
+				LOG.err("ERROR: Could not create output directory:", p);
+				return true;
+			}
+		}
 	}
 	return false;
 }

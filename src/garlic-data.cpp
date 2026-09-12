@@ -62,6 +62,65 @@ static double AUTO_OVERLAP_INTERCEPT = 63.888;
 
 void setAutoOverlapCoef(double slope, double intercept) { AUTO_OVERLAP_SLOPE = slope; AUTO_OVERLAP_INTERCEPT = intercept; }
 
+int filterChromosomes(vector<string> &keep,
+                      vector< MapData * > **mapDataByChr,
+                      vector< HapData * > **hapDataByChr,
+                      vector< FreqData * > **freqDataByChr,
+                      vector< GenoLikeData * > **GLDataByChr,
+                      bool USE_GL)
+{
+    vector<string> want;
+    for (unsigned int i = 0; i < keep.size(); i++) want.push_back(checkChrName(keep[i]));
+
+    vector< MapData * > *newMap = new vector< MapData * >;
+    vector< HapData * > *newHap = new vector< HapData * >;
+    vector< FreqData * > *newFreq = new vector< FreqData * >;
+    vector< GenoLikeData * > *newGL = USE_GL ? new vector< GenoLikeData * > : NULL;
+
+    vector<bool> found(want.size(), false);
+
+    for (unsigned int chr = 0; chr < (*mapDataByChr)->size(); chr++)
+    {
+        string have = checkChrName((*mapDataByChr)->at(chr)->chr);
+        int match = -1;
+        for (unsigned int w = 0; w < want.size(); w++)
+            if (want[w].compare(have) == 0) { match = int(w); break; }
+
+        if (match >= 0)
+        {
+            found[match] = true;
+            newMap->push_back((*mapDataByChr)->at(chr));
+            newHap->push_back((*hapDataByChr)->at(chr));
+            newFreq->push_back((*freqDataByChr)->at(chr));
+            if (USE_GL) newGL->push_back((*GLDataByChr)->at(chr));
+        }
+        else
+        {
+            releaseMapData((*mapDataByChr)->at(chr));
+            releaseHapData((*hapDataByChr)->at(chr));
+            releaseFreqData((*freqDataByChr)->at(chr));
+            if (USE_GL) releaseGLData((*GLDataByChr)->at(chr));
+        }
+    }
+
+    for (unsigned int w = 0; w < want.size(); w++)
+    {
+        if (!found[w])
+        {
+            LOG.err("ERROR: --chr", want[w], false);
+            LOG.err(" is not present in the data.");
+            return -1;
+        }
+    }
+
+    (*mapDataByChr)->clear();  delete *mapDataByChr;  *mapDataByChr = newMap;
+    (*hapDataByChr)->clear();  delete *hapDataByChr;  *hapDataByChr = newHap;
+    (*freqDataByChr)->clear(); delete *freqDataByChr; *freqDataByChr = newFreq;
+    if (USE_GL) { (*GLDataByChr)->clear(); delete *GLDataByChr; *GLDataByChr = newGL; }
+
+    return int(newMap->size());
+}
+
 double selectOverlapFrac(double variantDensity, int winsize){
     double frac = (AUTO_OVERLAP_SLOPE*log(variantDensity)+AUTO_OVERLAP_INTERCEPT)/100.0;
     if(frac > 1) frac = 1.0;

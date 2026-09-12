@@ -53,6 +53,14 @@ int main(int argc, char *argv[])
     if (params == NULL) return (cliStatus == PARAM_HELP) ? 0 : 1;
 
     string outfile = params->getStringFlag(ARG_OUTFILE);
+    string outdir = params->getStringFlag(ARG_OUTDIR);
+    if (!outdir.empty())
+    {
+        if (makeOutdir(outdir)) return 1;
+        if (outdir[outdir.size() - 1] != '/') outdir += "/";
+        outfile = outdir + outfile;
+    }
+
     LOG.init(outfile);
     LOG.log(getCommandLineString(argc, argv));
     LOG.log("Output file basename:", outfile);
@@ -400,6 +408,21 @@ int main(int argc, char *argv[])
     //chrCoordList->clear();
     //delete chrCoordList;
 
+    vector<string> keepChr = params->getStringListFlag(ARG_CHR);
+    if (params->isFlagSet(ARG_CHR))
+    {
+        int nkept = filterChromosomes(keepChr, &mapDataByChr, &hapDataByChr,
+                                      &freqDataByChr, &GLDataByChr, USE_GL);
+        if (nkept < 0) return 1;
+        LOG.loga("Restricted to chromosomes:", &(keepChr[0]), int(keepChr.size()));
+        LOG.log("Chromosomes analysed:", nkept);
+        if (!PHASED && WEIGHTED)
+        {
+            releaseGenoFreq(genoFreqDataByChr);
+            genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
+        }
+    }
+
 //++++++++++Pipeline begins++++++++++
     if (WINSIZE_EXPLORE && AUTO_WINSIZE && !WEIGHTED)
     {
@@ -508,7 +531,6 @@ int main(int argc, char *argv[])
                                         centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC, CM);
 
     releaseWinData(winDataByChr);
-    delete centro;
     
     if (AUTO_BOUNDS){
         cout << "Fitting " << NCLUST << "-component GMM for size classification\n";
@@ -543,6 +565,15 @@ int main(int argc, char *argv[])
     //includes A/B/C/etc size classifications
     cout << "Writing ROH tracts.\n";
     writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, boundSizes, indData->pop, VERSION, CM);
+
+    if (params->getBoolFlag(ARG_FROH))
+    {
+        writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
+                  indData->pop, centro, CM);
+    }
+
+    //centro is read by writeFROH; it used to be deleted before the writers ran.
+    delete centro;
 
     releaseIndData(indData);
     releaseROHLength(rohLength);

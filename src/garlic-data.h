@@ -178,6 +178,18 @@ double selectOverlapFrac(double variantDensity, int winsize);
 //--auto-overlap-frac; hardcoded as 6.375 / 63.888.
 void setAutoOverlapCoef(double slope, double intercept);
 
+//Restrict the analysis to the named chromosomes.  Pruning happens after the
+//files are read rather than during: the TGLS file has no chromosome column and
+//is consumed positionally against the TPED, so dropping TPED rows at read time
+//would desynchronise it.  Peak memory is therefore unchanged; runtime after
+//the read is not.
+int filterChromosomes(vector<string> &keep,
+                      vector< MapData * > **mapDataByChr,
+                      vector< HapData * > **hapDataByChr,
+                      vector< FreqData * > **freqDataByChr,
+                      vector< GenoLikeData * > **GLDataByChr,
+                      bool USE_GL);
+
 FreqData *initFreqData(const vector<double> &freq, int nloci);
 
 HapData *initHapData(const vector< geno_t * > &hap,

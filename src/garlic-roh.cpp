@@ -1,4 +1,6 @@
 #include "garlic-roh.h"
+#include <iomanip>
+#include <sstream>
 
 static double AUTO_WINSIZE_THRESHOLD_G = 0.50;
 static double AUTO_WINSIZE_SLOPE = 8.3235;
@@ -759,6 +761,120 @@ void releaseROHLength(vector< ROHLength * > *rohLengthByPop)
         releaseROHLength(rohLengthByPop->at(pop));
     }
     delete rohLengthByPop;
+    return;
+}
+
+//Default ostream precision is 6 significant digits, which turns a 67,657,700 bp
+//total into "6.76577e+07".  Physical lengths are whole base pairs; genetic
+//lengths need decimals.
+static string fmtLength(double v, bool CM)
+{
+    ostringstream ss;
+    if (CM) ss << fixed << setprecision(6) << v;
+    else    ss << (long long)(v + 0.5);
+    return ss.str();
+}
+
+//Class letter for a ROH of this size, using the same rule as writeROHData.
+static int rohSizeClassIndex(double size, vector<double> &bounds)
+{
+    for (unsigned int i = 0; i < bounds.size(); i++)
+        if (size < bounds[i]) return int(i);
+    return int(bounds.size());
+}
+
+void writeFROH(string outfile,
+               vector< ROHData * > *rohDataByInd,
+               vector< MapData * > *mapDataByChr,
+               vector< double > bounds,
+               string *pop,
+               centromere *centro,
+               bool CM)
+{
+    const int nclass = int(bounds.size()) + 1;
+
+    //Denominator: the span actually covered by the data on each analysed
+    //chromosome, minus the assembly gap where it falls inside that span.  This
+    //is stated in the file header because there is no single conventional
+    //choice and the numbers are not comparable across denominators.
+    double denom = 0;
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+    {
+        MapData *md = mapDataByChr->at(chr);
+        if (md->nloci < 2) continue;
+        if (CM)
+        {
+            denom += md->geneticPos[md->nloci - 1] - md->geneticPos[0];
+        }
+        else
+        {
+            double lo = md->physicalPos[0];
+            double hi = md->physicalPos[md->nloci - 1];
+            double span = hi - lo;
+            double gs = centro->centromereStart(md->chr);
+            double ge = centro->centromereEnd(md->chr);
+            if (ge > gs)
+            {
+                double ols = (gs > lo ? gs : lo);
+                double ole = (ge < hi ? ge : hi);
+                if (ole > ols) span -= (ole - ols);
+            }
+            denom += span;
+        }
+    }
+
+    ofstream out;
+    out.open(outfile.c_str());
+    if (out.fail())
+    {
+        LOG.err("ERROR: Failed to open", outfile);
+        throw 0;
+    }
+
+    out << "## garlic FROH\n";
+    out << "## units\t" << (CM ? "cM" : "bp") << "\n";
+    out << "## denominator\t" << (long long)(denom + 0.5) << "\t";
+    out << (CM ? "sum over analysed chromosomes of (last - first genetic position)"
+                : "sum over analysed chromosomes of (last - first physical position), minus the assembly gap inside that span")
+        << "\n";
+    out << "## size_class_boundaries";
+    for (unsigned int i = 0; i < bounds.size(); i++) out << "\t" << bounds[i];
+    out << "\n";
+    out << "ind\tpop\tsize_class\tn_roh\tlength\tfroh\n";
+
+    for (unsigned int ind = 0; ind < rohDataByInd->size(); ind++)
+    {
+        ROHData *rohData = rohDataByInd->at(ind);
+        vector<int> n(nclass, 0);
+        vector<double> tot(nclass, 0.0);
+        int nAll = 0;
+        double totAll = 0;
+
+        for (unsigned int roh = 0; roh < rohData->length.size(); roh++)
+        {
+            double size = rohData->length[roh];
+            int k = rohSizeClassIndex(size, bounds);
+            n[k]++;
+            tot[k] += size;
+            nAll++;
+            totAll += size;
+        }
+
+        for (int k = 0; k < nclass; k++)
+        {
+            out << rohData->indID << "\t" << pop[ind] << "\t" << char('A' + k) << "\t"
+                << n[k] << "\t" << fmtLength(tot[k], CM) << "\t"
+                << fixed << setprecision(8) << (denom > 0 ? tot[k] / denom : 0.0)
+                << defaultfloat << "\n";
+        }
+        out << rohData->indID << "\t" << pop[ind] << "\tALL\t"
+            << nAll << "\t" << fmtLength(totAll, CM) << "\t"
+            << fixed << setprecision(8) << (denom > 0 ? totAll / denom : 0.0)
+            << defaultfloat << "\n";
+    }
+
+    out.close();
+    LOG.log("FROH table:", outfile);
     return;
 }
 

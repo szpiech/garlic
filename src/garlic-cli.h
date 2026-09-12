@@ -161,6 +161,17 @@ extern const string ARG_MAX_WINSIZE;
 extern const int DEFAULT_MAX_WINSIZE;
 extern const string HELP_MAX_WINSIZE;
 
+extern const string ARG_CHR;
+extern const string HELP_CHR;
+
+extern const string ARG_OUTDIR;
+extern const string DEFAULT_OUTDIR;
+extern const string HELP_OUTDIR;
+
+extern const string ARG_FROH;
+extern const bool DEFAULT_FROH;
+extern const string HELP_FROH;
+
 extern const string ARG_AUTO_WINSIZE_THRESHOLD;
 extern const double DEFAULT_AUTO_WINSIZE_THRESHOLD;
 extern const string HELP_AUTO_WINSIZE_THRESHOLD;
@@ -233,6 +244,7 @@ bool checkKDECut(double c);
 bool checkModeSpan(int s);
 bool checkCoefPair(vector<double> &coef, string flag);
 bool checkGMMParams(int maxIter, double tol);
+bool makeOutdir(string dir);
 void warnBoundsOverridesNclust(bool boundsSet, bool nclustSet);
 bool checkGLType(string TYPE, string tglsfile);
 bool checkWinsize(int winsize, bool WINSIZE_EXPLORE, bool AUTO_WINSIZE, bool WEIGHTED, bool FREQ_ONLY);

@@ -70,6 +70,16 @@ void setLODThreads(int n);
 void setAutoWinsizeThreshold(double t);
 void setAutoWinsizeCoef(double slope, double intercept);
 void setGMMParams(int maxIter, double tol);
+
+//Per-individual autozygous total and fraction, by size class.  Long format so
+//the number of classes (which --nclust controls) does not change the columns.
+void writeFROH(string outfile,
+               vector< ROHData * > *rohDataByInd,
+               vector< MapData * > *mapDataByChr,
+               vector< double > bounds,
+               string *pop,
+               centromere *centro,
+               bool CM);
 void calcLOD(MapData *mapData,
              HapData *hapData, FreqData *freqData,
              GenoLikeData *GLData,
