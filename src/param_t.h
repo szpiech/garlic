@@ -29,6 +29,14 @@
 using namespace std;
 
 extern const string ARG_HELP;
+extern const string ARG_HELP_SHORT;
+
+//parseCommandLine outcomes.  It used to return 0 for BOTH --help and a bad
+//command line, so the caller could not tell success from a usage error and
+//main exited 0 on a typo'd flag.
+const int PARAM_OK    =  1;
+const int PARAM_HELP  =  0;
+const int PARAM_ERROR = -1;
 
 class param_t
 {
@@ -49,7 +57,7 @@ public:
 
   void printHelp();
 
-  bool parseCommandLine(int argc, char *argv[]);
+  int parseCommandLine(int argc, char *argv[]);
 
   bool getBoolFlag(string flag);
   double getDoubleFlag(string flag);

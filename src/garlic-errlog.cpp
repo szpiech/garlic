@@ -4,8 +4,11 @@ errlog::errlog()
 {
 	logfile = "_none";
 	errfile = "_none";
-	errstream = NULL;
-	logstream = NULL;
+	errstream = &errbuf;
+	logstream = &logbuf;
+	errfilestream = NULL;
+	logfilestream = NULL;
+	committed = false;
 }
 
 errlog::errlog(string file)
@@ -15,171 +18,193 @@ errlog::errlog(string file)
 
 errlog::~errlog()
 {
-	if (errstream) errstream->close();
-	if (logstream) logstream->close();
-	delete errstream;
-	delete logstream;
+	if (logfilestream) { logfilestream->close(); delete logfilestream; }
+	if (errfilestream) { errfilestream->close(); delete errfilestream; }
 }
 
 void errlog::init(string file)
 {
 	logfile = file;
 	logfile += ".log";
+	errfile = file;
+	errfile += ".error";
+	//Nothing is opened here on purpose; see commit().
+	return;
+}
 
-	logstream = new ofstream;
-	logstream->open(logfile.c_str());
+void errlog::commit()
+{
+	if (committed) return;
 
-	if (logstream->fail())
+	logfilestream = new ofstream;
+	logfilestream->open(logfile.c_str());
+	if (logfilestream->fail())
 	{
 		cerr << "ERROR: Could not open " << logfile << " for logging.\n";
 		throw 0;
 	}
+	(*logfilestream) << logbuf.str();
+	logfilestream->flush();
+	logstream = logfilestream;
 
-	errfile = file;
-	errfile += ".error";
+	committed = true;
 
-	errstream = new ofstream;
-	errstream->open(errfile.c_str());
-
-	if (errstream->fail())
-	{
-		cerr << "ERROR: Could not open " << errfile << " for logging.\n";
-		throw 0;
-	}
+	//If anything was written to the error stream before now, materialise the
+	//file; otherwise leave it absent until the first error.
+	if (!errbuf.str().empty()) errOut();
 
 	return;
+}
+
+//Opens <out>.error on first use after commit() and replays whatever had been
+//buffered.  Before commit() this just returns the in-memory buffer.
+ostream *errlog::errOut()
+{
+	if (committed && errstream == &errbuf)
+	{
+		errfilestream = new ofstream;
+		errfilestream->open(errfile.c_str());
+		if (errfilestream->fail())
+		{
+			cerr << "ERROR: Could not open " << errfile << " for logging.\n";
+			throw 0;
+		}
+		(*errfilestream) << errbuf.str();
+		errstream = errfilestream;
+	}
+	return errstream;
 }
 
 void errlog::errn(string str)
 {
 	this->outn(&cerr, str);
-	this->outn(errstream, str);
+	this->outn(errOut(), str);
 	return;
 }
 
 void errlog::err(string str)
 {
 	this->out(&cerr, str);
-	this->out(errstream, str);
+	this->out(errOut(), str);
 	return;
 }
 
 void errlog::err(double val)
 {
 	this->out(&cerr, val);
-	this->out(errstream, val);
+	this->out(errOut(), val);
 	return;
 }
 
 void errlog::errn(double val)
 {
 	this->out(&cerr, val);
-	this->out(errstream, val);
+	this->out(errOut(), val);
 	return;
 }
 
 void errlog::err(int val)
 {
 	this->out(&cerr, val);
-	this->out(errstream, val);
+	this->out(errOut(), val);
 	return;
 }
 
 void errlog::errn(int val)
 {
 	this->out(&cerr, val);
-	this->out(errstream, val);
+	this->out(errOut(), val);
 	return;
 }
 
 void errlog::err(char val)
 {
 	this->out(&cerr, val);
-	this->out(errstream, val);
+	this->out(errOut(), val);
 	return;
 }
 
 void errlog::errn(char val)
 {
 	this->out(&cerr, val);
-	this->out(errstream, val);
+	this->out(errOut(), val);
 	return;
 }
 
 void errlog::err(string str, int val, bool nl)
 {
 	this->out(&cerr, str, val, nl);
-	this->out(errstream, str, val, nl);
+	this->out(errOut(), str, val, nl);
 	return;
 }
 
 void errlog::errv(string str, vector<int> &val, bool nl)
 {
 	this->outv(&cerr, str, val, nl);
-	this->outv(errstream, str, val, nl);
+	this->outv(errOut(), str, val, nl);
 	return;
 }
 
 void errlog::err(string str, double val, bool nl)
 {
 	this->out(&cerr, str, val, nl);
-	this->out(errstream, str, val, nl);
+	this->out(errOut(), str, val, nl);
 	return;
 }
 
 void errlog::errv(string str, vector<double> &val, bool nl)
 {
 	this->outv(&cerr, str, val, nl);
-	this->outv(errstream, str, val, nl);
+	this->outv(errOut(), str, val, nl);
 	return;
 }
 
 void errlog::err(string str, bool val, bool nl)
 {
 	this->out(&cerr, str, val, nl);
-	this->out(errstream, str, val, nl);
+	this->out(errOut(), str, val, nl);
 	return;
 }
 
 void errlog::err(string str, string val, bool nl)
 {
 	this->out(&cerr, str, val, nl);
-	this->out(errstream, str, val, nl);
+	this->out(errOut(), str, val, nl);
 	return;
 }
 
 void errlog::err(string str, char val, bool nl)
 {
 	this->out(&cerr, str, val, nl);
-	this->out(errstream, str, val, nl);
+	this->out(errOut(), str, val, nl);
 	return;
 }
 
 void errlog::erra(string str, string *val, int size, bool nl)
 {
 	this->outa(&cerr, str, val, size, nl);
-	this->outa(errstream, str, val, size, nl);
+	this->outa(errOut(), str, val, size, nl);
 	return;
 }
 
 void errlog::erra(string str, int *val, int size, bool nl)
 {
 	this->outa(&cerr, str, val, size, nl);
-	this->outa(errstream, str, val, size, nl);
+	this->outa(errOut(), str, val, size, nl);
 	return;
 }
 
 void errlog::erra(string str, double *val, int size, bool nl)
 {
 	this->outa(&cerr, str, val, size, nl);
-	this->outa(errstream, str, val, size, nl);
+	this->outa(errOut(), str, val, size, nl);
 	return;
 }
 
 void errlog::erra(string str, char *val, int size, bool nl)
 {
 	this->outa(&cerr, str, val, size, nl);
-	this->outa(errstream, str, val, size, nl);
+	this->outa(errOut(), str, val, size, nl);
 	return;
 }
 

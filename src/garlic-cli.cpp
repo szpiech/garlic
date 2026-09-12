@@ -1,5 +1,6 @@
 #include "garlic-cli.h"
 #include <iostream>
+#include <fstream>
 
 const string VERSION = "1.1.6a";
 
@@ -181,6 +182,15 @@ const string HELP_MAX_WINSIZE = "Upper bound on the window size that --auto-wins
 \tpreviously had no bound and would grow past the number of loci if the\n\
 \tsmoothness criterion was never met.";
 
+const string ARG_VERSION = "--version";
+const bool DEFAULT_VERSION = false;
+const string HELP_VERSION = "Print the version and exit.";
+
+const string ARG_FORCE = "--force";
+const bool DEFAULT_FORCE = false;
+const string HELP_FORCE = "Overwrite existing output files. Without this, garlic refuses to clobber an\n\
+\texisting <out>.roh.bed.";
+
 const string ARG_SEED = "--seed";
 const int DEFAULT_SEED = 0;
 const string HELP_SEED = "Random seed, for reproducible runs. Affects --kde-subsample,\n\
@@ -204,7 +214,11 @@ const string HELP_FEATURES = "A feature file giving classifications";
 */
 
 
-param_t *getCLI(int argc, char *argv[])
+#ifndef GARLIC_GIT_SHA
+#define GARLIC_GIT_SHA "unknown"
+#endif
+
+param_t *getCLI(int argc, char *argv[], int &status)
 {
 	param_t *params = new param_t;
 	params->setPreamble(PREAMBLE);
@@ -243,14 +257,50 @@ param_t *getCLI(int argc, char *argv[])
 	params->addFlag(ARG_KDE_THINNING, DEFAULT_KDE_THINNING, "", HELP_KDE_THINNING);
 	params->addFlag(ARG_SEED, DEFAULT_SEED, "", HELP_SEED);
 	params->addFlag(ARG_MAX_WINSIZE, DEFAULT_MAX_WINSIZE, "", HELP_MAX_WINSIZE);
+	params->addFlag(ARG_VERSION, DEFAULT_VERSION, "", HELP_VERSION);
+	params->addFlag(ARG_FORCE, DEFAULT_FORCE, "", HELP_FORCE);
 
-	
-	if (!params->parseCommandLine(argc, argv))
+	//A bare invocation is a usage error, not a successful no-op run.
+	if (argc < 2)
+	{
+		params->printHelp();
+		delete params;
+		status = PARAM_ERROR;
+		return NULL;
+	}
+
+	status = params->parseCommandLine(argc, argv);
+
+	if (status == PARAM_OK && params->getBoolFlag(ARG_VERSION))
+	{
+		cout << "garlic v" << VERSION << " (" << GARLIC_GIT_SHA << ")\n";
+		delete params;
+		status = PARAM_HELP;
+		return NULL;
+	}
+
+	if (status != PARAM_OK)
 	{
 		delete params;
 		return NULL;
 	}
 	return params;
+}
+
+//Refuse to clobber a previous run's calls unless asked to.
+bool checkOutfileClobber(string outfile, bool force)
+{
+	if (force) return false;
+	string roh = outfile + ".roh.bed";
+	ifstream probe(roh.c_str());
+	if (probe.good())
+	{
+		probe.close();
+		LOG.err("ERROR: Output file already exists:", roh);
+		LOG.err("\tPass --force to overwrite, or choose another --out.");
+		return true;
+	}
+	return false;
 }
 
 bool checkSeed(int seed){

@@ -161,12 +161,23 @@ extern const string ARG_MAX_WINSIZE;
 extern const int DEFAULT_MAX_WINSIZE;
 extern const string HELP_MAX_WINSIZE;
 
+extern const string ARG_VERSION;
+extern const bool DEFAULT_VERSION;
+extern const string HELP_VERSION;
+
+extern const string ARG_FORCE;
+extern const bool DEFAULT_FORCE;
+extern const string HELP_FORCE;
+
 extern const string ARG_SEED;
 extern const int DEFAULT_SEED;
 extern const string HELP_SEED;
 
 
-param_t *getCLI(int argc, char *argv[]);
+//status is set to one of the PARAM_* codes in param_t.h; on PARAM_OK the
+//returned pointer is valid, otherwise it is NULL.
+param_t *getCLI(int argc, char *argv[], int &status);
+bool checkOutfileClobber(string outfile, bool force);
 bool checkSeed(int seed);
 bool checkMaxWinsize(int maxWinsize, int winsize);
 bool checkBuild(string BUILD);

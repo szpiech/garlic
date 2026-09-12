@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -17,7 +18,12 @@ public:
 	string logfile;
 	string errfile;
 
+	//init() only records the output basename.  Log output accumulates in memory
+	//until commit(), so an invocation that fails argument validation does not
+	//create or truncate <out>.log / <out>.error.  <out>.error is created only
+	//if something is actually written to it.
 	void init(string file);
+	void commit();
 
 	void err(string str);
 	void errn(string str);
@@ -66,8 +72,14 @@ public:
 	void logv(string str, vector<double> &val, bool nl = true);
 
 private:
-	ofstream *errstream;
-	ofstream *logstream;
+	ostream *errstream;
+	ostream *logstream;
+	ostringstream logbuf;
+	ostringstream errbuf;
+	ofstream *errfilestream;
+	ofstream *logfilestream;
+	bool committed;
+	ostream *errOut();
 
 	void out(ostream *out, string str);
 	void outn(ostream *out, string str);

@@ -36,6 +36,10 @@ OPTFLAGS ?= -O3
 WARNFLAGS ?= -Wall
 STDFLAG ?= -std=c++11
 
+# Stamped into --version.  Empty when built from a source tarball (no .git).
+GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+SHAFLAG = -DGARLIC_GIT_SHA=\"$(GIT_SHA)\"
+
 # -- per-platform settings ---------------------------------------------------
 L_PATH = ../lib/$(PLATFORM)
 GSL_LIBS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a
@@ -63,7 +67,7 @@ else
   $(error Unknown PLATFORM '$(PLATFORM)'; expected linux, osx, macos-arm or win32)
 endif
 
-CXXFLAGS ?= $(OPTFLAGS) $(WARNFLAGS) $(STDFLAG) $(ARCHFLAGS)
+CXXFLAGS ?= $(OPTFLAGS) $(WARNFLAGS) $(STDFLAG) $(ARCHFLAGS) $(SHAFLAG)
 G++FLAG = $(CXXFLAGS)
 CC = $(CXX)
 

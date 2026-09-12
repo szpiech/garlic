@@ -20,6 +20,7 @@
 using namespace std;
 
 const string ARG_HELP = "--help";
+const string ARG_HELP_SHORT = "-h";
 
 bool param_t::addFlag(string flag, bool value, string label, string description)
 {
@@ -263,7 +264,7 @@ bool param_t::goodChar(string str)
     return 1;
 }
 
-bool param_t::parseCommandLine(int argc, char *argv[])
+int param_t::parseCommandLine(int argc, char *argv[])
 {
     int badFlags = 0;
 
@@ -510,15 +511,15 @@ bool param_t::parseCommandLine(int argc, char *argv[])
         }
     }
 
-    if (getBoolFlag(ARG_HELP))
+    if (getBoolFlag(ARG_HELP) || getBoolFlag(ARG_HELP_SHORT))
     {
         this->printHelp();
-        return 0;
+        return PARAM_HELP;
     }
 
-    if (badFlags) return 0;
+    if (badFlags) return PARAM_ERROR;
 
-    return 1;
+    return PARAM_OK;
 }
 
 bool param_t::flagExists(string flag)
@@ -529,6 +530,7 @@ bool param_t::flagExists(string flag)
 param_t::param_t()
 {
     this->addFlag(ARG_HELP, false, "__help", "Prints this help dialog.");
+    this->addFlag(ARG_HELP_SHORT, false, "__help", "Prints this help dialog.");
 }
 
 bool param_t::getBoolFlag(string flag)
