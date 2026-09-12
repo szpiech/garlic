@@ -174,6 +174,9 @@ struct R2_work_order_t
 };
 
 double selectOverlapFrac(double variantDensity, int winsize);
+//Coefficients of the empirical overlap-vs-density fit used by
+//--auto-overlap-frac; hardcoded as 6.375 / 63.888.
+void setAutoOverlapCoef(double slope, double intercept);
 
 FreqData *initFreqData(const vector<double> &freq, int nloci);
 

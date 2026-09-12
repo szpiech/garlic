@@ -28,6 +28,11 @@ KDEResult *computeKDE(double *data, int size);
 //Exact Gaussian KDE on a fixed target grid; replaces the figtree dependency.
 void kdeGaussian(double *data, int n, double h, const double *targets, int M, double *out);
 void setKDEThreads(int n);
+//Grid resolution, range extension (in bandwidths) and the span used to smooth
+//the density when locating its modes.  All three were hardcoded (512, 3, 20)
+//and all three affect the selected LOD cutoff.
+void setKDEGrid(int points, double cut);
+void setModeSpan(int span);
 KDEResult *cloneKDEResult(KDEResult *data);
 void releaseKDEResult(KDEResult *data);
 void writeKDEResult(KDEResult *kdeResult, string outfile);

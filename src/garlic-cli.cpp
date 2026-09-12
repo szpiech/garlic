@@ -183,6 +183,44 @@ const string HELP_MAX_WINSIZE = "Upper bound on the window size that --auto-wins
 \tpreviously had no bound and would grow past the number of loci if the\n\
 \tsmoothness criterion was never met.";
 
+const string ARG_AUTO_WINSIZE_THRESHOLD = "--auto-winsize-threshold";
+const double DEFAULT_AUTO_WINSIZE_THRESHOLD = 0.50;
+const string HELP_AUTO_WINSIZE_THRESHOLD = "Smoothness criterion at which the --auto-winsize search stops. Lower values\n\
+\tdemand a smoother LOD score density and therefore a larger window.";
+
+const string ARG_KDE_POINTS = "--kde-points";
+const int DEFAULT_KDE_POINTS = 512;
+const string HELP_KDE_POINTS = "Number of grid points at which the LOD score density is evaluated. Also sets\n\
+\tthe resolution at which the between-mode minimum (the LOD cutoff) is located.";
+
+const string ARG_KDE_CUT = "--kde-cut";
+const double DEFAULT_KDE_CUT = 3;
+const string HELP_KDE_CUT = "Extend the density grid this many bandwidths beyond the range of the data.";
+
+const string ARG_MODE_SPAN = "--mode-smooth-span";
+const int DEFAULT_MODE_SPAN = 20;
+const string HELP_MODE_SPAN = "Number of adjacent grid points used to smooth the density when locating its\n\
+\tmodes. Must be smaller than --kde-points.";
+
+const string ARG_AUTO_WINSIZE_COEF = "--auto-winsize-coef";
+const string HELP_AUTO_WINSIZE_COEF = "<slope> <intercept>: coefficients of winsize = slope*log(density) + intercept,\n\
+\tused by --auto-winsize with --weighted. The defaults (8.3235 138.0521) are an\n\
+\tempirical fit to human SNP-array data; override them for other ascertainment\n\
+\tschemes or species.\n\tDefault: 8.3235 138.0521";
+
+const string ARG_AUTO_OVERLAP_COEF = "--auto-overlap-coef";
+const string HELP_AUTO_OVERLAP_COEF = "<slope> <intercept>: coefficients of overlap%% = slope*log(density) + intercept,\n\
+\tused by --auto-overlap-frac. The defaults (6.375 63.888) are an empirical fit\n\
+\tto human SNP-array data.\n\tDefault: 6.375 63.888";
+
+const string ARG_GMM_MAX_ITER = "--gmm-max-iter";
+const int DEFAULT_GMM_MAX_ITER = 1000;
+const string HELP_GMM_MAX_ITER = "Maximum EM iterations when fitting ROH size classes.";
+
+const string ARG_GMM_TOL = "--gmm-tol";
+const double DEFAULT_GMM_TOL = 1e-5;
+const string HELP_GMM_TOL = "Convergence tolerance for the ROH size-class EM fit.";
+
 const string ARG_KDE_THIN_STEP = "--kde-thin-step";
 const int DEFAULT_KDE_THIN_STEP = 0;
 const string HELP_KDE_THIN_STEP = "Take every Nth LOD score window when building the KDE. 0 (the default) uses\n\
@@ -268,6 +306,14 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_VERSION, DEFAULT_VERSION, "", HELP_VERSION);
 	params->addFlag(ARG_FORCE, DEFAULT_FORCE, "", HELP_FORCE);
 	params->addFlag(ARG_KDE_THIN_STEP, DEFAULT_KDE_THIN_STEP, "", HELP_KDE_THIN_STEP);
+	params->addFlag(ARG_AUTO_WINSIZE_THRESHOLD, DEFAULT_AUTO_WINSIZE_THRESHOLD, "", HELP_AUTO_WINSIZE_THRESHOLD);
+	params->addFlag(ARG_KDE_POINTS, DEFAULT_KDE_POINTS, "", HELP_KDE_POINTS);
+	params->addFlag(ARG_KDE_CUT, DEFAULT_KDE_CUT, "", HELP_KDE_CUT);
+	params->addFlag(ARG_MODE_SPAN, DEFAULT_MODE_SPAN, "", HELP_MODE_SPAN);
+	params->addListFlag(ARG_AUTO_WINSIZE_COEF, 0.0, "", HELP_AUTO_WINSIZE_COEF);
+	params->addListFlag(ARG_AUTO_OVERLAP_COEF, 0.0, "", HELP_AUTO_OVERLAP_COEF);
+	params->addFlag(ARG_GMM_MAX_ITER, DEFAULT_GMM_MAX_ITER, "", HELP_GMM_MAX_ITER);
+	params->addFlag(ARG_GMM_TOL, DEFAULT_GMM_TOL, "", HELP_GMM_TOL);
 
 	//A bare invocation is a usage error, not a successful no-op run.
 	if (argc < 2)
@@ -517,6 +563,40 @@ bool checkError(double error, string tglsfile, bool wasSet)
 		LOG.err("ERROR: Genotype error rate must be > 0 and < 1.");
 		return true;
 	}
+	return false;
+}
+
+bool checkAutoWinsizeThreshold(double t){
+	if(t <= 0){ LOG.err("ERROR: --auto-winsize-threshold must be > 0."); return true; }
+	return false;
+}
+
+bool checkKDEPoints(int m){
+	if(m < 16){ LOG.err("ERROR: --kde-points must be >= 16."); return true; }
+	return false;
+}
+
+bool checkKDECut(double c){
+	if(c <= 0){ LOG.err("ERROR: --kde-cut must be > 0."); return true; }
+	return false;
+}
+
+bool checkModeSpan(int s){
+	if(s < 2){ LOG.err("ERROR: --mode-smooth-span must be >= 2."); return true; }
+	return false;
+}
+
+bool checkCoefPair(vector<double> &coef, string flag){
+	if(coef.size() != 2){
+		LOG.err("ERROR: " + flag + " takes exactly two values: <slope> <intercept>.");
+		return true;
+	}
+	return false;
+}
+
+bool checkGMMParams(int maxIter, double tol){
+	if(maxIter < 1){ LOG.err("ERROR: --gmm-max-iter must be >= 1."); return true; }
+	if(tol <= 0){ LOG.err("ERROR: --gmm-tol must be > 0."); return true; }
 	return false;
 }
 

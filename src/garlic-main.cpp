@@ -205,6 +205,56 @@ int main(int argc, char *argv[])
     bool PHASED = params->getBoolFlag(ARG_PHASED);
     LOG.log("Use r2 for weighting phased data:", PHASED);
 
+    //Values that determine a scientific result and used to be unreachable
+    //constants in the source.
+    double AUTO_WINSIZE_THRESHOLD = params->getDoubleFlag(ARG_AUTO_WINSIZE_THRESHOLD);
+    argerr = argerr || checkAutoWinsizeThreshold(AUTO_WINSIZE_THRESHOLD);
+    if (argerr) return 1;
+    LOG.log("Auto window size smoothness threshold:", AUTO_WINSIZE_THRESHOLD);
+    setAutoWinsizeThreshold(AUTO_WINSIZE_THRESHOLD);
+
+    int KDE_POINTS = params->getIntFlag(ARG_KDE_POINTS);
+    double KDE_CUT = params->getDoubleFlag(ARG_KDE_CUT);
+    argerr = argerr || checkKDEPoints(KDE_POINTS) || checkKDECut(KDE_CUT);
+    if (argerr) return 1;
+    LOG.log("KDE grid points:", KDE_POINTS);
+    LOG.log("KDE range extension (bandwidths):", KDE_CUT);
+    setKDEGrid(KDE_POINTS, KDE_CUT);
+
+    int MODE_SPAN = params->getIntFlag(ARG_MODE_SPAN);
+    argerr = argerr || checkModeSpan(MODE_SPAN);
+    if (MODE_SPAN >= KDE_POINTS) {
+        LOG.err("ERROR: --mode-smooth-span must be smaller than --kde-points.");
+        argerr = true;
+    }
+    if (argerr) return 1;
+    LOG.log("Mode smoothing span:", MODE_SPAN);
+    setModeSpan(MODE_SPAN);
+
+    vector<double> awCoef = params->getDoubleListFlag(ARG_AUTO_WINSIZE_COEF);
+    if (params->isFlagSet(ARG_AUTO_WINSIZE_COEF)) {
+        argerr = argerr || checkCoefPair(awCoef, ARG_AUTO_WINSIZE_COEF);
+        if (argerr) return 1;
+        LOG.logv("Auto window size coefficients (slope intercept):", awCoef);
+        setAutoWinsizeCoef(awCoef[0], awCoef[1]);
+    }
+
+    vector<double> aoCoef = params->getDoubleListFlag(ARG_AUTO_OVERLAP_COEF);
+    if (params->isFlagSet(ARG_AUTO_OVERLAP_COEF)) {
+        argerr = argerr || checkCoefPair(aoCoef, ARG_AUTO_OVERLAP_COEF);
+        if (argerr) return 1;
+        LOG.logv("Auto overlap fraction coefficients (slope intercept):", aoCoef);
+        setAutoOverlapCoef(aoCoef[0], aoCoef[1]);
+    }
+
+    int GMM_MAX_ITER = params->getIntFlag(ARG_GMM_MAX_ITER);
+    double GMM_TOL = params->getDoubleFlag(ARG_GMM_TOL);
+    argerr = argerr || checkGMMParams(GMM_MAX_ITER, GMM_TOL);
+    if (argerr) return 1;
+    LOG.log("GMM max iterations:", GMM_MAX_ITER);
+    LOG.log("GMM tolerance:", GMM_TOL);
+    setGMMParams(GMM_MAX_ITER, GMM_TOL);
+
     //0 means "follow the window size"; --no-kde-thinning is the old spelling of 1.
     int KDE_THIN_STEP = params->getIntFlag(ARG_KDE_THIN_STEP);
     argerr = argerr || checkKDEThinStep(KDE_THIN_STEP);

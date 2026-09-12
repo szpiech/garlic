@@ -1,10 +1,20 @@
 #include "garlic-roh.h"
 
+static double AUTO_WINSIZE_THRESHOLD_G = 0.50;
+static double AUTO_WINSIZE_SLOPE = 8.3235;
+static double AUTO_WINSIZE_INTERCEPT = 138.0521;
+static int GMM_MAX_ITER = 1000;
+static double GMM_TOL = 1e-5;
+
+void setAutoWinsizeThreshold(double t) { AUTO_WINSIZE_THRESHOLD_G = t; }
+void setAutoWinsizeCoef(double slope, double intercept) { AUTO_WINSIZE_SLOPE = slope; AUTO_WINSIZE_INTERCEPT = intercept; }
+void setGMMParams(int maxIter, double tol) { GMM_MAX_ITER = maxIter; GMM_TOL = tol; }
+
 int selectWinsizeWeighted(double density){
    /*
     Window size = 8.3235*log(SNVdensity)+138.0521
     Overlap (%) = 6.375*log(SNVdensity)+63.888;*/ 
-    int size = int(8.3235*log(density)+138.0521 + 0.5);
+    int size = int(AUTO_WINSIZE_SLOPE*log(density)+AUTO_WINSIZE_INTERCEPT + 0.5);
     return (size >= 10 ? size : 10);
 }
 
@@ -979,7 +989,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, int thinStep,
                          int MAX_WINSIZE)
 {
-    double AUTO_WINSIZE_THRESHOLD = 0.50;
+    double AUTO_WINSIZE_THRESHOLD = AUTO_WINSIZE_THRESHOLD_G;
     vector< WinData * > *winDataByChr = NULL;
     vector< HapData * > *hapDataByChrToCalc = NULL;
     vector< GenoLikeData * > *GLDataByChrToCalc = NULL;
@@ -1099,7 +1109,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
             }
         }
     }
-    double AUTO_WINSIZE_THRESHOLD = 0.50;
+    double AUTO_WINSIZE_THRESHOLD = AUTO_WINSIZE_THRESHOLD_G;
     vector< WinData * > *winDataByChr = NULL;
     vector< HapData * > *hapDataByChrToCalc = NULL;
     vector< GenoLikeData * > *GLDataByChrToCalc = NULL;
@@ -1179,8 +1189,8 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
     size_t *sortIndex;
 
     int ngaussians = NCLUST;
-    size_t maxIter = 1000;
-    double tolerance = 1e-5;
+    size_t maxIter = size_t(GMM_MAX_ITER);
+    double tolerance = GMM_TOL;
     double * W;
     double * Mu;
     double * Sigma;

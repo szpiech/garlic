@@ -64,6 +64,12 @@ int selectWinsizeWeighted(double density);
 void parallelwLOD(void *order);
 
 void setLODThreads(int n);
+//Both were hardcoded: the smoothness threshold at which the --auto-winsize
+//search stops (0.50, duplicated in two functions), and the coefficients of the
+//empirical winsize-vs-density fit used with --weighted.
+void setAutoWinsizeThreshold(double t);
+void setAutoWinsizeCoef(double slope, double intercept);
+void setGMMParams(int maxIter, double tol);
 void calcLOD(MapData *mapData,
              HapData *hapData, FreqData *freqData,
              GenoLikeData *GLData,

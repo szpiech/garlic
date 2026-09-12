@@ -2,6 +2,14 @@
 #include <pthread.h>
 #include "garlic-kde.h"
 
+static int KDE_POINTS = 512;
+static double KDE_CUT = 3;
+static int KDE_MODE_SPAN = 20;
+
+void setKDEGrid(int points, double cut) { KDE_POINTS = points; KDE_CUT = cut; }
+void setModeSpan(int span) { KDE_MODE_SPAN = span; }
+
+
 double calculateWiggle(KDEResult *kdeResult, int winsize) {
     double tot = 0;
     for (int i = 0; i < kdeResult->size; i++) kdeResult->y[i] = kdeResult->y[i] * 100;
@@ -20,10 +28,10 @@ KDEResult *computeKDE(double *data, int size)
 
     //Used, as in the R function density, to extend the range of the fixed width points
     //used to compute the KDE
-    double CUT = 3;
+    double CUT = KDE_CUT;
 
     // The number of targets (vectors at which gauss transform is evaluated).
-    int M = 512;
+    int M = KDE_POINTS;
 
     // The number of sources which will be used for the gauss transform.
     int n = size;
@@ -231,7 +239,7 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
 {
     //double initialGuess = 0;
     
-    int winsize = 20;
+    int winsize = KDE_MODE_SPAN;
     double maxes;
     double *uniq_maxes = new double[size-winsize];
     double *uniq_counts = new double[size-winsize];

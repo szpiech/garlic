@@ -161,6 +161,36 @@ extern const string ARG_MAX_WINSIZE;
 extern const int DEFAULT_MAX_WINSIZE;
 extern const string HELP_MAX_WINSIZE;
 
+extern const string ARG_AUTO_WINSIZE_THRESHOLD;
+extern const double DEFAULT_AUTO_WINSIZE_THRESHOLD;
+extern const string HELP_AUTO_WINSIZE_THRESHOLD;
+
+extern const string ARG_KDE_POINTS;
+extern const int DEFAULT_KDE_POINTS;
+extern const string HELP_KDE_POINTS;
+
+extern const string ARG_KDE_CUT;
+extern const double DEFAULT_KDE_CUT;
+extern const string HELP_KDE_CUT;
+
+extern const string ARG_MODE_SPAN;
+extern const int DEFAULT_MODE_SPAN;
+extern const string HELP_MODE_SPAN;
+
+extern const string ARG_AUTO_WINSIZE_COEF;
+extern const string HELP_AUTO_WINSIZE_COEF;
+
+extern const string ARG_AUTO_OVERLAP_COEF;
+extern const string HELP_AUTO_OVERLAP_COEF;
+
+extern const string ARG_GMM_MAX_ITER;
+extern const int DEFAULT_GMM_MAX_ITER;
+extern const string HELP_GMM_MAX_ITER;
+
+extern const string ARG_GMM_TOL;
+extern const double DEFAULT_GMM_TOL;
+extern const string HELP_GMM_TOL;
+
 extern const string ARG_KDE_THIN_STEP;
 extern const int DEFAULT_KDE_THIN_STEP;
 extern const string HELP_KDE_THIN_STEP;
@@ -197,6 +227,12 @@ bool checkMapFile(string mapfile, bool WEIGHTED);
 bool checkThreads(int numThreads);
 bool checkError(double error, string tglsfile, bool wasSet);
 bool checkKDEThinStep(int step);
+bool checkAutoWinsizeThreshold(double t);
+bool checkKDEPoints(int m);
+bool checkKDECut(double c);
+bool checkModeSpan(int s);
+bool checkCoefPair(vector<double> &coef, string flag);
+bool checkGMMParams(int maxIter, double tol);
 void warnBoundsOverridesNclust(bool boundsSet, bool nclustSet);
 bool checkGLType(string TYPE, string tglsfile);
 bool checkWinsize(int winsize, bool WINSIZE_EXPLORE, bool AUTO_WINSIZE, bool WEIGHTED, bool FREQ_ONLY);

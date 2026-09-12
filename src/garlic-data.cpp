@@ -57,8 +57,13 @@ static inline const char *tokenEnd(const char *p, const char *e)
     return p;
 }
 
+static double AUTO_OVERLAP_SLOPE = 6.375;
+static double AUTO_OVERLAP_INTERCEPT = 63.888;
+
+void setAutoOverlapCoef(double slope, double intercept) { AUTO_OVERLAP_SLOPE = slope; AUTO_OVERLAP_INTERCEPT = intercept; }
+
 double selectOverlapFrac(double variantDensity, int winsize){
-    double frac = (6.375*log(variantDensity)+63.888)/100.0;
+    double frac = (AUTO_OVERLAP_SLOPE*log(variantDensity)+AUTO_OVERLAP_INTERCEPT)/100.0;
     if(frac > 1) frac = 1.0;
     if(frac <= 0) frac = 1.0/double(winsize);
     return frac;
