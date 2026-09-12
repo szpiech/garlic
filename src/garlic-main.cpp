@@ -306,6 +306,9 @@ int main(int argc, char *argv[])
         LOG.log("Random seed:", seedss.str());
         if (seedFlag == 0) LOG.log("\t(drawn automatically; pass --seed with this value to reproduce this run)");
     }
+    //So the flags block of <out>.params.json is a command line that reproduces
+    //this run, rather than one that draws a fresh seed.
+    params->setIntFlag(ARG_SEED, int(SEED));
     initRNG(SEED);
 
     //All argument validation has passed.  Refuse to clobber a previous run's
@@ -591,6 +594,26 @@ int main(int argc, char *argv[])
     {
         writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
                   indData->pop, centro, CM);
+    }
+
+    //Machine-readable record of what this run actually did.  The auto-selected
+    //values were previously only prose lines in the .log, which is what the
+    //documented workflow for reusing a cutoff asks users to parse by hand.
+    {
+        vector< pair<string,string> > resolved;
+        ostringstream v;
+        v << SEED;                        resolved.push_back(make_pair("seed", v.str()));
+        v.str(""); v << winsize;          resolved.push_back(make_pair("winsize", v.str()));
+        v.str(""); v << OVERLAP_FRAC;     resolved.push_back(make_pair("overlap_frac", v.str()));
+        v.str(""); v << LOD_CUTOFF;       resolved.push_back(make_pair("lod_cutoff", v.str()));
+        v.str(""); v << KDE_THIN_STEP;    resolved.push_back(make_pair("kde_thin_step", v.str()));
+        v.str(""); v << mapDataByChr->size(); resolved.push_back(make_pair("chromosomes_analysed", v.str()));
+        v.str(""); v << "[";
+        for (unsigned int i = 0; i < boundSizes.size(); i++) { if (i) v << ", "; v << boundSizes[i]; }
+        v << "]";                         resolved.push_back(make_pair("size_bounds", v.str()));
+        v.str(""); v << (AUTO_CUTOFF ? "true" : "false");  resolved.push_back(make_pair("cutoff_was_automatic", v.str()));
+        v.str(""); v << (AUTO_BOUNDS ? "true" : "false");  resolved.push_back(make_pair("bounds_were_automatic", v.str()));
+        writeParamsJSON(outfile + ".params.json", params, resolved);
     }
 
     //centro is read by writeFROH; it used to be deleted before the writers ran.

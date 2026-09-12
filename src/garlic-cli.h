@@ -161,6 +161,10 @@ extern const string ARG_MAX_WINSIZE;
 extern const int DEFAULT_MAX_WINSIZE;
 extern const string HELP_MAX_WINSIZE;
 
+extern const string ARG_LOAD_PARAMS;
+extern const string DEFAULT_LOAD_PARAMS;
+extern const string HELP_LOAD_PARAMS;
+
 extern const string ARG_QUIET;
 extern const bool DEFAULT_QUIET;
 extern const string HELP_QUIET;
@@ -253,6 +257,10 @@ bool checkModeSpan(int s);
 bool checkCoefPair(vector<double> &coef, string flag);
 bool checkGMMParams(int maxIter, double tol);
 bool makeOutdir(string dir);
+//Writes <out>.params.json: the effective value of every flag plus the values
+//resolved during the run (auto-selected window size, LOD cutoff, size class
+//boundaries, seed).  'resolved' holds pre-formatted JSON values.
+void writeParamsJSON(string file, param_t *params, vector< pair<string,string> > &resolved);
 void warnBoundsOverridesNclust(bool boundsSet, bool nclustSet);
 bool checkGLType(string TYPE, string tglsfile);
 bool checkWinsize(int winsize, bool WINSIZE_EXPLORE, bool AUTO_WINSIZE, bool WEIGHTED, bool FREQ_ONLY);

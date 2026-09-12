@@ -20,6 +20,7 @@
 
 #include <string>
 #include <iostream>
+#include <fstream>
 #include <map>
 #include <vector>
 #include <cctype>
@@ -62,6 +63,23 @@ public:
   //Was the flag given on the command line?  Lets callers stop inferring
   //"unset" from magic default values like --lod-cutoff -999999.
   bool isFlagSet(string flag);
+
+  //Dump every flag and its effective value as JSON object members (no braces),
+  //and read such a file back.  loadFlagsJSON only fills flags that were NOT
+  //given on the command line, so an explicit argument always wins over the
+  //file.
+  //Used to record the seed that was actually drawn, so the flags block of
+  //<out>.params.json is a command line that reproduces the run.
+  bool setIntFlag(string flag, int value);
+
+  //Flags explicitly supplied (on the command line, or loaded from a params
+  //file).  The params record dumps every flag's effective value for the
+  //reader, but a replay must apply only these -- several flags carry sentinel
+  //defaults that fail their own validation if presented as user input.
+  vector<string> setFlags();
+
+  void writeFlagsJSON(ostream &out, string indent);
+  bool loadFlagsJSON(string file);
 
   bool getBoolFlag(string flag);
   double getDoubleFlag(string flag);

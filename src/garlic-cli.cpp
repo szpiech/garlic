@@ -1,6 +1,7 @@
 #include "garlic-cli.h"
 #include <iostream>
 #include <fstream>
+#include <utility>
 #include <sys/stat.h>
 #include <cerrno>
 
@@ -185,6 +186,12 @@ const string HELP_MAX_WINSIZE = "Upper bound on the window size that --auto-wins
 \tpreviously had no bound and would grow past the number of loci if the\n\
 \tsmoothness criterion was never met.";
 
+const string ARG_LOAD_PARAMS = "--load-params";
+const string DEFAULT_LOAD_PARAMS = "__none";
+const string HELP_LOAD_PARAMS = "Read flag values from a <out>.params.json written by a previous run. Flags\n\
+\tgiven on the command line take precedence over the file, so a run can be\n\
+\trepeated with one parameter changed.";
+
 const string ARG_QUIET = "--quiet";
 const bool DEFAULT_QUIET = false;
 const string HELP_QUIET = "Suppress the progress bar and informational messages. Errors and warnings\n\
@@ -333,6 +340,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_VERSION, DEFAULT_VERSION, "", HELP_VERSION);
 	params->addFlag(ARG_FORCE, DEFAULT_FORCE, "", HELP_FORCE);
 	params->addFlag(ARG_KDE_THIN_STEP, DEFAULT_KDE_THIN_STEP, "", HELP_KDE_THIN_STEP);
+	params->addFlag(ARG_LOAD_PARAMS, DEFAULT_LOAD_PARAMS, "", HELP_LOAD_PARAMS);
 	params->addFlag(ARG_QUIET, DEFAULT_QUIET, "", HELP_QUIET);
 	params->addFlag(ARG_VERBOSE, DEFAULT_VERBOSE, "", HELP_VERBOSE);
 	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
@@ -358,6 +366,18 @@ param_t *getCLI(int argc, char *argv[], int &status)
 
 	status = params->parseCommandLine(argc, argv);
 
+	//Applied after parsing so the command line wins, and before main reads
+	//any value.
+	if (status == PARAM_OK && params->isFlagSet(ARG_LOAD_PARAMS))
+	{
+		if (!params->loadFlagsJSON(params->getStringFlag(ARG_LOAD_PARAMS)))
+		{
+			delete params;
+			status = PARAM_ERROR;
+			return NULL;
+		}
+	}
+
 	if (status == PARAM_OK && params->getBoolFlag(ARG_VERSION))
 	{
 		cout << "garlic v" << VERSION << " (" << GARLIC_GIT_SHA << ")\n";
@@ -372,6 +392,42 @@ param_t *getCLI(int argc, char *argv[], int &status)
 		return NULL;
 	}
 	return params;
+}
+
+void writeParamsJSON(string file, param_t *params, vector< pair<string,string> > &resolved)
+{
+	ofstream out(file.c_str());
+	if (out.fail())
+	{
+		LOG.err("ERROR: Failed to open", file);
+		return;
+	}
+	out << "{\n";
+	out << "  \"garlic_version\": \"" << VERSION << "\",\n";
+	out << "  \"git_sha\": \"" << GARLIC_GIT_SHA << "\",\n";
+	out << "  \"resolved\": {\n";
+	for (unsigned int i = 0; i < resolved.size(); i++)
+	{
+		out << "    \"" << resolved[i].first << "\": " << resolved[i].second;
+		if (i + 1 < resolved.size()) out << ",";
+		out << "\n";
+	}
+	out << "  },\n";
+	vector<string> given = params->setFlags();
+	out << "  \"set\": [";
+	for (unsigned int i = 0; i < given.size(); i++)
+	{
+		if (i) out << ", ";
+		out << "\"" << given[i] << "\"";
+	}
+	out << "],\n";
+	out << "  \"flags\": {\n";
+	params->writeFlagsJSON(out, "    ");
+	out << "  }\n";
+	out << "}\n";
+	out.close();
+	LOG.log("Effective parameters:", file);
+	return;
 }
 
 //Refuse to clobber a previous run's calls unless asked to.

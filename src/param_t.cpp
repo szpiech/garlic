@@ -16,6 +16,7 @@
    Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 */
 #include "param_t.h"
+#include <iterator>
 #include <cerrno>
 
 using namespace std;
@@ -552,6 +553,233 @@ param_t::param_t()
 bool param_t::isFlagSet(string flag)
 {
     return (isSet.count(flag) > 0);
+}
+
+static string jsonEscape(const string &s)
+{
+    string o;
+    for (unsigned int i = 0; i < s.size(); i++)
+    {
+        char c = s[i];
+        if (c == '"' || c == '\\') { o += '\\'; o += c; }
+        else if (c == '\n') o += "\\n";
+        else if (c == '\t') o += "\\t";
+        else o += c;
+    }
+    return o;
+}
+
+vector<string> param_t::setFlags()
+{
+    vector<string> out;
+    map<string, bool>::iterator it;
+    for (it = isSet.begin(); it != isSet.end(); it++)
+        if (it->second) out.push_back(it->first);
+    return out;
+}
+
+bool param_t::setIntFlag(string flag, int value)
+{
+    if (argi.count(flag) == 0) return false;
+    argi[flag] = value;
+    //Mark it supplied, so it appears in the params record's "set" list and a
+    //replay uses this value rather than drawing a fresh one.
+    isSet[flag] = true;
+    return true;
+}
+
+void param_t::writeFlagsJSON(ostream &out, string indent)
+{
+    bool first = true;
+    map<string, bool>::iterator bi;
+    for (bi = argb.begin(); bi != argb.end(); bi++)
+    {
+        if (bi->first == ARG_HELP || bi->first == ARG_HELP_SHORT) continue;
+        if (!first) out << ",\n";
+        out << indent << "\"" << bi->first << "\": " << (bi->second ? "true" : "false");
+        first = false;
+    }
+    map<string, int>::iterator ii;
+    for (ii = argi.begin(); ii != argi.end(); ii++)
+    { if (!first) out << ",\n"; out << indent << "\"" << ii->first << "\": " << ii->second; first = false; }
+    map<string, double>::iterator di;
+    for (di = argd.begin(); di != argd.end(); di++)
+    { if (!first) out << ",\n"; out << indent << "\"" << di->first << "\": " << di->second; first = false; }
+    map<string, string>::iterator si;
+    for (si = args.begin(); si != args.end(); si++)
+    { if (!first) out << ",\n"; out << indent << "\"" << si->first << "\": \"" << jsonEscape(si->second) << "\""; first = false; }
+    map<string, char>::iterator ci;
+    for (ci = argch.begin(); ci != argch.end(); ci++)
+    { if (!first) out << ",\n"; out << indent << "\"" << ci->first << "\": \"" << ci->second << "\""; first = false; }
+
+    map<string, vector<int> >::iterator li;
+    for (li = listargi.begin(); li != listargi.end(); li++)
+    {
+        if (!first) out << ",\n";
+        out << indent << "\"" << li->first << "\": [";
+        for (unsigned int k = 0; k < li->second.size(); k++) { if (k) out << ", "; out << li->second[k]; }
+        out << "]"; first = false;
+    }
+    map<string, vector<double> >::iterator ld;
+    for (ld = listargd.begin(); ld != listargd.end(); ld++)
+    {
+        if (!first) out << ",\n";
+        out << indent << "\"" << ld->first << "\": [";
+        for (unsigned int k = 0; k < ld->second.size(); k++) { if (k) out << ", "; out << ld->second[k]; }
+        out << "]"; first = false;
+    }
+    map<string, vector<string> >::iterator ls;
+    for (ls = listargs.begin(); ls != listargs.end(); ls++)
+    {
+        if (!first) out << ",\n";
+        out << indent << "\"" << ls->first << "\": [";
+        for (unsigned int k = 0; k < ls->second.size(); k++) { if (k) out << ", "; out << "\"" << jsonEscape(ls->second[k]) << "\""; }
+        out << "]"; first = false;
+    }
+    if (!first) out << "\n";
+    return;
+}
+
+//Minimal reader for the object this program writes: a flat set of
+//"--flag": value members, where value is a number, string, boolean or array of
+//those.  Nested objects (the "resolved" block) are skipped.
+bool param_t::loadFlagsJSON(string file)
+{
+    ifstream fin(file.c_str());
+    if (fin.fail())
+    {
+        cerr << "ERROR: Could not open " << file << " for reading.\n";
+        return false;
+    }
+    string text((istreambuf_iterator<char>(fin)), istreambuf_iterator<char>());
+    fin.close();
+
+    //Read the "set" allow-list first, if the file has one.
+    vector<string> allow;
+    bool haveAllow = false;
+    {
+        size_t a = text.find("\"set\"");
+        if (a != string::npos)
+        {
+            size_t lb = text.find('[', a);
+            size_t rb = (lb == string::npos) ? string::npos : text.find(']', lb);
+            if (lb != string::npos && rb != string::npos)
+            {
+                haveAllow = true;
+                string body = text.substr(lb + 1, rb - lb - 1);
+                string cur;
+                for (unsigned int k = 0; k <= body.size(); k++)
+                {
+                    if (k == body.size() || body[k] == ',')
+                    {
+                        while (!cur.empty() && (cur[0] == ' ' || cur[0] == '"' || cur[0] == '\n' || cur[0] == '\r' || cur[0] == '\t')) cur.erase(cur.begin());
+                        while (!cur.empty() && (cur[cur.size()-1] == ' ' || cur[cur.size()-1] == '"' || cur[cur.size()-1] == '\n' || cur[cur.size()-1] == '\r' || cur[cur.size()-1] == '\t')) cur.erase(cur.size()-1);
+                        if (!cur.empty()) allow.push_back(cur);
+                        cur.clear();
+                    }
+                    else cur += body[k];
+                }
+            }
+        }
+    }
+
+    size_t i = 0;
+    const size_t n = text.size();
+    int applied = 0;
+
+    while (i < n)
+    {
+        while (i < n && text[i] != '"') i++;
+        if (i >= n) break;
+        size_t ks = ++i;
+        while (i < n && text[i] != '"') i++;
+        if (i >= n) break;
+        string key = text.substr(ks, i - ks);
+        i++;
+        while (i < n && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r')) i++;
+        if (i >= n || text[i] != ':') continue;
+        i++;
+        while (i < n && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r')) i++;
+        if (i >= n) break;
+
+        //Collect the raw value.
+        string val;
+        if (text[i] == '{')
+        {
+            //Descend into the flags object; skip any other nested object
+            //(currently "resolved", which is a record, not input).
+            if (key == "flags") { i++; continue; }
+            int depth = 0;
+            while (i < n) { if (text[i] == '{') depth++; else if (text[i] == '}') { depth--; if (!depth) { i++; break; } } i++; }
+            continue;
+        }
+        else if (text[i] == '[')
+        {
+            if (key == "set") { while (i < n && text[i] != ']') i++; if (i < n) i++; continue; }
+            size_t vs = i++;
+            while (i < n && text[i] != ']') i++;
+            val = text.substr(vs + 1, i - vs - 1);
+            if (i < n) i++;
+        }
+        else if (text[i] == '"')
+        {
+            size_t vs = ++i;
+            while (i < n && text[i] != '"') i++;
+            val = text.substr(vs, i - vs);
+            if (i < n) i++;
+        }
+        else
+        {
+            size_t vs = i;
+            while (i < n && text[i] != ',' && text[i] != '}' && text[i] != '\n') i++;
+            val = text.substr(vs, i - vs);
+            while (!val.empty() && (val[val.size()-1] == ' ' || val[val.size()-1] == '\r')) val.erase(val.size()-1);
+        }
+
+        if (key.size() < 2 || key[0] != '-') continue;   //not a flag
+        if (isSet.count(key) > 0) continue;              //command line wins
+        if (haveAllow)
+        {
+            bool ok = false;
+            for (unsigned int k = 0; k < allow.size(); k++) if (allow[k] == key) { ok = true; break; }
+            if (!ok) continue;                            //recorded, but not user-supplied
+        }
+
+        bool known = true;
+        if (argb.count(key) > 0)            argb[key] = (val == "true" || val == "1");
+        else if (argi.count(key) > 0)       argi[key] = atoi(val.c_str());
+        else if (argd.count(key) > 0)       argd[key] = atof(val.c_str());
+        else if (args.count(key) > 0)       args[key] = val;
+        else if (argch.count(key) > 0)      argch[key] = val.empty() ? ' ' : val[0];
+        else if (listargi.count(key) > 0 || listargd.count(key) > 0 || listargs.count(key) > 0)
+        {
+            vector<string> toks; string cur;
+            for (unsigned int k = 0; k <= val.size(); k++)
+            {
+                if (k == val.size() || val[k] == ',')
+                {
+                    while (!cur.empty() && (cur[0] == ' ' || cur[0] == '"')) cur.erase(cur.begin());
+                    while (!cur.empty() && (cur[cur.size()-1] == ' ' || cur[cur.size()-1] == '"')) cur.erase(cur.size()-1);
+                    if (!cur.empty()) toks.push_back(cur);
+                    cur.clear();
+                }
+                else cur += val[k];
+            }
+            if (toks.empty()) { known = false; }
+            else if (listargi.count(key) > 0)
+            { listargi[key].clear(); for (unsigned int k = 0; k < toks.size(); k++) listargi[key].push_back(atoi(toks[k].c_str())); }
+            else if (listargd.count(key) > 0)
+            { listargd[key].clear(); for (unsigned int k = 0; k < toks.size(); k++) listargd[key].push_back(atof(toks[k].c_str())); }
+            else
+            { listargs[key].clear(); for (unsigned int k = 0; k < toks.size(); k++) listargs[key].push_back(toks[k]); }
+        }
+        else known = false;
+
+        if (known) { isSet[key] = true; applied++; }
+    }
+
+    cerr << "Loaded " << applied << " parameters from " << file << ".\n";
+    return true;
 }
 
 bool param_t::getBoolFlag(string flag)
