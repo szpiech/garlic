@@ -894,7 +894,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< GenoLikeData * > *GLDataByChr,
                      vector< GenoFreqData * > *genoFreqDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, bool THIN, int LD_SUBSAMPLE)
+                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, int thinStep, int LD_SUBSAMPLE)
 {
     //--winsize-multi values come straight from the command line and were never
     //checked against the data; a size >= the shortest chromosome indexes the
@@ -945,7 +945,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                                           centro, multiWinsizes[i],
                                           error, MAX_GAP, USE_GL);
         }
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (THIN ? multiWinsizes[i] : 1));
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : multiWinsizes[i]));
         releaseWinData(winDataByChr);
 
         KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
@@ -976,7 +976,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          int &winsize, int step, double error,
                          vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, bool THIN,
+                         bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, int thinStep,
                          int MAX_WINSIZE)
 {
     double AUTO_WINSIZE_THRESHOLD = 0.50;
@@ -1039,7 +1039,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                                           centro, winsizeQuery,
                                           error, MAX_GAP, USE_GL);
         }
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (THIN ? winsizeQuery : 1));
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : winsizeQuery));
         releaseWinData(winDataByChr);
 
         KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
@@ -1081,7 +1081,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector<int> *multiWinsizes, int &winsize, double error,
                                  vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, bool THIN)
+                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, int thinStep)
 {
     //--winsize-multi values are taken verbatim from the command line and were
     //never checked against the data; a size >= the shortest chromosome indexes
@@ -1138,7 +1138,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                           centro, multiWinsizes->at(i),
                                           error, MAX_GAP, USE_GL);
         }
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (THIN ? multiWinsizes->at(i) : 1));
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : multiWinsizes->at(i)));
         releaseWinData(winDataByChr);
 
         KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);

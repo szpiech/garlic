@@ -278,7 +278,9 @@ int param_t::parseCommandLine(int argc, char *argv[])
         }
         else if (argb.count(argv[i]) > 0)
         {
-            argb[argv[i]] = !argb[argv[i]];
+            //Set, do not toggle: toggling silently inverts any flag whose
+            //default is true.
+            argb[argv[i]] = true;
             isSet[argv[i]] = true;
         }
         else if (argi.count(argv[i]) > 0)
@@ -304,6 +306,9 @@ int param_t::parseCommandLine(int argc, char *argv[])
         }
         else if (listargi.count(argv[i]) > 0)
         {
+            //List flags never recorded isSet, so isFlagSet() reported them unset
+            //and the duplicate-flag check never fired for them.
+            isSet[argv[i]] = true;
             if (i + 1 >= argc)
             {
                 cerr << "ERROR: No argument found for " << argv[i] << ".\n";
@@ -363,6 +368,9 @@ int param_t::parseCommandLine(int argc, char *argv[])
         }
         else if (listargd.count(argv[i]) > 0)
         {
+            //List flags never recorded isSet, so isFlagSet() reported them unset
+            //and the duplicate-flag check never fired for them.
+            isSet[argv[i]] = true;
             if (i + 1 >= argc)
             {
                 cerr << "ERROR: No argument found for " << argv[i] << ".\n";
@@ -416,6 +424,9 @@ int param_t::parseCommandLine(int argc, char *argv[])
         }
         else if (listargs.count(argv[i]) > 0)
         {
+            //List flags never recorded isSet, so isFlagSet() reported them unset
+            //and the duplicate-flag check never fired for them.
+            isSet[argv[i]] = true;
             if (i + 1 >= argc)
             {
                 cerr << "ERROR: No argument found for " << argv[i] << ".\n";
@@ -468,6 +479,9 @@ int param_t::parseCommandLine(int argc, char *argv[])
         }
         else if (listargch.count(argv[i]) > 0)
         {
+            //List flags never recorded isSet, so isFlagSet() reported them unset
+            //and the duplicate-flag check never fired for them.
+            isSet[argv[i]] = true;
             if (i + 1 >= argc)
             {
                 cerr << "ERROR: No argument found for " << argv[i] << ".\n";
@@ -531,6 +545,11 @@ param_t::param_t()
 {
     this->addFlag(ARG_HELP, false, "__help", "Prints this help dialog.");
     this->addFlag(ARG_HELP_SHORT, false, "__help", "Prints this help dialog.");
+}
+
+bool param_t::isFlagSet(string flag)
+{
+    return (isSet.count(flag) > 0);
 }
 
 bool param_t::getBoolFlag(string flag)

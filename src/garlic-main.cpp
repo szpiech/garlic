@@ -11,6 +11,7 @@
 #include "garlic-kde.h"
 #include "param_t.h"
 #include "garlic-centromeres.h"
+#include <gsl/gsl_errno.h>
 
 using namespace std;
 
@@ -23,8 +24,25 @@ string getCommandLineString(int argc, char *argv[])
     return str;
 }
 
+//GSL's default handler calls abort(), so a domain error deep in the GMM killed
+//the process with SIGABRT after all the work was done.  Turn it into the throw
+//the surrounding code already handles.
+static void garlicGSLError(const char *reason, const char *file, int line, int gsl_errno)
+{
+    LOG.err("ERROR: numerical failure in GSL:", string(reason));
+    LOG.err("\tat", string(file), false);
+    LOG.err(":", line);
+    LOG.err("\tThis usually means degenerate input to the size-class GMM (for example");
+    LOG.err("\ta LOD cutoff so low that every window is called, giving near-identical");
+    LOG.err("\tROH lengths). Pass --size-bounds to set the boundaries explicitly.");
+    (void)gsl_errno;
+    throw 0;
+}
+
 int main(int argc, char *argv[])
 {
+    gsl_set_error_handler(&garlicGSLError);
+
     #ifdef PTW32_STATIC_LIB
         pthread_win32_process_attach_np();
     #endif
@@ -96,14 +114,14 @@ int main(int argc, char *argv[])
 
     vector<int> multiWinsizes = params->getIntListFlag(ARG_WINSIZE_MULTI);
     bool WINSIZE_EXPLORE = false;
-    argerr = argerr || checkMultiWinsizes(multiWinsizes, WINSIZE_EXPLORE);
+    argerr = argerr || checkMultiWinsizes(multiWinsizes, WINSIZE_EXPLORE, params->isFlagSet(ARG_WINSIZE_MULTI));
     if (argerr) return 1;
     LOG.log("Explore window sizes:", WINSIZE_EXPLORE);
     if (WINSIZE_EXPLORE) LOG.logv("User defined window sizes:", multiWinsizes);
 
     bool AUTO_WINSIZE = params->getBoolFlag(ARG_AUTO_WINSIZE);
-    //argerr = argerr || checkAutoWinsize(WINSIZE_EXPLORE, AUTO_WINSIZE);
-    //if (argerr) return 1;
+    argerr = argerr || checkAutoWinsize(WINSIZE_EXPLORE, AUTO_WINSIZE);
+    if (argerr) return 1;
     LOG.log("Automatic window size:", AUTO_WINSIZE);
 
     int AUTO_WINSIZE_STEP = params->getIntFlag(ARG_AUTO_WINSIZE_STEP);
@@ -118,14 +136,14 @@ int main(int argc, char *argv[])
 
     double LOD_CUTOFF = params->getDoubleFlag(ARG_LOD_CUTOFF);
     bool AUTO_CUTOFF = true;
-    argerr = argerr || checkAutoCutoff(LOD_CUTOFF, AUTO_CUTOFF);
+    argerr = argerr || checkAutoCutoff(LOD_CUTOFF, AUTO_CUTOFF, params->isFlagSet(ARG_LOD_CUTOFF));
     if (argerr) return 1;
     LOG.log("Choose LOD score cutoff automatically:", AUTO_CUTOFF);
     if (!AUTO_CUTOFF) LOG.log("User defined LOD score cutoff:", LOD_CUTOFF);
 
     vector<double> boundSizes = params->getDoubleListFlag(ARG_BOUND_SIZE);
     bool AUTO_BOUNDS = true;
-    argerr = argerr || checkBoundSizes(boundSizes, AUTO_BOUNDS);
+    argerr = argerr || checkBoundSizes(boundSizes, AUTO_BOUNDS, params->isFlagSet(ARG_BOUND_SIZE));
     if (argerr) return 1;
     LOG.log("Choose ROH class thresholds automatically:", AUTO_BOUNDS);
     if (!AUTO_BOUNDS) LOG.logv("User defined ROH class thresholds:", boundSizes);
@@ -140,7 +158,7 @@ int main(int argc, char *argv[])
     setLODThreads(numThreads);
 
     double error = params->getDoubleFlag(ARG_ERROR);
-    argerr = argerr || checkError(error, tglsfile);
+    argerr = argerr || checkError(error, tglsfile, params->isFlagSet(ARG_ERROR));
     if (argerr) return 1;
     LOG.log("Genotyping error:", error);
 
@@ -171,6 +189,7 @@ int main(int argc, char *argv[])
     argerr = argerr || checkNCLUST(NCLUST);
     if (argerr) return 1;
     LOG.log("# GMM clusters:", NCLUST);
+    warnBoundsOverridesNclust(params->isFlagSet(ARG_BOUND_SIZE), params->isFlagSet(ARG_NCLUST));
 
     int KDE_SUBSAMPLE = params->getIntFlag(ARG_KDE_SUBSAMPLE);
     if (KDE_SUBSAMPLE <= 0) LOG.log("# of rand individuals for KDE: ALL");
@@ -186,8 +205,12 @@ int main(int argc, char *argv[])
     bool PHASED = params->getBoolFlag(ARG_PHASED);
     LOG.log("Use r2 for weighting phased data:", PHASED);
 
-    bool THIN = !(params->getBoolFlag(ARG_KDE_THINNING));
-    LOG.log("Use thinning for KDE estimation:", THIN);
+    //0 means "follow the window size"; --no-kde-thinning is the old spelling of 1.
+    int KDE_THIN_STEP = params->getIntFlag(ARG_KDE_THIN_STEP);
+    argerr = argerr || checkKDEThinStep(KDE_THIN_STEP);
+    if (argerr) return 1;
+    if (!params->isFlagSet(ARG_KDE_THIN_STEP) && params->getBoolFlag(ARG_KDE_THINNING)) KDE_THIN_STEP = 1;
+    LOG.log("KDE thinning step (0 = window size):", KDE_THIN_STEP);
     //double AUTO_WINSIZE_THRESHOLD = 0.5;
 
     int MAX_WINSIZE = params->getIntFlag(ARG_MAX_WINSIZE);
@@ -333,7 +356,7 @@ int main(int argc, char *argv[])
         kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, &multiWinsizes, winsize, error,
                                           GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, THIN);
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, KDE_THIN_STEP);
     }
     else if (WINSIZE_EXPLORE)
     {
@@ -347,7 +370,7 @@ int main(int argc, char *argv[])
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
                         GLDataByChr, genoFreqDataByChr, USE_GL,
-                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, THIN, LD_SUBSAMPLE);
+                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, KDE_THIN_STEP, LD_SUBSAMPLE);
 
         freeRNG();
         return 0;
@@ -359,7 +382,7 @@ int main(int argc, char *argv[])
                 kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, winsize, AUTO_WINSIZE_STEP, error,
                                           GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, THIN,
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, KDE_THIN_STEP,
                                           MAX_WINSIZE);
             }
             catch (...){
@@ -412,7 +435,7 @@ int main(int argc, char *argv[])
         bool cutoffOK = true;
         if(kdeResult == NULL)
         {
-            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (THIN ? winsize : 1), winsize, cutoffOK);
+            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK);
         }
         else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize, cutoffOK);
 

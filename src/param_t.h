@@ -59,6 +59,10 @@ public:
 
   int parseCommandLine(int argc, char *argv[]);
 
+  //Was the flag given on the command line?  Lets callers stop inferring
+  //"unset" from magic default values like --lod-cutoff -999999.
+  bool isFlagSet(string flag);
+
   bool getBoolFlag(string flag);
   double getDoubleFlag(string flag);
   int getIntFlag(string flag);

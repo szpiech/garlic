@@ -29,7 +29,8 @@ const string HELP_OUTFILE = "The base name for all output files.";
 
 const string ARG_THREADS = "--threads";
 const int DEFAULT_THREADS = 1;
-const string HELP_THREADS = "The number of threads to spawn during weighted calculations.";
+const string HELP_THREADS = "The number of threads to use. Applies to LOD score calculation, the LD\n\
+\tcalculations under --weighted, the LOD score KDE, and ROH assembly.";
 
 const string ARG_ERROR = "--error";
 const double DEFAULT_ERROR = -1;
@@ -182,6 +183,13 @@ const string HELP_MAX_WINSIZE = "Upper bound on the window size that --auto-wins
 \tpreviously had no bound and would grow past the number of loci if the\n\
 \tsmoothness criterion was never met.";
 
+const string ARG_KDE_THIN_STEP = "--kde-thin-step";
+const int DEFAULT_KDE_THIN_STEP = 0;
+const string HELP_KDE_THIN_STEP = "Take every Nth LOD score window when building the KDE. 0 (the default) uses\n\
+\tthe window size, which keeps the sampled windows non-overlapping; 1 uses every\n\
+\twindow. Replaces --no-kde-thinning, which is equivalent to 1 and is kept as a\n\
+\tdeprecated alias.";
+
 const string ARG_VERSION = "--version";
 const bool DEFAULT_VERSION = false;
 const string HELP_VERSION = "Print the version and exit.";
@@ -259,6 +267,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_MAX_WINSIZE, DEFAULT_MAX_WINSIZE, "", HELP_MAX_WINSIZE);
 	params->addFlag(ARG_VERSION, DEFAULT_VERSION, "", HELP_VERSION);
 	params->addFlag(ARG_FORCE, DEFAULT_FORCE, "", HELP_FORCE);
+	params->addFlag(ARG_KDE_THIN_STEP, DEFAULT_KDE_THIN_STEP, "", HELP_KDE_THIN_STEP);
 
 	//A bare invocation is a usage error, not a successful no-op run.
 	if (argc < 2)
@@ -372,9 +381,9 @@ bool checkBuildAndCentromereFile(string BUILD, string centromereFile) {
 	return false;
 }
 
-bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE)
+bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE, bool wasSet)
 {
-	if (multiWinsizes[0] != DEFAULT_WINSIZE_MULTI)
+	if (wasSet)
 	{
 		for (unsigned int i = 0; i < multiWinsizes.size(); i++)
 		{
@@ -429,17 +438,19 @@ bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE)
 	return false;
 }
 
-bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF)
+bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF, bool wasSet)
 {
-	if (LOD_CUTOFF != DEFAULT_LOD_CUTOFF) {
+	//Was keyed on LOD_CUTOFF != -999999, so -999999 was an unusable value.
+	(void)LOD_CUTOFF;
+	if (wasSet) {
 		AUTO_CUTOFF = false;
 	}
 	return false;
 }
 
-bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS){
-	
-	if(boundSizes[0] == DEFAULT_BOUND_SIZE && boundSizes.size() == 1){
+bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet){
+
+	if(!wasSet){
 		return false;
 	}
 	else {
@@ -491,16 +502,40 @@ bool checkThreads(int numThreads)
 	return false;
 }
 
-bool checkError(double error, string tglsfile)
+bool checkError(double error, string tglsfile, bool wasSet)
 {
-	if (error <= 0 || error >= 1)
+	if (!wasSet)
 	{
 		if (tglsfile.compare(DEFAULT_TGLS) == 0) {
-			LOG.err("ERROR: Genotype error rate must be > 0 and < 1, or a TGLS file must be provided.");
+			LOG.err("ERROR: --error must be given, or a TGLS file must be provided.");
 			return true;
 		}
+		return false;
+	}
+	if (error <= 0 || error >= 1)
+	{
+		LOG.err("ERROR: Genotype error rate must be > 0 and < 1.");
+		return true;
 	}
 	return false;
+}
+
+bool checkKDEThinStep(int step){
+	if(step < 0){
+		LOG.err("ERROR: --kde-thin-step must be >= 0 (0 means use the window size).");
+		return true;
+	}
+	return false;
+}
+
+//--size-bounds and --nclust are alternatives: supplying bounds skips the GMM
+//that --nclust configures.  This used to be silent.
+void warnBoundsOverridesNclust(bool boundsSet, bool nclustSet){
+	if(boundsSet && nclustSet){
+		LOG.err("WARNING: --size-bounds was given, so --nclust is ignored.");
+		LOG.err("\tThe GMM that --nclust configures only runs when size boundaries are");
+		LOG.err("\tchosen automatically.");
+	}
 }
 
 bool checkGLType(string TYPE, string tglsfile)
