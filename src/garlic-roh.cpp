@@ -376,13 +376,13 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     centromere *centro,
                                     int winsize, double error, int MAX_GAP, bool USE_GL)
 {
-    cerr << "Calculating LOD scores with winsize " << winsize << ".\n";
+    if (!LOG.isQuiet()) cerr << "Calculating LOD scores with winsize " << winsize << ".\n";
 
     vector< WinData * > *winDataByChr = initWinData(mapDataByChr, hapDataByChr->at(0)->nind);
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
-        cerr << mapDataByChr->at(chr)->chr << "    ";
+        if (progressEnabled()) cerr << mapDataByChr->at(chr)->chr << "    ";
         if(USE_GL){
             calcLOD(mapDataByChr->at(chr),
                     hapDataByChr->at(chr), freqDataByChr->at(chr),
@@ -410,13 +410,13 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                                      int winsize, double error, int MAX_GAP, bool USE_GL, 
                                      int M, double mu, int numThreads)
 {
-    cerr << "Calculating LOD scores with winsize " << winsize << ".\n";
+    if (!LOG.isQuiet()) cerr << "Calculating LOD scores with winsize " << winsize << ".\n";
 
     vector< WinData * > *winDataByChr = initWinData(mapDataByChr, hapDataByChr->at(0)->nind);
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
-        cerr << mapDataByChr->at(chr)->chr << "    ";
+        if (progressEnabled()) cerr << mapDataByChr->at(chr)->chr << "    ";
         if(USE_GL){
             calcwLOD(mapDataByChr->at(chr),
                      hapDataByChr->at(chr),
@@ -775,7 +775,48 @@ static string fmtLength(double v, bool CM)
     return ss.str();
 }
 
-//Class letter for a ROH of this size, using the same rule as writeROHData.
+//Spreadsheet-style labels so more than 26 size classes stay distinguishable:
+//A..Z, then AA, AB, ...  The letter used to be incremented past 'Z' into
+//punctuation.
+string sizeClassLabel(int k)
+{
+    string s;
+    int n = k;
+    do { s.insert(s.begin(), char('A' + (n % 26))); n = n / 26 - 1; } while (n >= 0);
+    return s;
+}
+
+//The nine ColorBrewer entries are kept for the first nine classes so existing
+//output is unchanged; beyond that, walk the hue circle.
+vector<string> makeClassColors(int nclass)
+{
+    const char *base[9] = {"228,26,28", "77,175,74", "55,126,184", "152,78,163",
+                           "255,127,0", "255,255,51", "166,86,40", "247,129,191",
+                           "153,153,153"};
+    vector<string> out;
+    for (int i = 0; i < nclass; i++)
+    {
+        if (i < 9) { out.push_back(string(base[i])); continue; }
+        double h = fmod(0.13 + 0.618033988749895 * double(i - 9), 1.0) * 6.0;
+        int seg = int(h);
+        double frac = h - double(seg);
+        double v = 210, p = 60;
+        double q = v - (v - p) * frac, t = p + (v - p) * frac;
+        double rr, gg, bb;
+        if      (seg == 0) { rr = v; gg = t; bb = p; }
+        else if (seg == 1) { rr = q; gg = v; bb = p; }
+        else if (seg == 2) { rr = p; gg = v; bb = t; }
+        else if (seg == 3) { rr = p; gg = q; bb = v; }
+        else if (seg == 4) { rr = t; gg = p; bb = v; }
+        else               { rr = v; gg = p; bb = q; }
+        ostringstream ss;
+        ss << int(rr) << "," << int(gg) << "," << int(bb);
+        out.push_back(ss.str());
+    }
+    return out;
+}
+
+//Class index for a ROH of this size, using the same rule as writeROHData.
 static int rohSizeClassIndex(double size, vector<double> &bounds)
 {
     for (unsigned int i = 0; i < bounds.size(); i++)
@@ -862,7 +903,7 @@ void writeFROH(string outfile,
 
         for (int k = 0; k < nclass; k++)
         {
-            out << rohData->indID << "\t" << pop[ind] << "\t" << char('A' + k) << "\t"
+            out << rohData->indID << "\t" << pop[ind] << "\t" << sizeClassLabel(k) << "\t"
                 << n[k] << "\t" << fmtLength(tot[k], CM) << "\t"
                 << fixed << setprecision(8) << (denom > 0 ? tot[k] / denom : 0.0)
                 << defaultfloat << "\n";
@@ -885,16 +926,10 @@ void writeROHData(string outfile,
                   string* pop,
                   string version, bool CM)
 {
-    string colors[9];
-    colors[0] = "228,26,28";
-    colors[1] = "77,175,74";
-    colors[2] = "55,126,184";
-    colors[3] = "152,78,163";
-    colors[4] = "255,127,0";
-    colors[5] = "255,255,51";
-    colors[6] = "166,86,40";
-    colors[7] = "247,129,191";
-    colors[8] = "153,153,153";
+    //--nclust is unbounded, but the palette had nine entries and the index was
+    //clamped at 8, so every class past the ninth was drawn in the same grey.
+    const int nclass = int(bounds.size()) + 1;
+    vector<string> colors = makeClassColors(nclass);
    
     ofstream out;
     out.open(outfile.c_str());
@@ -921,30 +956,20 @@ void writeROHData(string outfile,
             char sizeClass = 'X';
             string color = "X";
 
-            unsigned int i = 0;
-            for(i = 0; i < bounds.size(); i++){
-                if (size < bounds[i]) {
-                    sizeClass = sc;
-                    color = colors[(i <= 8) ? i : 8];
-                    break;
-                }
-                sc++;
-            }
-
-            if(color.compare("X") == 0){
-                sizeClass = sc;
-                color = colors[(i <= 8) ? i : 8];
-            }
+            int k = rohSizeClassIndex(size, bounds);
+            string sizeClassLab = sizeClassLabel(k);
+            color = colors[k];
+            (void)sc; (void)sizeClass;
 
             string chr = mapDataByChr->at(rohData->chr[roh])->chr;
             if (chr[0] != 'c' && chr[0] != 'C') chr = "chr" + chr;
             if(CM){
                 out << chr << "\t" << int(rohData->start[roh]) << "\t" << int(rohData->stop[roh])
-                    << "\t" << sizeClass << "\t" << size << "\t.\t0\t0\t" << color << endl;
+                    << "\t" << sizeClassLab << "\t" << size << "\t.\t0\t0\t" << color << endl;
             }
             else{
                 out << chr << "\t" << int(rohData->start[roh]) << "\t" << int(rohData->stop[roh])
-                    << "\t" << sizeClass << "\t" << int(size) << "\t.\t0\t0\t" << color << endl;
+                    << "\t" << sizeClassLab << "\t" << int(size) << "\t.\t0\t0\t" << color << endl;
             }
         }
     }
@@ -988,7 +1013,7 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
     else rawWinData = convertSubsetWinData2DoubleData(winDataByChr, indData, KDE_SUBSAMPLE, step);
 
     //Compute KDE of LOD score distribution
-    cerr << "Estimating distribution of raw LOD score windows:\n";
+    if (!LOG.isQuiet()) cerr << "Estimating distribution of raw LOD score windows:\n";
     KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
     releaseDoubleData(rawWinData);
 
@@ -1156,7 +1181,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                                            centro, winsizeQuery,
                                            error, MAX_GAP, USE_GL);
             */
-            cerr << "Not currently supported.\n";
+            if (!LOG.isQuiet()) cerr << "Not currently supported.\n";
             throw 0;
         }
         else {
@@ -1255,7 +1280,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                            centro, multiWinsizes->at(i),
                                            error, MAX_GAP, USE_GL);
             */
-            cerr << "Not currently supported.\n";
+            if (!LOG.isQuiet()) cerr << "Not currently supported.\n";
             throw 0;
         }
         else {

@@ -2,6 +2,7 @@
 #include "garlic-cli.h"
 #include <iostream>
 #include <cstdio>
+#include <unistd.h>
 #include <fstream>
 #include <sstream>
 #include <cmath>
@@ -39,6 +40,15 @@ static void garlicGSLError(const char *reason, const char *file, int line, int g
     throw 0;
 }
 
+//Discards whatever is written to it; used to silence stdout under --quiet
+//without touching every cout site.
+class NullBuf : public std::streambuf
+{
+protected:
+    int overflow(int c) { return c; }
+};
+static NullBuf GARLIC_NULLBUF;
+
 int main(int argc, char *argv[])
 {
     gsl_set_error_handler(&garlicGSLError);
@@ -53,6 +63,17 @@ int main(int argc, char *argv[])
     if (params == NULL) return (cliStatus == PARAM_HELP) ? 0 : 1;
 
     string outfile = params->getStringFlag(ARG_OUTFILE);
+    bool QUIET = params->getBoolFlag(ARG_QUIET);
+    bool VERBOSE = params->getBoolFlag(ARG_VERBOSE);
+    if (QUIET && VERBOSE) {
+        LOG.err("ERROR: --quiet and --verbose are mutually exclusive.");
+        return 1;
+    }
+    LOG.setVerbosity(QUIET, VERBOSE);
+    //The bar writes backspaces, so it is only useful on a terminal.
+    setProgressEnabled(!QUIET && (VERBOSE || isatty(STDERR_FILENO)));
+    if (QUIET) cout.rdbuf(&GARLIC_NULLBUF);
+
     string outdir = params->getStringFlag(ARG_OUTDIR);
     if (!outdir.empty())
     {

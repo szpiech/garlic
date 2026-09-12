@@ -1136,7 +1136,7 @@ double interpolate(double x0, double y0, double x1, double y1, double query)
 
 vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
     igzstream fin;
-    cerr << "Opening " << mapfile << "...\n";
+    if (!LOG.isQuiet()) cerr << "Opening " << mapfile << "...\n";
     fin.open(mapfile.c_str());
 
     if (fin.fail())
@@ -1189,7 +1189,7 @@ vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
     fin.clear();
     fin.open(mapfile.c_str());
 
-    cerr << "Loading genetic map scaffold for " << nloci << " loci.\n";
+    if (!LOG.isQuiet()) cerr << "Loading genetic map scaffold for " << nloci << " loci.\n";
 
     string locusName;
     string chrname;
@@ -1740,7 +1740,7 @@ vector< FreqData * > *readFreqData(string freqfile,
         throw 0;
     }
 
-    cerr << "Reading " << freqfile << "\n";
+    if (!LOG.isQuiet()) cerr << "Reading " << freqfile << "\n";
     string line;
     int currentRows = 0;
     int currentCols = 0;
@@ -1896,7 +1896,7 @@ vector< GenoLikeData * > *readTGLSData(string filename,
                                        string GL_TYPE)
 {
     igzstream fin;
-    cerr << "Loading genotype likelihoods from " << filename << "\n";
+    if (!LOG.isQuiet()) cerr << "Loading genotype likelihoods from " << filename << "\n";
     fin.open(filename.c_str());
 
     if (fin.fail()){
@@ -2113,7 +2113,7 @@ void writeWinData(vector< WinData * > *winDataByChr,
             }
             fout << endl;
         }
-        cerr << "Wrote " << rawWinOutfile << "\n";
+        if (!LOG.isQuiet()) cerr << "Wrote " << rawWinOutfile << "\n";
         fout.close();
     }
 
@@ -2338,7 +2338,7 @@ void scanIndData3(string filename, int &numInd) {
         }
         else if (pop.compare(popName) != 0) {
             cerr << "ERROR: Found multiple population IDs (" << pop << ", " << popName << ") in " << filename << endl;
-            cerr << "\tGARLIC must be given only a single population at a time.\n";
+            if (!LOG.isQuiet()) cerr << "\tGARLIC must be given only a single population at a time.\n";
             LOG.err("ERROR: Found multiple population IDs ( ", pop, false);
             LOG.err(",", popName, false);
             LOG.err(" ) in", filename);

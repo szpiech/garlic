@@ -16,6 +16,7 @@
    Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 */
 #include "param_t.h"
+#include <cerrno>
 
 using namespace std;
 
@@ -232,16 +233,17 @@ void param_t::printHelp()
 
 bool param_t::goodDouble(string str)
 {
-    string::iterator it;
-    //int dashCount = 0;
-    int decimalCount = 0;
-    for (it = str.begin(); it != str.end(); it++)
-    {
-        if (!isdigit(*it) && *it != '.' && *it != '-') return 0;
-        if (*it == '.') decimalCount++;
-        if (*it == '-' && it != str.begin()) return 0;
-        if (/*dashCount > 1 || */decimalCount > 1) return 0;
-    }
+    //Hand-rolled validation rejected scientific notation, so --size-bounds 1e6
+    //-- a natural way to write a ROH size threshold -- was reported as 'not a
+    //valid double' and then as an unrecognised flag.  Defer to strtod, which
+    //accepts exactly what atof will subsequently parse.
+    if (str.empty()) return 0;
+    const char *s = str.c_str();
+    char *end = NULL;
+    errno = 0;
+    strtod(s, &end);
+    if (end == s) return 0;          //nothing consumed
+    if (*end != '\0') return 0;      //trailing junk
     return 1;
 }
 

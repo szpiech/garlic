@@ -95,7 +95,7 @@ void centromere::readCustomCentromeres(string filename) {
 		gapEnd[chrname] = end;
 		chrWarning[chrname] = 0;
 	}
-	cerr << "Loaded custom centromere limits for " << numChr << " chromosomes.\n";
+	if (!LOG.isQuiet()) cerr << "Loaded custom centromere limits for " << numChr << " chromosomes.\n";
 	fin.close();
 	return;
 }

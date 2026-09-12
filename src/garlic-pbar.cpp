@@ -3,8 +3,14 @@
 
 pthread_mutex_t mutex_progress = PTHREAD_MUTEX_INITIALIZER;
 
+static bool BAR_ON = true;
+
+void setProgressEnabled(bool on) { BAR_ON = on; }
+bool progressEnabled() { return BAR_ON; }
+
 void advanceBar(Bar &bar, double inc)
 {
+    if (!BAR_ON) { pthread_mutex_lock(&mutex_progress); bar.current += inc; pthread_mutex_unlock(&mutex_progress); return; }
     pthread_mutex_lock(&mutex_progress);
     bar.current += inc;
     if (bar.current / bar.total >= double(bar.currentTick) / double(bar.totalTicks))
@@ -29,6 +35,7 @@ void barInit(Bar &bar, double total, int totalTicks)
 }
 
 void finalize(Bar &bar){
+    if (!BAR_ON) return;
     for (int i = 0; i < 3; i++) cerr << '\b';
     cerr << "100%" << endl;
 }

@@ -161,6 +161,14 @@ extern const string ARG_MAX_WINSIZE;
 extern const int DEFAULT_MAX_WINSIZE;
 extern const string HELP_MAX_WINSIZE;
 
+extern const string ARG_QUIET;
+extern const bool DEFAULT_QUIET;
+extern const string HELP_QUIET;
+
+extern const string ARG_VERBOSE;
+extern const bool DEFAULT_VERBOSE;
+extern const string HELP_VERBOSE;
+
 extern const string ARG_CHR;
 extern const string HELP_CHR;
 

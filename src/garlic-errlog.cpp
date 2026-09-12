@@ -9,7 +9,13 @@ errlog::errlog()
 	errfilestream = NULL;
 	logfilestream = NULL;
 	committed = false;
+	quiet = false;
+	verbose = false;
 }
+
+void errlog::setVerbosity(bool q, bool v) { quiet = q; verbose = v; }
+bool errlog::isQuiet() { return quiet; }
+bool errlog::isVerbose() { return verbose; }
 
 errlog::errlog(string file)
 {

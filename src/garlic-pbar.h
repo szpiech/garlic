@@ -13,6 +13,11 @@ struct Bar
     int currentTick;
 };
 
+//The bar emits backspaces, so it is only meaningful on a terminal.  Redirected
+//stderr used to collect literal "\b\b\b 0%\b\b\b100%" for every chromosome.
+void setProgressEnabled(bool on);
+bool progressEnabled();
+
 void advanceBar(Bar &bar, double inc);
 void barInit(Bar &bar, double total, int totalTicks);
 void finalize(Bar &bar);

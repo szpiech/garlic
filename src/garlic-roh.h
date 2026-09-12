@@ -153,6 +153,8 @@ void writeROHData(string outfile,
 void releaseROHData(vector< ROHData * > *rohDataByInd);
 
 string makeROHFilename(string outfile);
+string sizeClassLabel(int k);
+vector<string> makeClassColors(int nclass);
 
 double selectLODCutoff(KDEResult *kdeResult, int wisize, bool &ok);
 double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wisize, bool &ok);

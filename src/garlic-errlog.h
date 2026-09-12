@@ -25,6 +25,13 @@ public:
 	void init(string file);
 	void commit();
 
+	//Verbosity.  --quiet silences progress and informational chatter (errors
+	//still go to stderr); --verbose forces the progress bar on even when
+	//stderr is not a terminal.
+	void setVerbosity(bool quiet, bool verbose);
+	bool isQuiet();
+	bool isVerbose();
+
 	void err(string str);
 	void errn(string str);
 	void err(double val);
@@ -79,6 +86,8 @@ private:
 	ofstream *errfilestream;
 	ofstream *logfilestream;
 	bool committed;
+	bool quiet;
+	bool verbose;
 	ostream *errOut();
 
 	void out(ostream *out, string str);
