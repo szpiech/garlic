@@ -53,8 +53,9 @@ column 5 and a genome browser drew every ROH one base short. chromStart is now 0
 chromEnd minus chromStart equals column 5. Coordinates from earlier versions are shifted by
 one relative to these. The two count_features_in_roh.pl copies needed the complementary
 change and now build their interval as ($start+1, $end); under the old convention they were
-silently dropping the last base of every ROH. count_damaging_genotypes_in_roh.pl needs the
-same one-line change.
+silently dropping the last base of every ROH. count_damaging_genotypes_in_roh.pl reads the
+same file and carries the same one-line change, but that script has never been tracked in
+this repository, so it is not distributed with it.
 
 Wrong answers, produced silently and with exit 0:
 
