@@ -44,6 +44,78 @@ FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
 zlib: http://zlib.net/
 
 ---CHANGES---
+UNRELEASED - Correctness, performance, and command line work.
+
+*** NOT BACKWARD COMPATIBLE: .roh.bed coordinates have moved by one base. *** BED
+chromStart is 0-based and chromEnd is exclusive, but garlic wrote the 1-based position of
+the ROH's first variant, so chromEnd minus chromStart came out one less than the length in
+column 5 and a genome browser drew every ROH one base short. chromStart is now 0-based, so
+chromEnd minus chromStart equals column 5. Coordinates from earlier versions are shifted by
+one relative to these. The two count_features_in_roh.pl copies needed the complementary
+change and now build their interval as ($start+1, $end); under the old convention they were
+silently dropping the last base of every ROH. count_damaging_genotypes_in_roh.pl needs the
+same one-line change.
+
+Wrong answers, produced silently and with exit 0:
+
+- The genetic map was paired with the data by position in the file rather than by
+  chromosome name, so a map whose chromosomes appear in a different order than the TPED
+  applied the wrong chromosome's map to every site. A lexically ordered copy of the bundled
+  example gave 3525 ROH where the correct answer is 5738.
+- filterMonomorphicSites and filterMonomorphicAndOOBSites overwrote each locus name with
+  its physical position.
+- getMapInfo interpolated on uninitialised stack values when query positions were not in
+  ascending order.
+- A failed LOD cutoff search returned -1 and that value was used as the cutoff, producing a
+  complete, plausible-looking .roh.bed.
+- assembleROHWindows wrote one element past the end of its window array.
+- --auto-winsize aborted with a use-after-free in subsetData, after writing output, so it
+  looked like it had worked. This was the first command in example/example_README.txt.
+- get_arg_max seeded its running maximum with numeric_limits<double>::min(), which is the
+  smallest positive value rather than the most negative.
+- KDE modes were located by testing floating-point equality against the density array.
+
+Reproducibility. Automatic LOD cutoff selection is now deterministic: --kde-subsample
+defaults to 0 (every individual), which removed the last consumer of random numbers on that
+path, and the KDE evaluates its Gaussian sum directly instead of calling figtree, whose
+clustering made results depend on more than the seed. Three runs that drew three different
+seeds now select the same cutoff and call the same ROH. --seed remains for the paths that
+still sample. The figtree and ANN archives are no longer linked.
+
+Performance, on the bundled example (577,489 loci, 45 individuals), same output:
+10.1 s to 1.6 s, and peak memory 377 MB to 287 MB. The macOS build was passing -fast, which
+clang does not accept as an optimisation flag, so it had been compiling at -O0; one Makefile
+now detects the platform instead of three being hand-edited. Pairwise LD is evaluated once
+rather than once per window, the four possible per-locus LOD values are precomputed instead
+of calling log10 per genotype, TPED parsing no longer goes through std::istream, bulk arrays
+are allocated as one contiguous block with genotypes stored as one byte instead of two, and
+LOD calculation and ROH assembly are threaded.
+
+Command line. Exit codes are now 0 for success, 1 for a usage error, and 2 for a runtime
+error; a misspelled flag used to exit 0, and argument errors exited 255. A rejected command
+line no longer creates .log and .error files. New: --version, -h, --force (refuses to
+overwrite existing calls without it), --seed, --quiet, --verbose, --chr, --outdir, --froh,
+--load-params, --max-winsize, --kde-thin-step, --kde-points, --kde-cut, --mode-smooth-span,
+--auto-winsize-threshold, --auto-winsize-coef, --auto-overlap-coef, --gmm-max-iter,
+--gmm-tol. The last eight expose constants that were literals in the source and that each
+move the selected cutoff or the size class boundaries; the two regression coefficient pairs
+are empirical fits to human SNP-array data, which matters if you are not working on human
+array data. --no-kde-thinning is now a deprecated alias for --kde-thin-step 1.
+
+Every run writes <out>.params.json recording the effective value of every flag plus the
+values the run settled on, including the drawn seed; --load-params replays it, with command
+line flags taking precedence. --froh writes a per-individual autozygous total and fraction
+by size class, with the denominator stated in the file header. The progress bar is drawn
+only when stderr is a terminal, since it works by emitting backspaces. Size classes beyond
+nine are no longer all drawn the same grey, and class labels no longer run past 'Z'.
+--freq-only no longer requires a --winsize it never uses. Too few ROH for the size-class
+GMM, and GSL domain errors inside it, are now reported instead of killing the process with
+SIGABRT.
+
+The command line reference in this file and in the manual is generated from the program's
+own help strings by 'make docs' in src/. It had drifted to documenting 33 of 53 flags, and
+described one flag the program has never accepted.
+
 05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers. ***I'm having trouble getting mscOS versions to compile, so the current binary for mscOS is still v1.6.0 and still has this bug.***
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
@@ -75,7 +147,7 @@ This update also introduces a new command-line flag --overlap-frac which is desi
 least OVERLAP_FRAC (default 0.25) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
 
-garlic v1.1.4 -- a program to call runs of homozygosity in genetic data.
+garlic v1.1.6a -- a program to call runs of homozygosity in genetic data.
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.
 
 Citations:
