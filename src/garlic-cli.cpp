@@ -186,6 +186,12 @@ const string HELP_MAX_WINSIZE = "Upper bound on the window size that --auto-wins
 \tpreviously had no bound and would grow past the number of loci if the\n\
 \tsmoothness criterion was never met.";
 
+const string ARG_DUMP_DOCS = "--dump-docs";
+const string DEFAULT_DUMP_DOCS = "__none";
+const string HELP_DUMP_DOCS = "Write the command line reference to stdout in a documentation format and\n\
+\texit: txt for the README block, tex for a LaTeX description list. Used by\n\
+\t'make docs' so the documentation cannot drift from the program.";
+
 const string ARG_LOAD_PARAMS = "--load-params";
 const string DEFAULT_LOAD_PARAMS = "__none";
 const string HELP_LOAD_PARAMS = "Read flag values from a <out>.params.json written by a previous run. Flags\n\
@@ -243,7 +249,7 @@ const string HELP_AUTO_WINSIZE_COEF = "<slope> <intercept>: coefficients of wins
 \tschemes or species.\n\tDefault: 8.3235 138.0521";
 
 const string ARG_AUTO_OVERLAP_COEF = "--auto-overlap-coef";
-const string HELP_AUTO_OVERLAP_COEF = "<slope> <intercept>: coefficients of overlap%% = slope*log(density) + intercept,\n\
+const string HELP_AUTO_OVERLAP_COEF = "<slope> <intercept>: coefficients of overlap% = slope*log(density) + intercept,\n\
 \tused by --auto-overlap-frac. The defaults (6.375 63.888) are an empirical fit\n\
 \tto human SNP-array data.\n\tDefault: 6.375 63.888";
 
@@ -340,6 +346,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_VERSION, DEFAULT_VERSION, "", HELP_VERSION);
 	params->addFlag(ARG_FORCE, DEFAULT_FORCE, "", HELP_FORCE);
 	params->addFlag(ARG_KDE_THIN_STEP, DEFAULT_KDE_THIN_STEP, "", HELP_KDE_THIN_STEP);
+	params->addFlag(ARG_DUMP_DOCS, DEFAULT_DUMP_DOCS, "", HELP_DUMP_DOCS);
 	params->addFlag(ARG_LOAD_PARAMS, DEFAULT_LOAD_PARAMS, "", HELP_LOAD_PARAMS);
 	params->addFlag(ARG_QUIET, DEFAULT_QUIET, "", HELP_QUIET);
 	params->addFlag(ARG_VERBOSE, DEFAULT_VERBOSE, "", HELP_VERBOSE);
@@ -365,6 +372,14 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	}
 
 	status = params->parseCommandLine(argc, argv);
+
+	if (status == PARAM_OK && params->isFlagSet(ARG_DUMP_DOCS))
+	{
+		bool ok = params->writeHelpDoc(cout, params->getStringFlag(ARG_DUMP_DOCS));
+		delete params;
+		status = ok ? PARAM_HELP : PARAM_ERROR;
+		return NULL;
+	}
 
 	//Applied after parsing so the command line wins, and before main reads
 	//any value.

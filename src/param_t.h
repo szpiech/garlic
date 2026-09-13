@@ -58,6 +58,13 @@ public:
 
   void printHelp();
 
+  //Emit the flag reference in a documentation format, so README and the
+  //manual do not have to restate by hand what the HELP_ strings already say.
+  //format is "txt" (README block) or "tex" (LaTeX description list).
+  //Driven by the same help/labels maps printHelp uses, so a flag cannot be
+  //added to the program without appearing here.
+  bool writeHelpDoc(ostream &out, string format);
+
   int parseCommandLine(int argc, char *argv[]);
 
   //Was the flag given on the command line?  Lets callers stop inferring

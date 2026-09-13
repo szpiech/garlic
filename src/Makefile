@@ -116,4 +116,18 @@ BoundFinder.o : BoundFinder.cpp BoundFinder.h
 clean :
 	rm -f *.o garlic
 
-.PHONY : all clean
+
+# Regenerate the command line reference in README and manual/flags.tex from the
+# program's own help strings, so the documentation cannot drift from the binary.
+# The flag the manual described that garlic never accepted (--auto-winsize-size,
+# whose body actually documented --auto-winsize-step), and the nineteen the
+# program gained without being documented at all, were both consequences of
+# maintaining that list by hand.
+docs : garlic
+	./garlic --dump-docs tex > ../manual/flags.tex
+	awk '/^#BEGIN GENERATED FLAG REFERENCE/{print; system("./garlic --dump-docs txt"); s=1; next} \
+	     /^#END GENERATED FLAG REFERENCE/{s=0} !s' ../README > README.docs.tmp
+	mv README.docs.tmp ../README
+	@echo "regenerated ../README flag block and ../manual/flags.tex"
+
+.PHONY : all clean docs

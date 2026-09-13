@@ -24,6 +24,16 @@ using namespace std;
 const string ARG_HELP = "--help";
 const string ARG_HELP_SHORT = "-h";
 
+//Several flags -- list flags in particular -- state their real default in the
+//description, because the auto-generated one can only show a single sentinel
+//element ("0.000000", "_ALL").  Appending a second Default line in that case
+//made --help print both.
+static string defaultSuffix(const string &description, const string &buffer)
+{
+    if (description.find("Default:") != string::npos) return "";
+    return "\n\tDefault: " + buffer;
+}
+
 bool param_t::addFlag(string flag, bool value, string label, string description)
 {
     if (!flagExists(flag))
@@ -32,7 +42,7 @@ bool param_t::addFlag(string flag, bool value, string label, string description)
         if (value) buffer = "true";
         else buffer = "false";
         argb[flag] = value;
-        help[flag] = "<bool>: " + description + "\n\tDefault: " + buffer;
+        help[flag] = "<bool>: " + description + defaultSuffix(description, buffer);
         labels[flag] = label;
     }
     else
@@ -53,7 +63,7 @@ bool param_t::addFlag(string flag, double value, string label, string descriptio
         sprintf(charBuffer, "%e", value);
         buffer = charBuffer;
         argd[flag] = value;
-        help[flag] = "<double>: " + description + "\n\tDefault: " + buffer;
+        help[flag] = "<double>: " + description + defaultSuffix(description, buffer);
         labels[flag] = label;
     }
     else
@@ -74,7 +84,7 @@ bool param_t::addFlag(string flag, int value, string label, string description)
         sprintf(charBuffer, "%d", value);
         buffer = charBuffer;
         argi[flag] = value;
-        help[flag] = "<int>: " + description + "\n\tDefault: " + buffer;
+        help[flag] = "<int>: " + description + defaultSuffix(description, buffer);
         labels[flag] = label;
     }
     else
@@ -95,7 +105,7 @@ bool param_t::addFlag(string flag, char value, string label, string description)
         sprintf(charBuffer, "%c", value);
         buffer = charBuffer;
         argch[flag] = value;
-        help[flag] = "<char>: " + description + "\n\tDefault: " + buffer;
+        help[flag] = "<char>: " + description + defaultSuffix(description, buffer);
         labels[flag] = label;
     }
     else
@@ -112,7 +122,7 @@ bool param_t::addFlag(string flag, string value, string label, string descriptio
     if (!flagExists(flag))
     {
         args[flag] = value;
-        help[flag] = "<string>: " + description + "\n\tDefault: " + value;
+        help[flag] = "<string>: " + description + defaultSuffix(description, value);
         labels[flag] = label;
     }
     else
@@ -138,7 +148,7 @@ bool param_t::addListFlag(string flag, double value, string label, string descri
         sprintf(charBuffer, "%f", value);
         buffer = charBuffer;
         listargd[flag].push_back(value);
-        help[flag] = "<double1> ... <doubleN>: " + description + "\n\tDefault: " + buffer;
+        help[flag] = "<double1> ... <doubleN>: " + description + defaultSuffix(description, buffer);
         labels[flag] = label;
     }
     else
@@ -158,7 +168,7 @@ bool param_t::addListFlag(string flag, char value, string label, string descript
         sprintf(charBuffer, "%c", value);
         buffer = charBuffer;
         listargch[flag].push_back(value);
-        help[flag] = "<char1> ... <charN>: " + description + "\n\tDefault: " + buffer;
+        help[flag] = "<char1> ... <charN>: " + description + defaultSuffix(description, buffer);
         labels[flag] = label;
     }
     else
@@ -179,7 +189,7 @@ bool param_t::addListFlag(string flag, int value, string label, string descripti
         sprintf(charBuffer, "%d", value);
         buffer = charBuffer;
         listargi[flag].push_back(value);
-        help[flag] = "<int1> ... <intN>: " + description + "\n\tDefault: " + buffer;
+        help[flag] = "<int1> ... <intN>: " + description + defaultSuffix(description, buffer);
         labels[flag] = label;
     }
     else
@@ -196,7 +206,7 @@ bool  param_t::addListFlag(string flag, string value, string label, string descr
     if (!flagExists(flag))
     {
         listargs[flag].push_back(value);
-        help[flag] = "<string1> ... <stringN>: " + description + "\n\tDefault: " + value;
+        help[flag] = "<string1> ... <stringN>: " + description + defaultSuffix(description, value);
         labels[flag] = label;
     }
     else
@@ -265,6 +275,101 @@ bool param_t::goodChar(string str)
 {
     if (str.length() > 1) return 0;
     return 1;
+}
+
+//help[flag] is built by addFlag as "<TYPE>: DESCRIPTION\n\tDefault: VALUE".
+//Split it back into those three parts.
+static void splitHelpEntry(const string &entry, string &type, string &desc, string &def)
+{
+    type.clear(); desc.clear(); def.clear();
+    size_t lt = entry.find('<'), gt = entry.find(">:");
+    size_t descStart = 0;
+    if (lt == 0 && gt != string::npos)
+    {
+        type = entry.substr(1, gt - 1);
+        descStart = gt + 2;
+        while (descStart < entry.size() && entry[descStart] == ' ') descStart++;
+    }
+    const string marker = "\n\tDefault: ";
+    size_t d = entry.find(marker, descStart);
+    if (d == string::npos) { desc = entry.substr(descStart); return; }
+    desc = entry.substr(descStart, d - descStart);
+    def  = entry.substr(d + marker.size());
+    size_t again = def.find("Default:");
+    if (again != string::npos) def = def.substr(0, again);
+}
+
+//The HELP_ strings wrap with "\n\t" for terminal output; documentation
+//formats re-flow, so collapse those to single spaces.
+static string unwrap(const string &s)
+{
+    string o;
+    for (size_t i = 0; i < s.size(); i++)
+    {
+        if (s[i] == '\n' || s[i] == '\t') { if (!o.empty() && o[o.size()-1] != ' ') o += ' '; }
+        else o += s[i];
+    }
+    while (!o.empty() && o[o.size()-1] == ' ') o.erase(o.size()-1);
+    return o;
+}
+
+static string texEscape(const string &s)
+{
+    string o;
+    for (size_t i = 0; i < s.size(); i++)
+    {
+        char c = s[i];
+        switch (c)
+        {
+        case '\\': o += "\\textbackslash{}"; break;
+        case '{': case '}': case '$': case '&': case '#': case '%': case '_':
+            o += '\\'; o += c; break;
+        case '^': o += "\\textasciicircum{}"; break;
+        case '~': o += "\\textasciitilde{}"; break;
+        case '<': o += "\\textless{}"; break;
+        case '>': o += "\\textgreater{}"; break;
+        default: o += c;
+        }
+    }
+    return o;
+}
+
+bool param_t::writeHelpDoc(ostream &out, string format)
+{
+    if (format != "txt" && format != "tex")
+    {
+        cerr << "ERROR: unknown documentation format '" << format << "'. Use txt or tex.\n";
+        return false;
+    }
+
+    if (format == "tex") out << "% Generated by 'make docs' from the HELP_ strings in garlic-cli.cpp.\n"
+                             << "% Do not edit by hand.\n\\begin{description}\n";
+    else out << "This section is generated by 'make docs' from the program's own help\n"
+             << "strings. Do not edit by hand.\n\n";
+
+    map<string, string>::iterator it;
+    for (it = help.begin(); it != help.end(); it++)
+    {
+        if (labels[it->first].compare("SILENT") == 0) continue;
+        string type, desc, def;
+        splitHelpEntry(it->second, type, desc, def);
+        if (format == "txt")
+        {
+            out << it->first << " <" << type << ">: " << unwrap(desc) << "\n";
+            if (!def.empty()) out << "\tDefault: " << unwrap(def) << "\n";
+            out << "\n";
+        }
+        else
+        {
+            out << "\\item[\\texttt{" << texEscape(it->first) << "}";
+            if (!type.empty()) out << " \\textnormal{\\textless{}" << texEscape(type) << "\\textgreater{}}";
+            out << "] " << texEscape(unwrap(desc));
+            if (!def.empty()) out << " \\\\ \\textit{Default:} \\texttt{" << texEscape(unwrap(def)) << "}";
+            out << "\n";
+        }
+    }
+    if (format == "tex") out << "\\end{description}\n";
+    return true;
 }
 
 int param_t::parseCommandLine(int argc, char *argv[])

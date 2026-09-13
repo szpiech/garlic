@@ -161,6 +161,10 @@ extern const string ARG_MAX_WINSIZE;
 extern const int DEFAULT_MAX_WINSIZE;
 extern const string HELP_MAX_WINSIZE;
 
+extern const string ARG_DUMP_DOCS;
+extern const string DEFAULT_DUMP_DOCS;
+extern const string HELP_DUMP_DOCS;
+
 extern const string ARG_LOAD_PARAMS;
 extern const string DEFAULT_LOAD_PARAMS;
 extern const string HELP_LOAD_PARAMS;
