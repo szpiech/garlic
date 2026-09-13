@@ -73,19 +73,32 @@ unit_tests() {
 # of random numbers on that path, so those are deterministic too and a
 # regression there would reintroduce seed dependence.
 # ---------------------------------------------------------------------------
+# Every input named here is TRACKED in git, so a fresh clone can run this.
+# The chr21.* files and example.GQ.tgls.gz exist in the author's working copy
+# but are not in the repository (.gitignore has *.gz and only the example.*
+# files were force-added), so cases needing them are listed as optional below
+# and skipped rather than failed when absent.
+#
+# Every case is fully specified where it can be -- explicit --lod-cutoff and
+# --size-bounds -- so no value is estimated and the output is a deterministic
+# function of the input.  The auto-cutoff cases are included on purpose:
+# --kde-subsample defaults to 0, which removed the last consumer of random
+# numbers on that path, so a regression there would reintroduce seed
+# dependence.
 CASES="
 unweighted|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz
 autocutoff|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001|roh.bed
 autowinsize|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --auto-winsize --winsize 30 --error 0.001|roh.bed
-weighted|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --map $EX/chr21.map.gz --weighted --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
-cm|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --map $EX/chr21.map.gz --cm --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 0.5 1.0|roh.bed
-phased|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --phased --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
-tgls_gq|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $EX/example.GQ.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
+weighted|--tped $EX/example.tped.gz --tfam $EX/example.tfam --map $EX/example.map.gz --weighted --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
+cm|--tped $EX/example.tped.gz --tfam $EX/example.tfam --map $EX/example.map.gz --cm --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 0.5 1.0|roh.bed
+phased|--tped $EX/example.tped.gz --tfam $EX/example.tfam --phased --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
 tgls_gl|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $EX/example.tgls.gz --gl-type GL --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
-rawlod|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
+rawlod|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr22.raw.lod.windows.gz
 freqonly|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --error 0.001 --freq-only|freq.gz
 froh|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --froh|roh.bed froh.tsv
 chr_subset|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --chr chr21 chr22|roh.bed
+multiclass|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 1e5 2e5 3e5 5e5 1e6 2e6 3e6 4e6 5e6 6e6 7e6|roh.bed
+tgls_gq|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $EX/example.GQ.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
 "
 
 golden() {
@@ -93,9 +106,22 @@ golden() {
     echo "$CASES" | while IFS='|' read -r name args outs; do
         [ -z "$name" ] && continue
         out=$WORK/$name
+        # Skip rather than fail when an input is not in the repository.
+        missing=
+        for tok in $args; do
+            case "$tok" in
+                */*.gz|*/*.tfam|*/*.tped) [ -f "$tok" ] || missing="$missing $tok";;
+            esac
+        done
+        if [ -n "$missing" ]; then
+            echo "  SKIP  $name: input not present:$missing"
+            continue
+        fi
         # shellcheck disable=SC2086
-        if ! $GARLIC $args --out "$out" --quiet --force >"$WORK/$name.stdout" 2>"$WORK/$name.stderr"; then
-            echo "  FAIL  $name: garlic exited $? (see $WORK/$name.stderr)"
+        $GARLIC $args --out "$out" --quiet --force >"$WORK/$name.stdout" 2>"$WORK/$name.stderr"
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+            echo "  FAIL  $name: garlic exited $rc (see $WORK/$name.stderr)"
             echo x >>"$WORK/failures"; continue
         fi
         for suffix in $outs; do
@@ -132,7 +158,7 @@ golden() {
 determinism() {
     echo "== determinism =="
     for i in 1 2 3; do
-        $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 \
+        $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 \
                 --winsize 60 --error 0.001 --out "$WORK/det$i" --quiet --force >/dev/null 2>&1
     done
     a=$(sum "$WORK/det1.roh.bed"); b=$(sum "$WORK/det2.roh.bed"); c=$(sum "$WORK/det3.roh.bed")
@@ -163,11 +189,11 @@ exit_codes() {
     expect_exit 1 "no arguments" "$GARLIC"
     expect_exit 1 "unrecognised flag" "$GARLIC" --not-a-real-flag
     expect_exit 1 "missing tped" "$GARLIC" --tped /nonexistent.tped.gz --tfam "$EX/example.tfam" --build hg18 --winsize 60 --out "$WORK/e1"
-    expect_exit 1 "no build and no centromere file" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --winsize 60 --out "$WORK/e2"
-    expect_exit 1 "winsize below the minimum" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --winsize 1 --out "$WORK/e3"
-    expect_exit 1 "--chr naming a chromosome not in the data" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --winsize 60 --lod-cutoff 2.5 --chr chr99 --out "$WORK/e4"
+    expect_exit 1 "no build and no centromere file" "$GARLIC" --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --winsize 60 --out "$WORK/e2"
+    expect_exit 1 "winsize below the minimum" "$GARLIC" --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 --winsize 1 --out "$WORK/e3"
+    expect_exit 1 "--chr naming a chromosome not in the data" "$GARLIC" --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 --winsize 60 --lod-cutoff 2.5 --chr chr99 --out "$WORK/e4"
     expect_exit 1 "--load-params on a missing file" "$GARLIC" --load-params /nonexistent.json --out "$WORK/e5"
-    expect_exit 1 "--weighted without a map" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --weighted --build hg18 --winsize 60 --out "$WORK/e6"
+    expect_exit 1 "--weighted without a map" "$GARLIC" --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --weighted --build hg18 --winsize 60 --out "$WORK/e6"
     expect_exit 2 "cutoff selection fails (--mode-smooth-span too wide)" "$GARLIC" --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 --winsize 60 --error 0.001 --mode-smooth-span 400 --out "$WORK/e7"
 
     # A rejected command line must not leave output files behind.
@@ -178,9 +204,9 @@ exit_codes() {
     else ok; fi
 
     # --force is required to overwrite existing calls.
-    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --winsize 60 \
+    $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/clob" --quiet >/dev/null 2>&1
-    expect_exit 1 "second run without --force refuses to clobber" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/clob" --quiet
+    expect_exit 1 "second run without --force refuses to clobber" "$GARLIC" --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/clob" --quiet
 
     # A successful run must not create an empty .error file.
     if [ -f "$WORK/clob.error" ]; then bad "a successful run created a .error file"; else ok; fi
@@ -191,7 +217,7 @@ exit_codes() {
 # ---------------------------------------------------------------------------
 params_roundtrip() {
     echo "== params round trip =="
-    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --map "$EX/chr21.map.gz" \
+    $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --map "$EX/example.map.gz" \
             --weighted --build hg18 --winsize 60 --error 0.001 --froh \
             --out "$WORK/rt1" --quiet --force >/dev/null 2>&1
     $GARLIC --load-params "$WORK/rt1.params.json" --out "$WORK/rt2" --quiet --force >/dev/null 2>&1
@@ -225,6 +251,10 @@ echo "  binary: $GARLIC"
 [ -x "$GARLIC" ] || { echo "ERROR: $GARLIC is not executable. Run make in src/ first."; exit 1; }
 echo "  version: $("$GARLIC" --version 2>&1 | head -1)"
 echo
+
+for f in "$EX/example.tped.gz" "$EX/example.tfam" "$EX/example.map.gz"; do
+    [ -f "$f" ] || { echo "ERROR: required example data missing: $f"; exit 1; }
+done
 
 unit_tests
 golden
