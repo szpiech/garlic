@@ -300,6 +300,13 @@ const string HELP_FEATURES = "A feature file giving classifications";
 */
 
 
+//Written by the Makefile so the stamp cannot go stale.  Absent when building
+//outside the Makefile or from a tarball with no .git, hence the guard.
+#if defined(__has_include)
+#  if __has_include("garlic-version.h")
+#    include "garlic-version.h"
+#  endif
+#endif
 #ifndef GARLIC_GIT_SHA
 #define GARLIC_GIT_SHA "unknown"
 #endif

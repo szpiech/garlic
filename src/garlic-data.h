@@ -359,4 +359,16 @@ void writeDoubleData(vector < DoubleData * > *rawWinDataByPop, vector< MapData *
 int countFields(const string &str);
 string lc(string str);
 string checkChrName(string chr);
+
+//Convert one genotype-quality/likelihood value into the per-genotype error
+//rate the LOD calculation uses.  Extracted from readTGLSData so it can be
+//tested directly: both TGLS files bundled with garlic are constant (GQ 30
+//everywhere, GL -0.0004 everywhere), so no end-to-end test can exercise
+//per-genotype variation in this conversion.
+//  GQ: error = 10^(-GQ/10)        a Phred-scaled quality
+//  GL: error = 1 - 10^(GL)        GL is a log10 likelihood
+//  PL: error = 1 - 10^(-PL/10)    PL is Phred-scaled likelihood
+//The exponent is floored at -10 in every branch, and the result clamped to
+//(0, 1].
+double glToError(double value, string glType);
 #endif

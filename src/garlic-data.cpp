@@ -1930,27 +1930,7 @@ vector< GenoLikeData * > *readTGLSData(string filename,
             ss >> junk;
             for (int ind = 0; ind < expectedInd; ind++){
                 ss >> gl;
-                if(GL_TYPE.compare("GQ") == 0){
-                    gl /= (-10.0);
-                    gl = ( gl > -10 ) ? gl : -10;
-                    gl = pow(10,gl);
-                }
-                else if (GL_TYPE.compare("GL") == 0) {
-                    gl = ( gl > -10 ) ? gl : -10;
-                    gl = 1 - pow(10,gl);
-                }
-                else if (GL_TYPE.compare("PL") == 0) {
-                    gl /= (-10.0);
-                    gl = ( gl > -10 ) ? gl : -10;
-                    gl = 1 - pow(10,gl);
-                }
-                else {
-                    LOG.err("ERROR: This error should never get triggered. Something really bad happened.");
-                }
-                
-                if(gl <= 0) gl = 0.0000000000000001;
-                if(gl > 1) gl = 1;
-                GLDataByChr->at(chr)->data[locus][ind] = gl;
+                GLDataByChr->at(chr)->data[locus][ind] = glToError(gl, GL_TYPE);
 
             }
             ss.clear();
@@ -2256,6 +2236,40 @@ string lc(string str) {
         str.replace(i, 1, c);
     }
     return str;
+}
+
+double glToError(double value, string glType)
+{
+    double e;
+    if (glType.compare("GQ") == 0)
+    {
+        value /= (-10.0);
+        value = (value > -10) ? value : -10;
+        e = pow(10, value);
+    }
+    else if (glType.compare("GL") == 0)
+    {
+        value = (value > -10) ? value : -10;
+        e = 1 - pow(10, value);
+    }
+    else if (glType.compare("PL") == 0)
+    {
+        value /= (-10.0);
+        value = (value > -10) ? value : -10;
+        e = 1 - pow(10, value);
+    }
+    else
+    {
+        //Unreachable: --gl-type is validated against {GQ, GL, PL} before any
+        //file is read.  Return a neutral error rate rather than an
+        //uninitialised value if that ever stops being true.
+        LOG.err("ERROR: unknown --gl-type reached glToError:", glType);
+        return 1.0;
+    }
+
+    if (e <= 0) e = 0.0000000000000001;
+    if (e > 1) e = 1;
+    return e;
 }
 
 string checkChrName(string chr) {

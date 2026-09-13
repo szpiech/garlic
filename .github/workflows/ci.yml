@@ -1,0 +1,169 @@
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Build against the platform's own GSL and run the whole test suite.  This is
+  # the job that tells you whether garlic still works.
+  test:
+    name: test (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, label: linux-x86_64, static: ''}
+          - {os: macos-latest,  label: macos-arm64,  static: ''}
+          - {os: macos-13,      label: macos-x86_64, static: ''}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GSL and zlib
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y libgsl-dev zlib1g-dev
+          else
+            brew install gsl
+          fi
+
+      - name: Build
+        working-directory: src
+        run: |
+          make GSL_LIBS="-lgsl -lgslcblas" STATIC="${{ matrix.static }}"
+          ./garlic --version
+
+      - name: Test
+        run: sh test/run_tests.sh
+
+      # A build with no warnings is worth keeping that way: -Wall is already on
+      # by default, this just makes regressions visible without failing the run.
+      - name: Warning count
+        working-directory: src
+        run: |
+          make clean
+          make GSL_LIBS="-lgsl -lgslcblas" STATIC="${{ matrix.static }}" 2>&1 | tee build.log
+          echo "warnings: $(grep -c 'warning:' build.log || true)"
+
+  # Build the way a user following the README does: against the archives
+  # vendored in lib/.  Kept separate because it depends on those prebuilt
+  # archives matching the runner, which is exactly the fragility that makes it
+  # worth watching.
+  vendored:
+    name: vendored GSL (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, label: linux-x86_64}
+          - {os: macos-latest,  label: macos-arm64}
+          - {os: macos-13,      label: macos-x86_64}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        working-directory: src
+        run: make && ./garlic --version
+      - name: Test
+        run: sh test/run_tests.sh
+
+  # The bugs this repository actually shipped were memory errors that produced
+  # plausible output, so run every mode under the sanitizers.
+  sanitizers:
+    name: asan + ubsan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GSL and zlib
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgsl-dev zlib1g-dev
+      - name: Build instrumented
+        working-directory: src
+        run: |
+          make GSL_LIBS="-lgsl -lgslcblas" STATIC= \
+               OPTFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \
+               LINK_OPTS="-lgsl -lgslcblas -pthread -fsanitize=address,undefined"
+      - name: Exercise every mode
+        working-directory: src
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          E=../example
+          set -e
+          ./garlic --tped $E/chr21.tped.gz --tfam $E/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --froh --out s1 --quiet --force
+          ./garlic --tped $E/chr21.tped.gz --tfam $E/chr21.tfam.gz --map $E/chr21.map.gz --weighted --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --threads 2 --out s2 --quiet --force
+          ./garlic --tped $E/chr21.tped.gz --tfam $E/chr21.tfam.gz --map $E/chr21.map.gz --cm --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 0.5 1.0 --out s3 --quiet --force
+          ./garlic --tped $E/chr21.tped.gz --tfam $E/chr21.tfam.gz --phased --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out s4 --quiet --force
+          ./garlic --tped $E/example.tped.gz --tfam $E/example.tfam --tgls $E/example.GQ.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out s5 --quiet --force
+          ./garlic --tped $E/example.tped.gz --tfam $E/example.tfam --tgls $E/example.tgls.gz --gl-type GL --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out s6 --quiet --force
+          ./garlic --tped $E/chr21.tped.gz --tfam $E/chr21.tfam.gz --build hg18 --auto-winsize --winsize 30 --error 0.001 --out s7 --quiet --force
+          ./garlic --tped $E/chr21.tped.gz --tfam $E/chr21.tfam.gz --build hg18 --winsize-multi 30 40 --error 0.001 --out s8 --quiet --force
+          ./garlic --tped $E/chr21.tped.gz --tfam $E/chr21.tfam.gz --build hg18 --error 0.001 --freq-only --out s9 --quiet --force
+          ./garlic --tped $E/chr21.tped.gz --tfam $E/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod --out s10 --quiet --force
+          ./garlic --tped $E/chr21.tped.gz --tfam $E/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --chr chr21 --lod-cutoff 2.5 --size-bounds 500000 1000000 --outdir sdir --out s11 --quiet --force
+
+  # The command line reference in README and manual/flags.tex is generated from
+  # the program's help strings.  If someone adds a flag without running
+  # 'make docs', this fails -- which is the only thing keeping the two in sync.
+  docs:
+    name: docs are in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GSL and zlib
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgsl-dev zlib1g-dev
+      - name: Regenerate and diff
+        working-directory: src
+        run: |
+          make GSL_LIBS="-lgsl -lgslcblas" STATIC=
+          make docs
+          cd ..
+          if ! git diff --quiet -- README manual/flags.tex; then
+            echo "README or manual/flags.tex is out of date. Run 'make docs' in src/ and commit the result."
+            git diff -- README manual/flags.tex
+            exit 1
+          fi
+          echo "documentation matches the program"
+
+  # Every command in the example walkthrough must actually run.  The first one
+  # did not for years.
+  example:
+    name: example walkthrough
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GSL and zlib
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgsl-dev zlib1g-dev
+      - name: Build
+        working-directory: src
+        run: make GSL_LIBS="-lgsl -lgslcblas" STATIC=
+      - name: Run every documented command
+        working-directory: example
+        run: |
+          GARLIC=$(pwd)/../src/garlic
+          fail=0
+          # The walkthrough writes into example/, which already holds the
+          # shipped outputs, so --force is required.  read -r then word-split:
+          # no argument in the file is quoted or contains a space.
+          grep '^garlic ' example_README.txt > /tmp/cmds
+          while read -r cmd; do
+            echo "--- $cmd"
+            # shellcheck disable=SC2086
+            set -- ${cmd#garlic }
+            if ! "$GARLIC" "$@" --force; then
+              echo "    ^ FAILED"
+              fail=1
+            fi
+          done < /tmp/cmds
+          [ "$fail" -eq 0 ] || { echo "at least one documented command failed"; exit 1; }
+          echo "all documented commands ran"
