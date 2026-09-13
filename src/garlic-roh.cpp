@@ -963,12 +963,27 @@ void writeROHData(string outfile,
 
             string chr = mapDataByChr->at(rohData->chr[roh])->chr;
             if (chr[0] != 'c' && chr[0] != 'C') chr = "chr" + chr;
+            //BED chromStart is 0-based and chromEnd is exclusive, but
+            //rohData->start is the 1-based physical position of the ROH's
+            //first variant, and it used to be written verbatim.  So
+            //chromEnd - chromStart came out as length-1 for every tract and a
+            //browser drew each ROH one base short and one base right, while
+            //column 5 carried the true length -- the file disagreed with
+            //itself about its own intervals.  Emitting start-1 makes
+            //chromEnd - chromStart == length.
+            //
+            //start and stop are physical positions in both bp and --cm mode
+            //(only column 5 changes to a genetic length), so the shift applies
+            //to both.  Clamped at 0 in case an input carries position 0, which
+            //has no 0-based representation.
+            int bedStart = int(rohData->start[roh]) - 1;
+            if (bedStart < 0) bedStart = 0;
             if(CM){
-                out << chr << "\t" << int(rohData->start[roh]) << "\t" << int(rohData->stop[roh])
+                out << chr << "\t" << bedStart << "\t" << int(rohData->stop[roh])
                     << "\t" << sizeClassLab << "\t" << size << "\t.\t0\t0\t" << color << endl;
             }
             else{
-                out << chr << "\t" << int(rohData->start[roh]) << "\t" << int(rohData->stop[roh])
+                out << chr << "\t" << bedStart << "\t" << int(rohData->stop[roh])
                     << "\t" << sizeClassLab << "\t" << int(size) << "\t.\t0\t0\t" << color << endl;
             }
         }

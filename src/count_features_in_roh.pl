@@ -104,7 +104,12 @@ while ( defined( my $rohline = <ROH> ) ) {
     else {
         my ( $chr, $start, $end, $class, $size, $junk )
             = split( /\s+/, $rohline, 6 );
-        my @tmp = ( $start, $end - 1, $class );
+
+        #$start is BED chromStart (0-based), $end is chromEnd (exclusive), and
+        #the positions queried below are 1-based, so the closed 1-based
+        #interval is [$start+1, $end].  This used to read ($start, $end-1),
+        #which both began one base early and dropped the ROH's last base.
+        my @tmp = ( $start + 1, $end, $class );
         push( @{ $ROH{$ind}{$chr} }, \@tmp );
     }
 }
