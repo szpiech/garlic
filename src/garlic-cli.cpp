@@ -208,6 +208,15 @@ const bool DEFAULT_VERBOSE = false;
 const string HELP_VERBOSE = "Show the progress bar even when stderr is not a terminal. By default it is\n\
 \tdrawn only on a terminal, because it works by emitting backspaces.";
 
+const string ARG_AUTOSOMES_ONLY = "--autosomes-only";
+const bool DEFAULT_AUTOSOMES_ONLY = false;
+const string HELP_AUTOSOMES_ONLY = "Drop sex chromosomes (X, Y, 23, 24) before calling. A hemizygous male\n\
+\tgenotype is written as a homozygous call in a TPED and is indistinguishable\n\
+\tfrom true autozygosity, so a male X chromosome is called as one run spanning\n\
+\tthe whole chromosome. garlic warns when sex chromosomes are present; this\n\
+\tremoves them. Not the default, because it would change results for anyone\n\
+\talready analysing them deliberately.";
+
 const string ARG_CHR = "--chr";
 const string HELP_CHR = "Analyse only these chromosomes, e.g. --chr chr1 chr2 chrX. Names are matched\n\
 \tafter normalisation, so '1' and 'chr1' are the same. It is an error to name a\n\
@@ -357,6 +366,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_LOAD_PARAMS, DEFAULT_LOAD_PARAMS, "", HELP_LOAD_PARAMS);
 	params->addFlag(ARG_QUIET, DEFAULT_QUIET, "", HELP_QUIET);
 	params->addFlag(ARG_VERBOSE, DEFAULT_VERBOSE, "", HELP_VERBOSE);
+	params->addFlag(ARG_AUTOSOMES_ONLY, DEFAULT_AUTOSOMES_ONLY, "", HELP_AUTOSOMES_ONLY);
 	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
 	params->addFlag(ARG_OUTDIR, DEFAULT_OUTDIR, "", HELP_OUTDIR);
 	params->addFlag(ARG_FROH, DEFAULT_FROH, "", HELP_FROH);

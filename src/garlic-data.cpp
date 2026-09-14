@@ -62,6 +62,48 @@ static double AUTO_OVERLAP_INTERCEPT = 63.888;
 
 void setAutoOverlapCoef(double slope, double intercept) { AUTO_OVERLAP_SLOPE = slope; AUTO_OVERLAP_INTERCEPT = intercept; }
 
+bool isSexChromosome(const string &chr)
+{
+    return (chr == "chrX" || chr == "chrY" || chr == "chr23" || chr == "chr24");
+}
+
+bool warnSexChromosomes(vector< MapData * > *mapDataByChr, IndData *indData)
+{
+    vector<string> found;
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+        if (isSexChromosome(mapDataByChr->at(chr)->chr))
+            found.push_back(mapDataByChr->at(chr)->chr);
+
+    if (found.empty()) return false;
+
+    int males = 0, known = 0;
+    for (int i = 0; i < indData->nind; i++)
+    {
+        if (indData->sex[i] == 1) males++;
+        if (indData->sex[i] != 0) known++;
+    }
+
+    string list;
+    for (unsigned int i = 0; i < found.size(); i++)
+    {
+        if (i) list += ", ";
+        list += found[i];
+    }
+
+    LOG.err("WARNING: the data contains sex chromosomes:", list);
+    LOG.err("WARNING: a hemizygous male genotype is written as a homozygous call in a TPED, so");
+    LOG.err("WARNING: it is indistinguishable from true autozygosity. Male X chromosomes will");
+    LOG.err("WARNING: therefore be called as one run spanning the whole chromosome, and any");
+    LOG.err("WARNING: FROH computed from that will be inflated. Use --autosomes-only to drop");
+    LOG.err("WARNING: these chromosomes, or restrict to females with --tfam.");
+    if (known == 0)
+        LOG.err("WARNING: the TFAM did not record sex, so the number of affected individuals is unknown.");
+    else
+        LOG.err("WARNING: individuals coded male in the TFAM:", males);
+
+    return true;
+}
+
 int filterChromosomes(vector<string> &keep,
                       vector< MapData * > **mapDataByChr,
                       vector< HapData * > **hapDataByChr,
@@ -1885,6 +1927,7 @@ void releaseIndData(IndData *data)
 {
     delete [] data->indID;
     delete [] data->pop;
+    delete [] data->sex;
     delete data;
     return;
 }
@@ -2395,6 +2438,14 @@ IndData *readIndData3(string filename, int numInd)
         ss >> pop >> ind;
         indData->indID[i] = ind;
         indData->pop[i] = pop;
+        //Columns 3-5 of a TFAM are father, mother, sex.  Absent in some files,
+        //so read them only if they are there and leave sex unknown otherwise.
+        string pat, mat, sexField;
+        if (ss >> pat >> mat >> sexField)
+        {
+            if (sexField == "1") indData->sex[i] = 1;
+            else if (sexField == "2") indData->sex[i] = 2;
+        }
         ss.clear();
     }
     fin.close();
@@ -2415,6 +2466,9 @@ IndData *initIndData(int nind)
     data->nind = nind;
     data->indID = new string[nind];
     data->pop = new string[nind];
+    data->sex = new int[nind];
+
+    for (int ind = 0; ind < nind; ind++) data->sex[ind] = 0;
 
     for (int ind = 0; ind < nind; ind++)
     {

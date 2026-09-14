@@ -177,6 +177,10 @@ extern const string ARG_VERBOSE;
 extern const bool DEFAULT_VERBOSE;
 extern const string HELP_VERBOSE;
 
+extern const string ARG_AUTOSOMES_ONLY;
+extern const bool DEFAULT_AUTOSOMES_ONLY;
+extern const string HELP_AUTOSOMES_ONLY;
+
 extern const string ARG_CHR;
 extern const string HELP_CHR;
 

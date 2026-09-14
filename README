@@ -183,6 +183,9 @@ strings. Do not edit by hand.
 --auto-winsize-threshold <double>: Smoothness criterion at which the --auto-winsize search stops. Lower values demand a smoother LOD score density and therefore a larger window.
 	Default: 0.5
 
+--autosomes-only <bool>: Drop sex chromosomes (X, Y, 23, 24) before calling. A hemizygous male genotype is written as a homozygous call in a TPED and is indistinguishable from true autozygosity, so a male X chromosome is called as one run spanning the whole chromosome. garlic warns when sex chromosomes are present; this removes them. Not the default, because it would change results for anyone already analysing them deliberately.
+	Default: false
+
 --build <string>: Choose which genome build to use for centromere locations (hg18, hg19, or hg38).
 	Default: none
 

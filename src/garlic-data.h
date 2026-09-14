@@ -84,6 +84,10 @@ struct IndData
 {
   string *pop;
   string *indID;
+  //TFAM column 5, PLINK coding: 1 male, 2 female, 0 or -9 unknown.  Only used
+  //to make the sex-chromosome warning specific about how many individuals
+  //would be affected; garlic does not condition any calculation on it.
+  int *sex;
   int nind;
 };
 
@@ -183,6 +187,17 @@ void setAutoOverlapCoef(double slope, double intercept);
 //is consumed positionally against the TPED, so dropping TPED rows at read time
 //would desynchronise it.  Peak memory is therefore unchanged; runtime after
 //the read is not.
+//True for X, Y, chrX, chrY, 23, 24, chr23, chr24 (PLINK numbers X as 23 and
+//Y as 24).  Names arrive already normalised by checkChrName.
+bool isSexChromosome(const string &chr);
+
+//Hemizygous male genotypes on chrX are written as homozygous calls in a TPED
+//and are indistinguishable from true autozygosity, so a male X chromosome
+//looks like one chromosome-length run.  Warns, and reports how many
+//individuals are coded male if the TFAM said.  Returns true if any sex
+//chromosome is present.
+bool warnSexChromosomes(vector< MapData * > *mapDataByChr, IndData *indData);
+
 int filterChromosomes(vector<string> &keep,
                       vector< MapData * > **mapDataByChr,
                       vector< HapData * > **hapDataByChr,

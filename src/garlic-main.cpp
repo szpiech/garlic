@@ -432,6 +432,34 @@ int main(int argc, char *argv[])
     //chrCoordList->clear();
     //delete chrCoordList;
 
+    //A hemizygous male genotype is indistinguishable from a homozygous call,
+    //so warn whenever a sex chromosome is present and offer to drop it.
+    bool haveSexChr = warnSexChromosomes(mapDataByChr, indData);
+
+    if (params->getBoolFlag(ARG_AUTOSOMES_ONLY))
+    {
+        if (!haveSexChr)
+        {
+            LOG.log("--autosomes-only: no sex chromosomes in the data, nothing to drop.");
+        }
+        else
+        {
+            vector<string> autosomes;
+            for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+                if (!isSexChromosome(mapDataByChr->at(chr)->chr))
+                    autosomes.push_back(mapDataByChr->at(chr)->chr);
+            if (autosomes.empty())
+            {
+                LOG.err("ERROR: --autosomes-only leaves no data: every chromosome is a sex chromosome.");
+                return 1;
+            }
+            int nkept = filterChromosomes(autosomes, &mapDataByChr, &hapDataByChr,
+                                          &freqDataByChr, &GLDataByChr, USE_GL);
+            LOG.log("--autosomes-only: kept", nkept);
+            LOG.log("chromosomes after dropping sex chromosomes:", int(mapDataByChr->size()));
+        }
+    }
+
     vector<string> keepChr = params->getStringListFlag(ARG_CHR);
     if (params->isFlagSet(ARG_CHR))
     {
