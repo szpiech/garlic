@@ -74,10 +74,28 @@ unit_tests() {
 # regression there would reintroduce seed dependence.
 # ---------------------------------------------------------------------------
 # Every input named here is TRACKED in git, so a fresh clone can run this.
-# The chr21.* files and example.GQ.tgls.gz exist in the author's working copy
-# but are not in the repository (.gitignore has *.gz and only the example.*
-# files were force-added), so cases needing them are listed as optional below
-# and skipped rather than failed when absent.
+# The four chr21.* files were force-added for exactly that reason (.gitignore
+# has *.gz).  example.GQ.tgls.gz is still untracked, so the tgls_gq case is
+# skipped rather than failed when it is absent.
+#
+# Most cases run on chr21 (8,599 loci) rather than genome-wide (577,489), so
+# the suite is fast.  Four deliberately stay genome-wide because nothing
+# smaller covers them: unweighted (22 chromosomes, per-chromosome centromere
+# handling, genome-wide allele frequencies), chr_subset (needs more than one
+# chromosome to select from), multiclass (needs a spread of ROH lengths to
+# reach twelve size classes), and tgls_gl.
+#
+# TWO VACUITY TRAPS, both of which produced silently meaningless cases here
+# before being caught:
+#   - chr21.tgls.gz yields ZERO ROH at every cutoff tried, so a --tgls case on
+#     chr21 comparing .roh.bed compares two empty files.  c21_tgls_rawlod
+#     therefore compares raw LOD scores instead, which are non-empty (45 rows
+#     x 8,319 windows) and verified to DIFFER from the same run without --tgls.
+#   - example.GQ.tgls.gz is GQ 30 for every genotype, and GQ 30 converts to an
+#     error rate of exactly 0.001, so tgls_gq reproduces the unweighted run
+#     byte for byte.  That is expected, not a redundant case.
+# The golden stage asserts every .roh.bed case called at least one ROH, so a
+# case cannot silently become vacuous again.
 #
 # Every case is fully specified where it can be -- explicit --lod-cutoff and
 # --size-bounds -- so no value is estimated and the output is a deterministic
@@ -87,17 +105,19 @@ unit_tests() {
 # dependence.
 CASES="
 unweighted|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz
-autocutoff|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001|roh.bed
-autowinsize|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --auto-winsize --winsize 30 --error 0.001|roh.bed
-weighted|--tped $EX/example.tped.gz --tfam $EX/example.tfam --map $EX/example.map.gz --weighted --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
-cm|--tped $EX/example.tped.gz --tfam $EX/example.tfam --map $EX/example.map.gz --cm --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 0.5 1.0|roh.bed
-phased|--tped $EX/example.tped.gz --tfam $EX/example.tfam --phased --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
-tgls_gl|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $EX/example.tgls.gz --gl-type GL --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
-rawlod|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr22.raw.lod.windows.gz
-freqonly|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --error 0.001 --freq-only|freq.gz
-froh|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --froh|roh.bed froh.tsv
 chr_subset|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --chr chr21 chr22|roh.bed
 multiclass|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 1e5 2e5 3e5 5e5 1e6 2e6 3e6 4e6 5e6 6e6 7e6|roh.bed
+tgls_gl|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $EX/example.tgls.gz --gl-type GL --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
+c21_unweighted|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz
+c21_autocutoff|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001|roh.bed
+c21_autowinsize|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --auto-winsize --winsize 30 --error 0.001|roh.bed
+c21_weighted|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --map $EX/chr21.map.gz --weighted --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
+c21_cm|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --map $EX/chr21.map.gz --cm --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 0.5 1.0|roh.bed
+c21_phased|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --phased --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
+c21_froh|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --froh|roh.bed froh.tsv
+c21_rawlod|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
+c21_freqonly|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --error 0.001 --freq-only|freq.gz
+c21_tgls_rawlod|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --tgls $EX/chr21.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
 tgls_gq|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $EX/example.GQ.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
 "
 
@@ -130,6 +150,22 @@ golden() {
                 echo "  FAIL  $name: expected output $name.$suffix was not created"
                 echo x >>"$WORK/failures"; continue
             fi
+            # A case that calls no ROH compares two empty files and proves
+            # nothing.  This is how two vacuous cases got into this suite.
+            case "$suffix" in
+                roh.bed)
+                    # NOT 'grep -vc ... || echo 0': grep -vc prints 0 AND
+                    # exits 1 when nothing matches, so the || fires too and
+                    # tracts becomes "0\n0", which makes [ -eq ] a syntax
+                    # error and this guard silently never fires.  wc always
+                    # exits 0.
+                    tracts=$(grep -v '^track' "$f" 2>/dev/null | wc -l | tr -d ' ')
+                    if [ "$tracts" -eq 0 ]; then
+                        echo "  FAIL  $name: called 0 ROH -- this case is vacuous"
+                        echo x >>"$WORK/failures"; continue
+                    fi
+                    ;;
+            esac
             case "$suffix" in *.gz) got=$(sumgz "$f");; *) got=$(sum "$f");; esac
             g=$GOLDEN/$name.$suffix.md5
             if [ "$BLESS" = yes ]; then
@@ -158,12 +194,13 @@ golden() {
 determinism() {
     echo "== determinism =="
     for i in 1 2 3; do
-        $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 \
+        $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 \
                 --winsize 60 --error 0.001 --out "$WORK/det$i" --quiet --force >/dev/null 2>&1
     done
     a=$(sum "$WORK/det1.roh.bed"); b=$(sum "$WORK/det2.roh.bed"); c=$(sum "$WORK/det3.roh.bed")
     if [ "$a" = "$b" ] && [ "$b" = "$c" ]; then
-        s1=$(grep -c . "$WORK/det1.params.json" 2>/dev/null || echo 0)
+        s1=$(wc -l <"$WORK/det1.params.json" 2>/dev/null | tr -d ' ')
+        [ -n "$s1" ] || s1=0
         [ "$s1" -gt 0 ] || bad "no params.json written"
         ok
     else
@@ -217,7 +254,7 @@ exit_codes() {
 # ---------------------------------------------------------------------------
 params_roundtrip() {
     echo "== params round trip =="
-    $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --map "$EX/example.map.gz" \
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --map "$EX/chr21.map.gz" \
             --weighted --build hg18 --winsize 60 --error 0.001 --froh \
             --out "$WORK/rt1" --quiet --force >/dev/null 2>&1
     $GARLIC --load-params "$WORK/rt1.params.json" --out "$WORK/rt2" --quiet --force >/dev/null 2>&1
@@ -236,7 +273,7 @@ params_roundtrip() {
 # ---------------------------------------------------------------------------
 bed_format() {
     echo "== bed format =="
-    f=$WORK/unweighted.roh.bed
+    f=$WORK/c21_unweighted.roh.bed
     [ -f "$f" ] || { bad "no bed file to check (golden stage did not run)"; return; }
     bad_rows=$(grep -v '^track' "$f" | awk '$3-$2 != $5 || $2 < 0 {n++} END {print n+0}')
     if [ "$bad_rows" -eq 0 ]; then ok
