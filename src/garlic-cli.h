@@ -177,6 +177,10 @@ extern const string ARG_VERBOSE;
 extern const bool DEFAULT_VERBOSE;
 extern const string HELP_VERBOSE;
 
+extern const string ARG_NO_CENTROMERE;
+extern const bool DEFAULT_NO_CENTROMERE;
+extern const string HELP_NO_CENTROMERE;
+
 extern const string ARG_AUTOSOMES_ONLY;
 extern const bool DEFAULT_AUTOSOMES_ONLY;
 extern const string HELP_AUTOSOMES_ONLY;
@@ -246,7 +250,7 @@ bool checkOutfileClobber(string outfile, bool force);
 bool checkSeed(int seed);
 bool checkMaxWinsize(int maxWinsize, int winsize);
 bool checkBuild(string BUILD);
-bool checkBuildAndCentromereFile(string BUILD, string centromereFile);
+bool checkBuildAndCentromereFile(string BUILD, string centromereFile, bool NO_CENTROMERE);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE, bool wasSet);
 bool checkAutoFreq(string freqfile, bool FREQ_ONLY, bool &AUTO_FREQ);
 bool checkAutoWinsizeStep(int auto_winsize_step);

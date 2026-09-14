@@ -122,7 +122,8 @@ int main(int argc, char *argv[])
     LOG.log("Genome build:", BUILD);
 
     string centromereFile = params->getStringFlag(ARG_CENTROMERE_FILE);
-    argerr = argerr || checkBuildAndCentromereFile(BUILD, centromereFile);
+    bool NO_CENTROMERE = params->getBoolFlag(ARG_NO_CENTROMERE);
+    argerr = argerr || checkBuildAndCentromereFile(BUILD, centromereFile, NO_CENTROMERE);
     if (argerr) return 1;
     LOG.log("User defined centromere file:", centromereFile);
 
@@ -326,7 +327,16 @@ int main(int argc, char *argv[])
 
 //++++++++++Datafile reading++++++++++
     centromere *centro;
-    centro = new centromere(BUILD, centromereFile, DEFAULT_CENTROMERE_FILE);
+    if (NO_CENTROMERE)
+    {
+        //Empty gap table: every centromereStart/End returns 0, and the
+        //missing-chromosome warning is suppressed because the absence is
+        //deliberate rather than a chromosome-name mismatch.
+        centro = new centromere();
+        centro->suppressMissingWarnings();
+        LOG.log("--no-centromere: treating every chromosome as having no assembled gap.");
+    }
+    else centro = new centromere(BUILD, centromereFile, DEFAULT_CENTROMERE_FILE);
 
     int numLoci, numInd;
     double variantDensity = -1;;

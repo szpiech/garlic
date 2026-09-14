@@ -208,6 +208,14 @@ const bool DEFAULT_VERBOSE = false;
 const string HELP_VERBOSE = "Show the progress bar even when stderr is not a terminal. By default it is\n\
 \tdrawn only on a terminal, because it works by emitting backspaces.";
 
+const string ARG_NO_CENTROMERE = "--no-centromere";
+const bool DEFAULT_NO_CENTROMERE = false;
+const string HELP_NO_CENTROMERE = "Treat every chromosome as having no assembled gap, instead of requiring\n\
+\t--build or --centromere. For organisms with no centromere gap in the\n\
+\tassembly, and for references garlic has no built-in table for (only hg18,\n\
+\thg19 and hg38 are built in; T2T-CHM13 is not). Mutually exclusive with\n\
+\t--build and --centromere.";
+
 const string ARG_AUTOSOMES_ONLY = "--autosomes-only";
 const bool DEFAULT_AUTOSOMES_ONLY = false;
 const string HELP_AUTOSOMES_ONLY = "Drop sex chromosomes (X, Y, 23, 24) before calling. A hemizygous male\n\
@@ -366,6 +374,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_LOAD_PARAMS, DEFAULT_LOAD_PARAMS, "", HELP_LOAD_PARAMS);
 	params->addFlag(ARG_QUIET, DEFAULT_QUIET, "", HELP_QUIET);
 	params->addFlag(ARG_VERBOSE, DEFAULT_VERBOSE, "", HELP_VERBOSE);
+	params->addFlag(ARG_NO_CENTROMERE, DEFAULT_NO_CENTROMERE, "", HELP_NO_CENTROMERE);
 	params->addFlag(ARG_AUTOSOMES_ONLY, DEFAULT_AUTOSOMES_ONLY, "", HELP_AUTOSOMES_ONLY);
 	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
 	params->addFlag(ARG_OUTDIR, DEFAULT_OUTDIR, "", HELP_OUTDIR);
@@ -539,9 +548,24 @@ bool checkBuild(string BUILD)
 	return false;
 }
 
-bool checkBuildAndCentromereFile(string BUILD, string centromereFile) {
-	if (BUILD.compare(DEFAULT_BUILD) == 0 && centromereFile.compare(DEFAULT_CENTROMERE_FILE) == 0) {
-		LOG.err("ERROR: Must choose hg18/hg19/hg38 for build version or provide a custom centromere file.");
+bool checkBuildAndCentromereFile(string BUILD, string centromereFile, bool NO_CENTROMERE) {
+	bool haveBuild = (BUILD.compare(DEFAULT_BUILD) != 0);
+	bool haveFile = (centromereFile.compare(DEFAULT_CENTROMERE_FILE) != 0);
+
+	if (NO_CENTROMERE)
+	{
+		//Saying both "there is no gap" and "here is the gap" is a contradiction,
+		//so reject it rather than silently preferring one.
+		if (haveBuild || haveFile) {
+			LOG.err("ERROR: --no-centromere cannot be combined with --build or --centromere.");
+			return true;
+		}
+		return false;
+	}
+
+	if (!haveBuild && !haveFile) {
+		LOG.err("ERROR: Must choose hg18/hg19/hg38 for build version, provide a custom centromere");
+		LOG.err("ERROR: file, or pass --no-centromere if the assembly has no centromere gap.");
 		return true;
 	}
 	return false;

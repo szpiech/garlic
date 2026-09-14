@@ -267,6 +267,9 @@ strings. Do not edit by hand.
 --nclust <int>: Set number of clusters for GMM classification of ROH lengths.
 	Default: 3
 
+--no-centromere <bool>: Treat every chromosome as having no assembled gap, instead of requiring --build or --centromere. For organisms with no centromere gap in the assembly, and for references garlic has no built-in table for (only hg18, hg19 and hg38 are built in; T2T-CHM13 is not). Mutually exclusive with --build and --centromere.
+	Default: false
+
 --no-kde-thinning <bool>: Set this flag to send all LOD score data to KDE function. This may dramatically increase runtime.
 	Default: false
 
