@@ -92,7 +92,7 @@ const string HELP_GL_TYPE = "Specify the form of the genotype likelihood data: G
 const string ARG_MAP = "--map";
 const string DEFAULT_MAP = "none";
 const string HELP_MAP = "Provide a scaffold genetic map, sites that aren't present within this file are interpolated.\n\
-\tSites outside the bounds are filtered. This is required for wLOD calcualtions\n\
+\tSites outside the bounds are filtered. This is required for wLOD calculations\n\
 \tand any runs for which you wish to report ROH in units of cM.";
 
 const string ARG_WEIGHTED = "--weighted";
@@ -156,7 +156,7 @@ const string HELP_CENTROMERE_FILE = "Provide custom centromere boundaries. Forma
 
 const string ARG_M = "--M";
 const int DEFAULT_M = 7;
-const string HELP_M = "The expected number of meioses since a recent common ancestor for --weighted calcualtion.";
+const string HELP_M = "The expected number of meioses since a recent common ancestor for --weighted calculation.";
 
 const string ARG_MU = "--mu";
 const double DEFAULT_MU = 1e-9;
