@@ -12,7 +12,6 @@
 #include "garlic-kde.h"
 #include "param_t.h"
 #include "garlic-centromeres.h"
-#include <gsl/gsl_errno.h>
 
 using namespace std;
 
@@ -25,20 +24,6 @@ string getCommandLineString(int argc, char *argv[])
     return str;
 }
 
-//GSL's default handler calls abort(), so a domain error deep in the GMM killed
-//the process with SIGABRT after all the work was done.  Turn it into the throw
-//the surrounding code already handles.
-static void garlicGSLError(const char *reason, const char *file, int line, int gsl_errno)
-{
-    LOG.err("ERROR: numerical failure in GSL:", string(reason));
-    LOG.err("\tat", string(file), false);
-    LOG.err(":", line);
-    LOG.err("\tThis usually means degenerate input to the size-class GMM (for example");
-    LOG.err("\ta LOD cutoff so low that every window is called, giving near-identical");
-    LOG.err("\tROH lengths). Pass --size-bounds to set the boundaries explicitly.");
-    (void)gsl_errno;
-    throw 0;
-}
 
 //Discards whatever is written to it; used to silence stdout under --quiet
 //without touching every cout site.
@@ -51,8 +36,6 @@ static NullBuf GARLIC_NULLBUF;
 
 int main(int argc, char *argv[])
 {
-    gsl_set_error_handler(&garlicGSLError);
-
     #ifdef PTW32_STATIC_LIB
         pthread_win32_process_attach_np();
     #endif

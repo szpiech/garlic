@@ -1,17 +1,18 @@
 #include "garlic-data.h"
 #include <random>
 
-static gsl_rng *GARLIC_RNG = NULL;
+static GarlicRNG *GARLIC_RNG = NULL;
 
 void initRNG(unsigned long int seed)
 {
-    if (GARLIC_RNG != NULL) gsl_rng_free(GARLIC_RNG);
-    GARLIC_RNG = gsl_rng_alloc(gsl_rng_default);
-    gsl_rng_set(GARLIC_RNG, seed);
+    if (GARLIC_RNG != NULL) delete GARLIC_RNG;
+    //GarlicRNG reproduces gsl_rng_mt19937 (which was gsl_rng_default) stream
+    //for stream, so a seeded run gives exactly the results it did with GSL.
+    GARLIC_RNG = new GarlicRNG(seed);
     return;
 }
 
-gsl_rng *getRNG()
+GarlicRNG *getRNG()
 {
     if (GARLIC_RNG == NULL)
     {
@@ -26,7 +27,7 @@ gsl_rng *getRNG()
 
 void freeRNG()
 {
-    if (GARLIC_RNG != NULL) gsl_rng_free(GARLIC_RNG);
+    if (GARLIC_RNG != NULL) delete GARLIC_RNG;
     GARLIC_RNG = NULL;
     return;
 }
@@ -176,7 +177,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                                    vector< FreqData * > **freqDataByChr,
                                    char TPED_MISSING, int nresample, bool PHASED, bool AUTO_FREQ)
 {
-    gsl_rng *r = getRNG();
+    GarlicRNG *r = getRNG();
 
     igzstream fin;
     fin.open(tpedfile.c_str());
@@ -387,7 +388,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
             if (nresample > 0 && total != 0){
                 int count = 0;
                 for (int i = 0; i < nresample; i++){
-                    if (gsl_rng_uniform(r) <= freqtmp) count++;
+                    if (r->uniform() <= freqtmp) count++;
                 }
                 freqtmp = double(count) / double(nresample);
             }
@@ -494,7 +495,7 @@ MapData *initMapData(const vector<double> &geneticPos, const vector<pos_t> &phys
 
 void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING){
     
-    gsl_rng *r = getRNG();
+    GarlicRNG *r = getRNG();
 
     string freqoutfile = outfile + ".freq.gz";
 
@@ -552,7 +553,7 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
         if (nresample > 0 && total != 0){
             count = 0;
             for (int i = 0; i < nresample; i++){
-                if (gsl_rng_uniform(r) <= freq) count++;
+                if (r->uniform() <= freq) count++;
             }
             freq = double(count) / double(nresample);
         }
@@ -590,7 +591,7 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
                                int ldSubsample)
 {
 
-    gsl_rng *r = getRNG();
+    GarlicRNG *r = getRNG();
 
     //to hold the indicies of the randomly selected individuals
     int nind = hapDataByChr->at(0)->nind;
@@ -606,7 +607,7 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
         int* indIndex = new int[nind];
         for (int i = 0; i < nind; i++) indIndex[i] = i;
         randInd = new int[ldSubsample];
-        gsl_ran_choose(r, randInd, ldSubsample, indIndex, nind, sizeof(int));
+        r->choose(randInd, ldSubsample, indIndex, nind);
         delete [] indIndex;
         nind = ldSubsample;
     }
@@ -1632,58 +1633,10 @@ bool goodDouble(string str)
     return 1;
 }
 
-/*
-FreqData *calcFreqData(HapData *hapData, int nresample, const gsl_rng *r)
-{
-    FreqData *freqData = initFreqData(hapData->nloci);
-    double total, freq, count;
+//calcFreqData/calcFreqData2 removed: commented out since before this branch,
+//their only call site in main was commented out too, and they were the last
+//mention of gsl_rng in the tree.
 
-    for (int locus = 0; locus < hapData->nloci; locus++)
-    {
-        total = 0;
-        count = 0;
-        for (int ind = 0; ind < hapData->nind; ind++)
-        {
-            if (hapData->data[locus][ind] != -9)
-            {
-                count += hapData->data[locus][ind];
-                total += 2;
-            }
-        }
-        freq = count / total;
-        if (nresample == 0) freqData->freq[locus] = freq;
-        else
-        {
-            count = 0;
-            for (int i = 0; i < nresample; i++)
-            {
-                if (gsl_rng_uniform(r) <= freq) count++;
-            }
-            freqData->freq[locus] = count / nresample;
-        }
-
-    }
-    return freqData;
-}
-
-vector< FreqData * > *calcFreqData2(vector< HapData * > *hapDataByChr, int nresample)
-{
-    const gsl_rng_type *T;
-    gsl_rng *r;
-    T = gsl_rng_default;
-    r = gsl_rng_alloc (T);
-    gsl_rng_set(r, time(NULL));
-
-    vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
-    for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
-    {
-        FreqData *data = calcFreqData(hapDataByChr->at(chr), nresample, r);
-        freqDataByChr->push_back(data);
-    }
-
-    return freqDataByChr;
-}
-*/
 //allocates the arrays and populates them with MISSING
 FreqData *initFreqData(int nloci)
 {
@@ -2544,7 +2497,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
 
 DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample, int step)
 {
-    gsl_rng *r = getRNG();
+    GarlicRNG *r = getRNG();
 
     //to hold the indicies of the randomly selected individuals
     int nind = winDataByChr->at(0)->nind;
@@ -2559,7 +2512,7 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
         int* indIndex = new int[nind];
         for (int i = 0; i < nind; i++) indIndex[i] = i;
         randInd = new int[subsample];
-        gsl_ran_choose(r, randInd, subsample, indIndex, nind, sizeof(int));
+        r->choose(randInd, subsample, indIndex, nind);
         delete [] indIndex;
         nind = subsample;
     }
@@ -2644,7 +2597,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
                 IndData **subsetIndData,
                 int subsample, bool USE_GL, bool PHASED)
 {
-    gsl_rng *r = getRNG();
+    GarlicRNG *r = getRNG();
 
     int nind = hapDataByChr->at(0)->nind;
     int *randInd;
@@ -2658,7 +2611,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
         int* indIndex = new int[nind];
         for (int i = 0; i < nind; i++) indIndex[i] = i;
         randInd = new int[subsample];
-        gsl_ran_choose(r, randInd, subsample, indIndex, nind, sizeof(int));
+        r->choose(randInd, subsample, indIndex, nind);
         delete [] indIndex;
         nind = subsample;
     }

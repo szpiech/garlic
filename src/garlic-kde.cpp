@@ -14,8 +14,8 @@ double calculateWiggle(KDEResult *kdeResult, int winsize) {
     double tot = 0;
     for (int i = 0; i < kdeResult->size; i++) kdeResult->y[i] = kdeResult->y[i] * 100;
     for (int i = 0; i < kdeResult->size - winsize; i++) {
-        double c0, c1, cov00, cov01, cov11, sumsq;
-        gsl_fit_linear (&(kdeResult->x[i]), 1, &(kdeResult->y[i]), 1, winsize, &c0, &c1, &cov00, &cov01, &cov11, &sumsq);
+        double sumsq;
+        sumsq = garlicFitSumsq(&(kdeResult->x[i]), &(kdeResult->y[i]), winsize);
         tot += sumsq / double(winsize);
     }
     return tot;
@@ -38,7 +38,7 @@ KDEResult *computeKDE(double *data, int size)
 
     double h = nrd0(data, size); // bandwitdh
     double min, max;
-    gsl_stats_minmax(&min, &max, data, 1, n);
+    garlicMinMax(&min, &max, data, n);
     max += CUT * h;
     min -= CUT * h;
 
@@ -113,12 +113,12 @@ void releaseKDEResult(KDEResult *data)
 
 double nrd0(double x[], const int N)
 {
-    gsl_sort(x, 1, N);
-    double hi = gsl_stats_sd(x, 1, N);
+    garlicSort(x, N);
+    double hi = garlicSD(x, N);
     double iqr =
-        gsl_stats_quantile_from_sorted_data (x, 1, N, 0.75) -
-        gsl_stats_quantile_from_sorted_data (x, 1, N, 0.25);
-    double lo = GSL_MIN(hi, iqr / 1.34);
+        garlicQuantileFromSorted(x, N, 0.75) -
+        garlicQuantileFromSorted(x, N, 0.25);
+    double lo = (hi < iqr / 1.34) ? hi : iqr / 1.34;
     double bw = 0.9 * lo * pow(N, -0.2);
     return (bw);
 }
@@ -139,7 +139,7 @@ double nrd0(double x[], const int N)
 //     contributes exactly 0.0, and skipping it is not an approximation --
 //     adding 0.0 cannot change a sum.  This is exactness by construction, not
 //     a tolerance.
-//  2. nrd0() sorts `data` in place (gsl_sort) immediately before we need it, so
+//  2. nrd0() sorts `data` in place (garlicSort) immediately before we need it, so
 //     the contributing range for each target is one binary search.
 //
 //Targets are independent, so the 512 grid points parallelise with no sharing.
@@ -200,7 +200,7 @@ void kdeGaussian(double *data, int n, double h, const double *targets, int M, do
     //future caller changes that.
     bool sorted = true;
     for (int i = 1; i < n; i++) { if (data[i] < data[i - 1]) { sorted = false; break; } }
-    if (!sorted) gsl_sort(data, 1, n);
+    if (!sorted) garlicSort(data, n);
 
     //exp() underflows to exactly 0.0 beyond this separation, so terms outside
     //contribute nothing at all -- not merely something small.

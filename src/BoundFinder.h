@@ -23,7 +23,7 @@
 #ifndef __BOUNDFINDER_H__
 #define __BOUNDFINDER_H__
 
-#include "gsl/gsl_roots.h"
+#include "garlic-math.h"
 #include "garlic-errlog.h"
 
 class BoundFinder
@@ -61,10 +61,6 @@ private:
 
     bool found;
 
-    const gsl_root_fsolver_type *T;
-    gsl_root_fsolver *s;
-
-    gsl_function F;
     static double f(double x, void *p);
 
 };

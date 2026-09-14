@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Build against the platform's own GSL and run the whole test suite.  This is
-  # the job that tells you whether garlic still works.
+  # Build and run the whole test suite.  This is the job that tells you whether
+  # garlic still works.  zlib is the only dependency: GSL was replaced by
+  # src/garlic-math.cpp, so there is nothing to install or vendor.
   test:
     name: test (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
@@ -22,19 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install GSL and zlib
+      - name: Install zlib
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             sudo apt-get update
-            sudo apt-get install -y libgsl-dev zlib1g-dev
-          else
-            brew install gsl
+            sudo apt-get install -y zlib1g-dev
           fi
 
       - name: Build
         working-directory: src
         run: |
-          make GSL_LIBS="-lgsl -lgslcblas" STATIC="${{ matrix.static }}"
+          make STATIC="${{ matrix.static }}"
           ./garlic --version
 
       - name: Test
@@ -46,48 +45,24 @@ jobs:
         working-directory: src
         run: |
           make clean
-          make GSL_LIBS="-lgsl -lgslcblas" STATIC="${{ matrix.static }}" 2>&1 | tee build.log
+          make STATIC="${{ matrix.static }}" 2>&1 | tee build.log
           echo "warnings: $(grep -c 'warning:' build.log || true)"
 
-  # Build the way a user following the README does: against the archives
-  # vendored in lib/.  Kept separate because it depends on those prebuilt
-  # archives matching the runner, which is exactly the fragility that makes it
-  # worth watching.
-  vendored:
-    name: vendored GSL (${{ matrix.label }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {os: ubuntu-latest, label: linux-x86_64}
-          - {os: macos-latest,  label: macos-arm64}
-          - {os: macos-13,      label: macos-x86_64}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        working-directory: src
-        run: make && ./garlic --version
-      - name: Test
-        run: sh test/run_tests.sh
-
-  # The bugs this repository actually shipped were memory errors that produced
-  # plausible output, so run every mode under the sanitizers.
   sanitizers:
     name: asan + ubsan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install GSL and zlib
+      - name: Install zlib
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgsl-dev zlib1g-dev
+          sudo apt-get install -y zlib1g-dev
       - name: Build instrumented
         working-directory: src
         run: |
-          make GSL_LIBS="-lgsl -lgslcblas" STATIC= \
+          make STATIC= \
                OPTFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" \
-               LINK_OPTS="-lgsl -lgslcblas -pthread -fsanitize=address,undefined"
+               LINK_OPTS="-pthread -fsanitize=address,undefined"
       - name: Exercise every mode
         working-directory: src
         env:
@@ -116,14 +91,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install GSL and zlib
+      - name: Install zlib
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgsl-dev zlib1g-dev
+          sudo apt-get install -y zlib1g-dev
       - name: Regenerate and diff
         working-directory: src
         run: |
-          make GSL_LIBS="-lgsl -lgslcblas" STATIC=
+          make STATIC=
           make docs
           cd ..
           if ! git diff --quiet -- README manual/flags.tex; then
@@ -140,13 +115,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install GSL and zlib
+      - name: Install zlib
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgsl-dev zlib1g-dev
+          sudo apt-get install -y zlib1g-dev
       - name: Build
         working-directory: src
-        run: make GSL_LIBS="-lgsl -lgslcblas" STATIC=
+        run: make STATIC=
       - name: Run every documented command
         working-directory: example
         run: |

@@ -8,10 +8,7 @@
 #include <cstring>
 #include <limits>
 //#include <pthread.h>
-#include <gsl/gsl_statistics.h>
-#include <gsl/gsl_sort.h>
-#include <gsl/gsl_math.h>
-#include <gsl/gsl_fit.h>
+#include "garlic-math.h"
 #include "garlic-data.h"
 #include "garlic-errlog.h"
 

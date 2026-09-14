@@ -37,11 +37,15 @@ freq (optional, output during computation, can be generated without running whol
 centromere file (required if no --build is set):
 	<chr> <centromere start> <centromere end>
 
-GARLIC depends on the following libraries, which are included in this repository.
+GARLIC depends on zlib (http://zlib.net/) and nothing else.  A win32 build of zlib is
+included in lib/win32.
 
-GNU GSL: http://www.gnu.org/software/gsl/ 
-FIGTree: http://www.umiacs.umd.edu/~morariu/figtree/
-zlib: http://zlib.net/
+GNU GSL and FIGTree were previously required and are no longer used.  FIGTree was replaced
+by a direct Gaussian sum, which made the KDE reproducible; GSL was replaced by
+src/garlic-math.cpp, which provides the ten routines garlic called and reproduces each of
+them bit for bit, so results are unchanged.  That removed 44 MB of per-platform static
+archives and vendored headers from the repository, and with them the main obstacle to
+building on a cluster.
 
 ---CHANGES---
 UNRELEASED - Correctness, performance, and command line work.

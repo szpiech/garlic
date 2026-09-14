@@ -40,22 +40,19 @@ bad()  { fail=$((fail+1)); echo "  FAIL  $1"; }
 unit_tests() {
     echo "== unit tests =="
     CXX=${CXX:-c++}
-    LIBDIR=""
-    for d in macos-arm macos linux win32; do
-        [ -f "$ROOT/lib/$d/libgsl.a" ] && { LIBDIR=$ROOT/lib/$d; break; }
-    done
     OBJ=""
     for o in "$ROOT"/src/*.o; do
         case "$o" in *garlic-main.o|*countFeatures*) continue;; esac
         [ -f "$o" ] && OBJ="$OBJ $o"
     done
-    if [ -z "$OBJ" ] || [ -z "$LIBDIR" ]; then
-        echo "  SKIP  no object files or GSL archive found (run make in src/ first)"
+    if [ -z "$OBJ" ]; then
+        echo "  SKIP  no object files found (run make in src/ first)"
         return
     fi
+    # zlib is the only external library left; garlic-math.o replaced GSL.
     # shellcheck disable=SC2086
     if $CXX -O1 -std=c++11 -I"$ROOT/include" -I"$ROOT/src" \
-            "$ROOT/test/unit_tests.cpp" $OBJ -lz "$LIBDIR/libgsl.a" "$LIBDIR/libgslcblas.a" \
+            "$ROOT/test/unit_tests.cpp" $OBJ -lz \
             -o "$WORK/unit_tests" 2>"$WORK/unit_build.log"; then
         if "$WORK/unit_tests"; then ok; else bad "unit tests reported failures"; fi
     else

@@ -9,11 +9,9 @@
     Tested in 2013 on a MacPro running OSX 10.8.2, but it should be platform independent as long as GSL is available.
 
   DEPENDENCIES:
-    Requires GNU GSL, which can be found at <http://www.gnu.org/software/gsl/>.
+    Formerly required GNU GSL; now uses only <cmath>.
     When compiling, use the flags
-      -lgsl -lgslcblas
     or
-      $(LIB_PATH)/libgsl.a $(LIB_PATH)/libgslcblas.a
 
   USAGE:
     The class object contains all the machinery to do a GMM estimation with the EM algorithm.
@@ -62,9 +60,10 @@
 
 #include <iostream>
 #include <iomanip>
-#include "gsl/gsl_math.h"
-#include "gsl/gsl_sf_log.h"
 #include <cmath>
+#include "garlic-math.h"
+#include <cmath>
+#include "garlic-math.h"
 #include <limits>
 #include <ctime>
 #include "gmm.h"
@@ -219,8 +218,8 @@ GMM::~GMM()
 
 double GMM::normalLog(double x, double mean, double var)
 {
-  const static double C = (-0.5 * gsl_sf_log(2 * M_PI));
-  return C - (0.5 * gsl_sf_log(var)) - gsl_pow_2(x - mean) / (2.0 * var);
+  const static double C = (-0.5 * log(2 * M_PI));
+  return C - (0.5 * garlicLogChecked(var, "GMM component variance")) - (x - mean) * (x - mean) / (2.0 * var);
 }
 
 
@@ -292,14 +291,14 @@ void GMM::update()
     l_max = -numeric_limits<double>::max();
     for (int i = 0; i < numGaussians; i++)
     {
-      resp[i] = gsl_sf_log(a[i]) + normalLog(x[j], mean[i], var[i]); //calculating log(p_i(x_j|theta_i)
+      resp[i] = garlicLogChecked(a[i], "GMM mixture weight") + normalLog(x[j], mean[i], var[i]); //calculating log(p_i(x_j|theta_i)
       if (resp[i] > l_max) l_max = resp[i];
     }
 
     //logsum to avoid at least 1 underflow
     sum = 0;
     for (int i = 0; i < numGaussians; i++) sum += exp(resp[i] - l_max);
-    tmp = l_max + gsl_sf_log(sum);
+    tmp = l_max + garlicLogChecked(sum, "GMM responsibility sum");
 
     L += tmp;//loglikelihood
 
@@ -326,7 +325,7 @@ void GMM::update()
   }
 
   loglikelihood = L;
-  BIC = -2.0 * loglikelihood + double(3.0 * numGaussians - 1) * gsl_sf_log(dataSize);
+  BIC = -2.0 * loglikelihood + double(3.0 * numGaussians - 1) * log(dataSize);
   return;
 }
 

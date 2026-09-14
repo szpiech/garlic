@@ -10,8 +10,7 @@
 #include "garlic-errlog.h"
 #include "garlic-kde.h"
 #include "gmm.h"
-#include "gsl/gsl_statistics.h"
-#include "gsl/gsl_sort.h"
+#include "garlic-math.h"
 #include "BoundFinder.h"
 #include <limits>
 #include "garlic-pbar.h"

@@ -12,10 +12,9 @@
 #include <cctype>
 #include <map>
 #include "garlic-pos.h"
+#include "garlic-math.h"
 #include <pthread.h>
 #include "gzstream.h"
-#include "gsl/gsl_rng.h"
-#include "gsl/gsl_randist.h"
 #include "garlic-errlog.h"
 #include "garlic-centromeres.h"
 #include "garlic-pbar.h"
@@ -31,7 +30,7 @@ const int MISSING = -9999;
 //same seed.  All consumers are in serial code; do not call these from a worker
 //thread without adding synchronisation.
 void initRNG(unsigned long int seed);
-gsl_rng *getRNG();
+GarlicRNG *getRNG();
 void freeRNG();
 //Draws a nondeterministic seed, for when the user did not supply one.
 unsigned long int drawRandomSeed();
@@ -323,8 +322,6 @@ FreqData *initFreqData(int nloci);
 void releaseFreqData(FreqData *data);
 void releaseFreqData(vector< FreqData * > *freqDataByChr);
 
-FreqData *calcFreqData(HapData *data, int nresample, const gsl_rng *r);
-vector< FreqData * > *calcFreqData2(vector< HapData * > *hapDataByChr, int nresample);
 void writeFreqData(string freqOutfile,
                    vector< FreqData * > *freqDataByChr,
                    vector< MapData * > *mapDataByChr,

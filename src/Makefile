@@ -49,7 +49,12 @@ GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 # -- per-platform settings ---------------------------------------------------
 L_PATH = ../lib/$(PLATFORM)
-GSL_LIBS = $(L_PATH)/libgsl.a $(L_PATH)/libgslcblas.a
+
+# GSL is no longer used.  garlic-math.cpp provides the ten routines it was
+# linked for, reproducing each bit for bit (see that file's header), so the
+# per-platform libgsl.a/libgslcblas.a archives are not needed and neither is
+# a system GSL.  The only remaining external dependency is zlib, plus
+# libpthreadGC2 and libz on win32.
 # figtree/ANN are no longer linked: the KDE evaluates its Gaussian sum directly
 # (see kdeGaussian in garlic-kde.cpp).  The archives remain under lib/ for the
 # moment; nothing references them.
@@ -59,21 +64,20 @@ ifeq ($(PLATFORM),linux)
   # -static is right for the bundled archives (the point of vendoring them is a
   # binary that runs on a cluster without matching libraries), but it cannot
   # work against a shared system GSL.  Build with STATIC= to turn it off:
-  #   make GSL_LIBS="-lgsl -lgslcblas" STATIC=
   STATIC ?= -static
-  LINK_OPTS = $(GSL_LIBS) $(STATIC) -pthread
+  LINK_OPTS = $(STATIC) -pthread
 else ifeq ($(PLATFORM),osx)
   # x86_64 macOS: SSE2 is baseline on x86_64, kept explicit for older toolchains
   ARCHFLAGS = -m64 -msse2
-  LINK_OPTS = $(GSL_LIBS)
+  LINK_OPTS =
 else ifeq ($(PLATFORM),macos-arm)
   # arm64: the x86 ISA flags (-m64 -mmmx -msse -msse2) are meaningless here
   ARCHFLAGS =
-  LINK_OPTS = $(GSL_LIBS)
+  LINK_OPTS =
 else ifeq ($(PLATFORM),win32)
   I_PATH2 = -I ../include/win32
   ARCHFLAGS = -DPTW32_STATIC_LIB
-  LINK_OPTS = $(L_PATH)/libpthreadGC2.a $(GSL_LIBS) \
+  LINK_OPTS = $(L_PATH)/libpthreadGC2.a \
               $(L_PATH)/libz.a -static-libgcc -static-libstdc++
 else
   $(error Unknown PLATFORM '$(PLATFORM)'; expected linux, osx, macos-arm or win32)
@@ -88,7 +92,7 @@ all : garlic
 
 OBJS = garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o \
        garlic-cli.o garlic-errlog.o gmm.o BoundFinder.o gzstream.o \
-       garlic-centromeres.o garlic-pbar.o
+       garlic-centromeres.o garlic-pbar.o garlic-math.o
 
 garlic : $(OBJS)
 	$(CC) -o garlic $(OBJS) -lz $(LINK_OPTS) -L$(L_PATH)

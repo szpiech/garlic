@@ -1357,8 +1357,8 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
     sortIndex = new size_t[ngaussians];
 
     //calculate mean and var for the population size distribution to use for initial guess
-    double var = gsl_stats_variance(rohLength->length, 1, rohLength->size);
-    double mu = gsl_stats_mean(rohLength->length, 1, rohLength->size);
+    double var = garlicVariance(rohLength->length, rohLength->size);
+    double mu = garlicMean(rohLength->length, rohLength->size);
     for (int n = 0; n < ngaussians; n++)
     {
         W[n] = 1.0 / double(ngaussians);
@@ -1378,7 +1378,7 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
         sortIndex[n] = n;
     }
 
-    gsl_sort_index(sortIndex, Mu, 1, ngaussians);
+    garlicSortIndex(sortIndex, Mu, ngaussians);
     char sizeClass = 'A';
 
     for(int i = 0; i < ngaussians; i++){

@@ -9,11 +9,9 @@
     Tested in 2013 on a MacPro running OSX 10.8.2, but it should be platform independent as long as GSL is available.
 
   DEPENDENCIES:
-    Requires GNU GSL, which can be found at <http://www.gnu.org/software/gsl/>.
+    Formerly required GNU GSL; now uses only <cmath>.
     When compiling, use the flags
-      -lgsl -lgslcblas
     or
-      $(LIB_PATH)/libgsl.a $(LIB_PATH)/libgslcblas.a
 
   USAGE:
     The class object contains all the machinery to do a GMM estimation with the EM algorithm.
