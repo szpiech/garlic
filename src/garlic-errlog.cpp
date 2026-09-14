@@ -144,6 +144,17 @@ void errlog::err(string str, int val, bool nl)
 	return;
 }
 
+void errlog::err(string str, long long val, bool nl)
+{
+	//Formatted through the string overload rather than adding another out():
+	//the int overload would narrow a 64-bit position and the double overload
+	//would render it in scientific notation.
+	stringstream ss;
+	ss << val;
+	this->err(str, ss.str(), nl);
+	return;
+}
+
 void errlog::errv(string str, vector<int> &val, bool nl)
 {
 	this->outv(&cerr, str, val, nl);
@@ -274,6 +285,16 @@ void errlog::log(string str, int val, bool nl)
 {
 	this->out(&cout, str, val, nl);
 	this->out(logstream, str, val, nl);
+	return;
+}
+
+void errlog::log(string str, long long val, bool nl)
+{
+	//See err(string, long long, bool): routed through the string overload so a
+	//64-bit position is neither narrowed nor printed in scientific notation.
+	stringstream ss;
+	ss << val;
+	this->log(str, ss.str(), nl);
 	return;
 }
 

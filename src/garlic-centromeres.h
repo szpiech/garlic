@@ -1,6 +1,7 @@
 #ifndef __GARLIC_CENTROMERES_H__
 #define __GARLIC_CENTROMERES_H__
 #include <map>
+#include "garlic-pos.h"
 #include <string>
 #include "gzstream.h"
 #include <iostream>
@@ -15,8 +16,13 @@ public:
 	centromere(string arg, string file, string defaultFileName);
 	centromere();
 
-	int centromereStart(string chr);
-	int centromereEnd(string chr);
+	pos_t centromereStart(string chr);
+	pos_t centromereEnd(string chr);
+
+	//--no-centromere: there is no assembled gap to skip.  Every lookup
+	//returns 0 and the missing-chromosome warning is suppressed, because the
+	//absence is the user's explicit choice rather than a name mismatch.
+	void suppressMissingWarnings();
 
 	void readCustomCentromeres(string filename);
 	void makeHG18();
@@ -26,8 +32,9 @@ public:
 
 private:
 
-	map <string, int> gapStart;
-	map <string, int> gapEnd;
+	map <string, pos_t> gapStart;
+	map <string, pos_t> gapEnd;
+	bool quietMissing;
 
 	int countFields(const string &str);
 	map <string, int> chrWarning;

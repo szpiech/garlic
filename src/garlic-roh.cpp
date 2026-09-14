@@ -20,7 +20,7 @@ int selectWinsizeWeighted(double density){
     return (size >= 10 ? size : 10);
 }
 
-bool inGap(int qStart, int qEnd, int targetStart, int targetEnd)
+bool inGap(pos_t qStart, pos_t qEnd, pos_t targetStart, pos_t targetEnd)
 {
     return ( (targetStart <= qStart && targetEnd >= qStart) ||
              (targetStart <= qEnd && targetEnd >= qEnd) ||
@@ -58,7 +58,7 @@ static void *parallelLOD(void *order)
     LOD_work_order_t *p = (LOD_work_order_t *)order;
     geno_t **data = p->hapData->data;
     const int nloci = p->hapData->nloci;
-    const int *physicalPos = p->mapData->physicalPos;
+    const pos_t *physicalPos = p->mapData->physicalPos;
     const double *freq = p->freqData->freq;
     double **win = p->winData->data;
     GenoLikeData *GLData = p->GLData;
@@ -312,7 +312,7 @@ void parallelwLOD(void *order){
     geno_t **data = p->hapData->data;
     int nloci = p->hapData->nloci;
     int nind = p->hapData->nind;
-    int *physicalPos = p->mapData->physicalPos;
+    pos_t *physicalPos = p->mapData->physicalPos;
     double *geneticPos = p->mapData->geneticPos;
     double *freq = p->freqData->freq;
     double **win = p->winData->data;
@@ -543,13 +543,13 @@ static void *parallelAssembleROH(void *order)
         {
             WinData *winData = winDataByChr->at(chr);
             MapData *mapData = mapDataByChr->at(chr);
-            int *pos;
+            pos_t *pos;
             double *gpos;
             gpos = mapData->geneticPos;
             pos = mapData->physicalPos;
 
-            int cStart = centro->centromereStart(mapData->chr);
-            int cEnd = centro->centromereEnd(mapData->chr);
+            pos_t cStart = centro->centromereStart(mapData->chr);
+            pos_t cEnd = centro->centromereEnd(mapData->chr);
 
             //translation of the perl script here###Updated to match trevor's algorithm
             //int winStart = -1;
@@ -586,9 +586,9 @@ static void *parallelAssembleROH(void *order)
 
             double gwinStart = -1;
             double gwinStop = -1;
-            int winStart = -1;
+            pos_t winStart = -1;
             int winStartIndex = -1;
-            int winStop = -1;
+            pos_t winStop = -1;
             int winStopIndex = -1;
             for (int w = 0; w < mapData->nloci; w++)
             {
@@ -976,14 +976,14 @@ void writeROHData(string outfile,
             //(only column 5 changes to a genetic length), so the shift applies
             //to both.  Clamped at 0 in case an input carries position 0, which
             //has no 0-based representation.
-            int bedStart = int(rohData->start[roh]) - 1;
+            pos_t bedStart = rohData->start[roh] - 1;
             if (bedStart < 0) bedStart = 0;
             if(CM){
-                out << chr << "\t" << bedStart << "\t" << int(rohData->stop[roh])
+                out << chr << "\t" << bedStart << "\t" << rohData->stop[roh]
                     << "\t" << sizeClassLab << "\t" << size << "\t.\t0\t0\t" << color << endl;
             }
             else{
-                out << chr << "\t" << bedStart << "\t" << int(rohData->stop[roh])
+                out << chr << "\t" << bedStart << "\t" << rohData->stop[roh]
                     << "\t" << sizeClassLab << "\t" << int(size) << "\t.\t0\t0\t" << color << endl;
             }
         }

@@ -42,6 +42,11 @@ public:
 	void errn(char val);
 
 	void err(string str, int val, bool nl = true);
+	//A physical position is a pos_t (int64), which matches neither the int
+	//nor the double overload; without this, printing one is ambiguous, and
+	//routing it through double would render large values in scientific
+	//notation.
+	void err(string str, long long val, bool nl = true);
 	void err(string str, double val, bool nl = true);
 	void err(string str, bool val, bool nl = true);
 	void err(string str, string val, bool nl = true);
@@ -65,6 +70,7 @@ public:
 	void logn(char val);
 
 	void log(string str, int val, bool nl = true);
+	void log(string str, long long val, bool nl = true);
 	void log(string str, double val, bool nl = true);
 	void log(string str, bool val, bool nl = true);
 	void log(string str, string val, bool nl = true);

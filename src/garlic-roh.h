@@ -44,8 +44,10 @@ struct ROHData
 {
   string indID;
   vector<int> chr;
-  vector<double> start;
-  vector<double> stop;
+  //Physical positions in both bp and --cm mode; only length becomes a genetic
+  //distance under --cm, so it stays a double.
+  vector<pos_t> start;
+  vector<pos_t> stop;
   vector<double> length;
 };
 
@@ -194,7 +196,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
 
 vector<int> *getWinsizeList(int lastWinsize, int stepSize, int numThreads);
 
-bool inGap(int qStart, int qEnd, int targetStart, int targetEnd);
+bool inGap(pos_t qStart, pos_t qEnd, pos_t targetStart, pos_t targetEnd);
 
 //int_pair_t selectSizeClasses(ROHLength *rohLength);
 vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST);

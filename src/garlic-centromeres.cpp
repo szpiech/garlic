@@ -1,6 +1,7 @@
 #include "garlic-centromeres.h"
 
 centromere::centromere(string arg, string file, string defaultFileName) {
+	quietMissing = false;
 	if (arg.compare("hg18") == 0) {
 		makeHG18();
 		makeWarning();
@@ -27,12 +28,18 @@ centromere::centromere(string arg, string file, string defaultFileName) {
 centromere::centromere() {
 	gapStart.clear();
 	gapEnd.clear();
+	quietMissing = false;
 	return;
 }
 
-int centromere::centromereStart(string chr) {
+void centromere::suppressMissingWarnings() {
+	quietMissing = true;
+	return;
+}
+
+pos_t centromere::centromereStart(string chr) {
 	if (gapStart.count(chr) == 0) {
-		if (chrWarning[chr] == 0) {
+		if (!quietMissing && chrWarning[chr] == 0) {
 			LOG.err("WARNING: No centromere start information for chr:", chr);
 			LOG.err("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
 			//LOG.log("WARNING: No centromere start information for chr:", chr);
@@ -44,9 +51,9 @@ int centromere::centromereStart(string chr) {
 	return gapStart[chr];
 }
 
-int centromere::centromereEnd(string chr) {
+pos_t centromere::centromereEnd(string chr) {
 	if (gapEnd.count(chr) == 0) {
-		if (chrWarning[chr] == 0) {
+		if (!quietMissing && chrWarning[chr] == 0) {
 			LOG.err("WARNING: No centromere end information for chr:", chr);
 			LOG.err("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
 			//LOG.log("WARNING: No centromere end information for chr:", chr);

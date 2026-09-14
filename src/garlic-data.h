@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cctype>
 #include <map>
+#include "garlic-pos.h"
 #include <pthread.h>
 #include "gzstream.h"
 #include "gsl/gsl_rng.h"
@@ -41,10 +42,21 @@ struct int_pair_t
   int second;
 };
 
+
 //Genotypes take only the values {0, 1, 2} and MISSING(-9), so one signed byte
 //is enough; they used to be stored as short, twice the size for no benefit.
 //(2.0 GB -> 1.0 GB for a 1000-individual, 1M-locus callset.)
 typedef signed char geno_t;
+
+//The value HapData is filled with before the parser overwrites every element.
+//MISSING is -9999, which does not fit in a geno_t and silently wrapped to -15.
+//That was inert -- nothing compares a genotype against MISSING (the parser
+//encodes a missing allele by accumulating -9 per allele), and the LOD lookup
+//maps any genotype outside {0,1,2} to the same default branch lod() used -- but
+//a sentinel that is not the value it claims to be is worth not having.
+const geno_t GENO_UNSET = -9;
+
+
 
 //All four of the bulk structures below are allocated as ONE contiguous block
 //with the row pointers indexing into it, rather than one allocation per locus
@@ -59,19 +71,19 @@ struct HapData
 };
 
 struct GenMapScaffold {
-  int *physicalPos;
+  pos_t *physicalPos;
   double *geneticPos;
-  map<int, int> ppos2index;
+  map<pos_t, int> ppos2index;
   int nloci;
   string chr;
-  int centroStart;
-  int centroEnd;
+  pos_t centroStart;
+  pos_t centroEnd;
   int currentIndex;
 };
 
 struct MapData
 {
-  int *physicalPos;
+  pos_t *physicalPos;
   double *geneticPos;
   string *locusName;
   char *allele;
@@ -212,7 +224,7 @@ HapData *initHapData(const vector< geno_t * > &hap,
                      int nloci, int nind, bool PHASED);
 
 MapData *initMapData(const vector<double> &geneticPos,
-                     const vector<double> &physicalPos,
+                     const vector<pos_t> &physicalPos,
                      const vector<string> &locusNames,
                      const vector<char> &allele,
                      int nloci, string chr);
@@ -266,7 +278,7 @@ void releaseGenoFreq(vector< GenoFreqData * > *genoFreqDataByChr);
 GenoFreqData *calculateGenoFreq(HapData *hapData);
 vector< GenoFreqData * > *calculateGenoFreq(vector <HapData *> *hapDataByChr);
 
-double getMapInfo(int queryPos, GenMapScaffold *scaffold, int &count);
+double getMapInfo(pos_t queryPos, GenMapScaffold *scaffold, int &count);
 double interpolate(double x0, double y0, double x1, double y1, double query);
 int interpolateGeneticmap(vector< MapData * > **mapDataByChr, vector< GenMapScaffold * > *scaffoldMapByChr);
 //Reorders scaffoldMapByChr so entry i is the scaffold for mapDataByChr->at(i).

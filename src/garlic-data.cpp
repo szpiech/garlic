@@ -199,7 +199,8 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     string prevChr = emptyChr;
     double gpos, ppos;
 
-    vector<double> geneticPos, physicalPos;
+    vector<double> geneticPos;
+    vector<pos_t> physicalPos;
     vector<string> locusNames;
     vector<char> allele;
     
@@ -306,7 +307,10 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                 throw 0;
             }
             p = q;
-            physicalPos.push_back(ppos);
+            //strtod is kept so any decimal form still parses; the cast
+            //truncates exactly as the old double-to-int assignment did, but
+            //into 64 bits.
+            physicalPos.push_back(pos_t(ppos));
         }
 
         //--- genotypes ---
@@ -468,10 +472,10 @@ HapData *initHapData(const vector< geno_t * > &hap, const vector< bool * > &fc, 
     return hapData;
 }
 
-MapData *initMapData(const vector<double> &geneticPos, const vector<double> &physicalPos, const vector<string> &locusNames, const vector<char> &allele, int nloci, string chr){
+MapData *initMapData(const vector<double> &geneticPos, const vector<pos_t> &physicalPos, const vector<string> &locusNames, const vector<char> &allele, int nloci, string chr){
 
     MapData *mapData = new MapData;
-    mapData->physicalPos = new int[nloci];
+    mapData->physicalPos = new pos_t[nloci];
     mapData->geneticPos = new double[nloci];
     mapData->locusName = new string[nloci];
     mapData->allele = new char[nloci];
@@ -1108,7 +1112,7 @@ int interpolateGeneticmap(MapData *mapData, GenMapScaffold *scaffold) {
     return numInterpolated;
 }
 
-double getMapInfo(int queryPos, GenMapScaffold *scaffold, int &count) {
+double getMapInfo(pos_t queryPos, GenMapScaffold *scaffold, int &count) {
     if (queryPos < scaffold->physicalPos[0])
     {
         LOG.err("ERROR: Sites outside of map scaffold should have been filtered out by GARLIC.");
@@ -1264,7 +1268,7 @@ vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
 
 GenMapScaffold *initGenMapScaffold(int nloci) {
     GenMapScaffold *scaffoldMap = new GenMapScaffold;
-    scaffoldMap->physicalPos = new int[nloci];
+    scaffoldMap->physicalPos = new pos_t[nloci];
     scaffoldMap->geneticPos = new double[nloci];
     scaffoldMap->nloci = nloci;
     scaffoldMap->currentIndex = 0;
@@ -1869,7 +1873,7 @@ MapData *initMapData(int nloci)
     MapData *data = new MapData;
     data->nloci = nloci;
     data->locusName = new string[nloci];
-    data->physicalPos = new int[nloci];
+    data->physicalPos = new pos_t[nloci];
     data->geneticPos = new double[nloci];
     data->allele = new char[nloci];
     //data->allele0 = new char[nloci];
@@ -2030,6 +2034,11 @@ WinData *initWinData(unsigned int nind, unsigned int nloci)
         data->data[i] = block + size_t(i) * size_t(nloci);
         for (unsigned int j = 0; j < nloci; j++)
         {
+            //MISSING, not GENO_UNSET: this array holds LOD scores, and the
+            //sentinel IS load-bearing here -- tail windows retain it,
+            //writeWinData prints NA for it, and the KDE input skips it with
+            //x != MISSING.  -9 would be a plausible LOD score and would be
+            //taken as real data.
             data->data[i][j] = MISSING;
         }
     }
@@ -2168,7 +2177,7 @@ HapData *initHapData(unsigned int nind, unsigned int nloci, bool PHASED)
         if(PHASED) data->firstCopy[i] = fcBlock + size_t(i) * size_t(nind);
         for (unsigned int j = 0; j < nind; j++)
         {
-            data->data[i][j] = MISSING;
+            data->data[i][j] = GENO_UNSET;
             if(PHASED) data->firstCopy[i][j] = 0;
         }
     }
