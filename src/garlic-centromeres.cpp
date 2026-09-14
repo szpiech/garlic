@@ -14,6 +14,9 @@ centromere::centromere(string arg, string file, string defaultFileName) {
 		makeHG38();
 		makeWarning();
 	}
+	else if (arg.compare("t2t-chm13") == 0) {
+		makeT2TCHM13();
+	}
 	else if (file.compare(defaultFileName) != 0) {
 		readCustomCentromeres(file);
 	}
@@ -112,6 +115,106 @@ string centromere::checkChrName(string chr) {
         chr = "chr" + chr;
     }
     return chr;
+}
+
+void centromere::makeT2TCHM13() {
+	gapStart.clear();
+	gapEnd.clear();
+
+	//T2T-CHM13v2.0 (UCSC hs1) centromere boundaries.
+	//
+	//Derived from the UCSC hs1 cytoBand track, rows with gieStain == "acen",
+	//collapsed to min(chromStart) and max(chromEnd) per chromosome -- the same
+	//derivation centromeres/format_hg38.pl applies to the hg38 table, so this
+	//table means the same thing the other three do.  Source data is kept in
+	//centromeres/centromere_t2t_chm13v2.txt.
+	//
+	//CHM13 assembles the centromere rather than leaving a gap, so "centromere"
+	//here is the annotated region, not a run of Ns.  Total span 67.4 Mb across
+	//24 chromosomes, against 123.7 Mb for hg38 -- the per-chromosome regions are
+	//slightly wider than hg38's modeled centromeres (chr1: 4.50 Mb vs 2.90 Mb)
+	//but there are no unplaced-contig entries.
+	//
+	//If you would rather exclude the alpha-satellite higher-order-repeat arrays,
+	//which is the region where short-read variant calls are least reliable, pass
+	//--centromere centromeres/centromere_t2t_chm13v2_censat_hor.txt instead
+	//(93.0 Mb, derived the same way from the censat track's hor/active_hor rows).
+
+	gapStart["chr1"] = 121796048;
+	gapEnd["chr1"] = 126300487;
+
+	gapStart["chr2"] = 92333543;
+	gapEnd["chr2"] = 94673023;
+
+	gapStart["chr3"] = 91738002;
+	gapEnd["chr3"] = 96415026;
+
+	gapStart["chr4"] = 49705154;
+	gapEnd["chr4"] = 55199795;
+
+	gapStart["chr5"] = 47039134;
+	gapEnd["chr5"] = 49596625;
+
+	gapStart["chr6"] = 58286706;
+	gapEnd["chr6"] = 61058390;
+
+	gapStart["chr7"] = 60414372;
+	gapEnd["chr7"] = 63714499;
+
+	gapStart["chr8"] = 44215832;
+	gapEnd["chr8"] = 46325080;
+
+	gapStart["chr9"] = 44951775;
+	gapEnd["chr9"] = 47582595;
+
+	gapStart["chr10"] = 39633793;
+	gapEnd["chr10"] = 41664589;
+
+	gapStart["chr11"] = 51035789;
+	gapEnd["chr11"] = 54450838;
+
+	gapStart["chr12"] = 34620838;
+	gapEnd["chr12"] = 37202490;
+
+	gapStart["chr13"] = 15547593;
+	gapEnd["chr13"] = 17498291;
+
+	gapStart["chr14"] = 10092112;
+	gapEnd["chr14"] = 12708411;
+
+	gapStart["chr15"] = 16678794;
+	gapEnd["chr15"] = 17694466;
+
+	gapStart["chr16"] = 35848286;
+	gapEnd["chr16"] = 37829521;
+
+	gapStart["chr17"] = 23892419;
+	gapEnd["chr17"] = 27486939;
+
+	gapStart["chr18"] = 15965699;
+	gapEnd["chr18"] = 20933550;
+
+	gapStart["chr19"] = 25817676;
+	gapEnd["chr19"] = 29768171;
+
+	gapStart["chr20"] = 26925852;
+	gapEnd["chr20"] = 29099655;
+
+	gapStart["chr21"] = 10962853;
+	gapEnd["chr21"] = 11306205;
+
+	gapStart["chr22"] = 12788180;
+	gapEnd["chr22"] = 15711065;
+
+	gapStart["chrX"] = 57820107;
+	gapEnd["chrX"] = 60927025;
+
+	gapStart["chrY"] = 10565750;
+	gapEnd["chrY"] = 10883085;
+
+	makeWarning();
+
+	return;
 }
 
 void centromere::makeWarning() {

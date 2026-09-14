@@ -148,7 +148,8 @@ Set <= 0 to use all individuals (will increase runtime).";
 
 const string ARG_BUILD = "--build";
 const string DEFAULT_BUILD = "none";
-const string HELP_BUILD = "Choose which genome build to use for centromere locations (hg18, hg19, or hg38).";
+const string HELP_BUILD = "Choose which genome build to use for centromere locations: hg18, hg19, hg38 or\n\
+\tt2t-chm13 (T2T-CHM13v2.0, UCSC hs1).";
 
 const string ARG_CENTROMERE_FILE = "--centromere";
 const string DEFAULT_CENTROMERE_FILE = "none";
@@ -540,13 +541,15 @@ bool checkBuild(string BUILD)
 	if (BUILD.compare("hg18") != 0 &&
 	        BUILD.compare("hg19") != 0 &&
 	        BUILD.compare("hg38") != 0 &&
-	        BUILD.compare(DEFAULT_BUILD) != 0) {
-		//cerr << "ERROR: Must choose hg18/hg19/hg38/none for build version.\n";
-		LOG.err("ERROR: Must choose hg18/hg19/hg38 for build version or provide a custom centromere file.");
+	        BUILD.compare("t2t-chm13") != 0 &&
+	        BUILD.compare(DEFAULT_BUILD) != 0)
+	{
+		LOG.err("ERROR: Must choose hg18, hg19, hg38 or t2t-chm13 for build version.");
 		return true;
 	}
 	return false;
 }
+
 
 bool checkBuildAndCentromereFile(string BUILD, string centromereFile, bool NO_CENTROMERE) {
 	bool haveBuild = (BUILD.compare(DEFAULT_BUILD) != 0);
@@ -564,8 +567,8 @@ bool checkBuildAndCentromereFile(string BUILD, string centromereFile, bool NO_CE
 	}
 
 	if (!haveBuild && !haveFile) {
-		LOG.err("ERROR: Must choose hg18/hg19/hg38 for build version, provide a custom centromere");
-		LOG.err("ERROR: file, or pass --no-centromere if the assembly has no centromere gap.");
+		LOG.err("ERROR: Must choose hg18/hg19/hg38/t2t-chm13 for build version, provide a custom");
+		LOG.err("ERROR: centromere file, or pass --no-centromere if the assembly has no gap.");
 		return true;
 	}
 	return false;

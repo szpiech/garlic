@@ -28,6 +28,7 @@ public:
 	void makeHG18();
 	void makeHG19();
 	void makeHG38();
+	void makeT2TCHM13();
 	void makeWarning();
 
 private:
