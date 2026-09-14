@@ -123,6 +123,16 @@ private:
 
 };
 
+//Reports the exception currently being handled.  Call it from inside a catch
+//block; it re-throws into its own typed handlers to recover the type.
+//
+//Every `catch (...)` in garlic used to discard the exception AND any
+//diagnostic.  That was harmless for garlic's own failures, which log a cause
+//before throwing an int, but silent for anything the standard library raises:
+//there are ~130 vector::at() calls inside these try blocks, and a bad_alloc on
+//a large callset, so a run could exit 2 having printed nothing at all.
+void logCurrentException(const string &stage);
+
 extern errlog LOG;
 
 #endif

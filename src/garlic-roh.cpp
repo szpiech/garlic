@@ -1006,6 +1006,7 @@ double selectLODCutoff(KDEResult *kdeResult, int wsize, bool &ok)
     try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512, wsize); }
     catch (...)
     {
+        logCurrentException("locating the minimum between LOD score modes");
         LOG.err("ERROR: Failed to find the minimum between modes in the LOD score density.");
         LOG.err("\tResults from density estimation have been written to file for inspection.");
         LOG.err("\tA cutoff can be manually specified on the command line with", ARG_LOD_CUTOFF);
@@ -1034,11 +1035,12 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
 
     //Output kde points
     try { writeKDEResult(kdeResult, kdeoutfile); }
-    catch (...) { ok = false; return -1; }
+    catch (...) { logCurrentException("writing the KDE"); ok = false; return -1; }
 
     try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512, wsize); }
     catch (...)
     {
+        logCurrentException("locating the minimum between LOD score modes");
         LOG.err("ERROR: Failed to find the minimum between modes in the LOD score density.");
         LOG.err("\tResults from density estimation have been written to file for inspection.");
         LOG.err("\tA cutoff can be manually specified on the command line with", ARG_LOD_CUTOFF);
@@ -1118,7 +1120,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
         releaseDoubleData(rawWinData);
 
         try { writeKDEResult(kdeResult, makeKDEFilename(outfile, multiWinsizes[i])); }
-        catch (...) { releaseKDEResult(kdeResult); throw 0; }
+        catch (...) { releaseKDEResult(kdeResult); throw; }   //rethrow, not throw 0: keep the type
         releaseKDEResult(kdeResult);
     }
 
@@ -1221,7 +1223,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
             selectedKDEResult = cloneKDEResult(kdeResult);
             winsize = winsizeQuery;
             try { writeKDEResult(selectedKDEResult, makeKDEFilename(outfile, winsize)); }
-            catch (...) { throw 0; }
+            catch (...) { throw; }   //rethrow, not throw 0: keep the type
         }
         else winsizeQuery += step;
         releaseKDEResult(kdeResult);
@@ -1319,7 +1321,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
             selectedKDEResult = cloneKDEResult(kdeResult);
             winsize = multiWinsizes->at(i);
             try { writeKDEResult(selectedKDEResult, makeKDEFilename(outfile, winsize)); }
-            catch (...) { throw 0; }
+            catch (...) { throw; }   //rethrow, not throw 0: keep the type
             releaseKDEResult(kdeResult);
             break;
         }

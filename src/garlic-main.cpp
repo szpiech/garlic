@@ -373,7 +373,7 @@ int main(int argc, char *argv[])
         }
 
     }
-    catch (...) { return 2; }
+    catch (...) { logCurrentException("reading the input files"); return 2; }
 
 //++++++++++Allele frequencies++++++++++
     if (AUTO_FREQ)
@@ -389,7 +389,7 @@ int main(int argc, char *argv[])
     {
         cout << "Loading user provided allele frequencies from " << freqfile << "\n";
         try { freqDataByChr = readFreqData(freqfile, mapDataByChr); }
-        catch (...) { return 2; }
+        catch (...) { logCurrentException("reading the allele frequency file"); return 2; }
     }
 
 //Filter data based on frequency data.
@@ -504,6 +504,7 @@ int main(int argc, char *argv[])
                                           MAX_WINSIZE);
             }
             catch (...){
+                logCurrentException("automatic window size selection");
                 return 2;
             }
         }
@@ -545,7 +546,7 @@ int main(int argc, char *argv[])
     if (RAW_LOD){
         //Output raw windows
         try { writeWinData(winDataByChr, indData, mapDataByChr, outfile); }
-        catch (...) { return 2; }
+        catch (...) { logCurrentException("writing the raw LOD windows"); return 2; }
     }
 
     if (AUTO_CUTOFF){
@@ -595,7 +596,7 @@ int main(int argc, char *argv[])
             boundSizes = selectSizeClasses(rohLength, NCLUST);
         }
         catch (...) {
-            LOG.err("ERROR: GMM size-class fitting failed.");
+            logCurrentException("GMM size-class fitting");
             LOG.err("\tPass --size-bounds to set the ROH size class boundaries explicitly.");
             return 2;
         }

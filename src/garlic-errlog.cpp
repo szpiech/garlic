@@ -1,4 +1,6 @@
 #include "garlic-errlog.h"
+#include <exception>
+#include <stdexcept>
 
 errlog::errlog()
 {
@@ -577,3 +579,26 @@ void errlog::outn(ostream *out, char val)
 }
 
 errlog LOG;
+
+void logCurrentException(const string &stage)
+{
+    try
+    {
+        throw;                      //re-throw whatever is being handled
+    }
+    catch (const std::exception &e)
+    {
+        LOG.err("ERROR: " + stage + " failed:", string(e.what()));
+    }
+    catch (int code)
+    {
+        //garlic's own signalled failures.  The site that threw has already
+        //reported the cause, so only the stage is added here.
+        LOG.err("ERROR: " + stage + " failed, code", code);
+    }
+    catch (...)
+    {
+        LOG.err("ERROR: " + stage + " failed with an unrecognised exception.");
+    }
+    return;
+}
