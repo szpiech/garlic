@@ -1,5 +1,6 @@
 #include "garlic-errlog.h"
 #include "garlic-cli.h"
+#include "garlic-options.h"
 #include <iostream>
 #include <cstdio>
 #include <unistd.h>
@@ -15,24 +16,8 @@
 
 using namespace std;
 
-string getCommandLineString(int argc, char *argv[])
-{
-    string str = argv[0];
-    for (int i = 1; i < argc; i++) {
-        str += " " + string(argv[i]);
-    }
-    return str;
-}
 
 
-//Discards whatever is written to it; used to silence stdout under --quiet
-//without touching every cout site.
-class NullBuf : public std::streambuf
-{
-protected:
-    int overflow(int c) { return c; }
-};
-static NullBuf GARLIC_NULLBUF;
 
 int main(int argc, char *argv[])
 {
@@ -45,268 +30,58 @@ int main(int argc, char *argv[])
     //0 success, 1 usage error, 2 runtime error.
     if (params == NULL) return (cliStatus == PARAM_HELP) ? 0 : 1;
 
-    string outfile = params->getStringFlag(ARG_OUTFILE);
-    bool QUIET = params->getBoolFlag(ARG_QUIET);
-    bool VERBOSE = params->getBoolFlag(ARG_VERBOSE);
-    if (QUIET && VERBOSE) {
-        LOG.err("ERROR: --quiet and --verbose are mutually exclusive.");
-        return 1;
-    }
-    LOG.setVerbosity(QUIET, VERBOSE);
-    //The bar writes backspaces, so it is only useful on a terminal.
-    setProgressEnabled(!QUIET && (VERBOSE || isatty(STDERR_FILENO)));
-    if (QUIET) cout.rdbuf(&GARLIC_NULLBUF);
-
-    string outdir = params->getStringFlag(ARG_OUTDIR);
-    if (!outdir.empty())
+    GarlicOptions opt;
+    int optStatus = configureFromCommandLine(params, opt, argc, argv);
+    if (optStatus != OPTIONS_OK)
     {
-        if (makeOutdir(outdir)) return 1;
-        if (outdir[outdir.size() - 1] != '/') outdir += "/";
-        outfile = outdir + outfile;
+        //main owns params on every path now.  The --freq-only exit used to
+        //return without deleting it, leaking 249 allocations / 31 KB.
+        delete params;
+        return (optStatus == OPTIONS_USAGE_ERROR) ? 1 : 0;
     }
 
-    LOG.init(outfile);
-    LOG.log(getCommandLineString(argc, argv));
-    LOG.log("Output file basename:", outfile);
-
-    bool argerr = false;
-
-    string tpedfile = params->getStringFlag(ARG_TPED);
-    string tfamfile = params->getStringFlag(ARG_TFAM);
-    string tglsfile = params->getStringFlag(ARG_TGLS);
-    argerr = argerr || checkRequiredFiles(tpedfile, tfamfile);
-    if (argerr) return 1;
-    LOG.log("TPED file:", tpedfile);
-
-    char TPED_MISSING = params->getCharFlag(ARG_TPED_MISSING);
-    LOG.log("TPED missing data code:", TPED_MISSING);
-    LOG.log("TFAM file:", tfamfile);
-    LOG.log("TGLS file:", tglsfile);
-
-    string GL_TYPE = params->getStringFlag(ARG_GL_TYPE);
-    argerr = argerr || checkGLType(GL_TYPE, tglsfile);
-    LOG.log("Genotype likelihood format:", GL_TYPE);
-
-    bool WEIGHTED = params->getBoolFlag(ARG_WEIGHTED);
-    string mapfile = params->getStringFlag(ARG_MAP);
-    bool CM = params->getBoolFlag(ARG_CM);
-    argerr = argerr || checkCM(mapfile, CM);
-    if (argerr) return 1;
-    LOG.log("Measure ROH in genetic distance units:", CM);
-    argerr = argerr || checkMapFile(mapfile, WEIGHTED || CM);
-    LOG.log("Weighted LOD:", WEIGHTED);
-    if (WEIGHTED) {
-        LOG.log("Map file:", mapfile);
-    }
-
-    string BUILD = params->getStringFlag(ARG_BUILD);
-    argerr = argerr || checkBuild(BUILD);
-    if (argerr) return 1;
-    LOG.log("Genome build:", BUILD);
-
-    string centromereFile = params->getStringFlag(ARG_CENTROMERE_FILE);
-    bool NO_CENTROMERE = params->getBoolFlag(ARG_NO_CENTROMERE);
-    argerr = argerr || checkBuildAndCentromereFile(BUILD, centromereFile, NO_CENTROMERE);
-    if (argerr) return 1;
-    LOG.log("User defined centromere file:", centromereFile);
-
-    int nresample = params->getIntFlag(ARG_RESAMPLE);
-    string freqfile = params->getStringFlag(ARG_FREQ_FILE);
-    bool FREQ_ONLY = params->getBoolFlag(ARG_FREQ_ONLY);
-    bool AUTO_FREQ = true;
-    argerr = argerr || checkAutoFreq(freqfile, FREQ_ONLY, AUTO_FREQ);
-    if (argerr) return 1;
-    LOG.log("Calculate allele frequencies only:", FREQ_ONLY);
-    LOG.log("Calculate allele frequencies from data:", AUTO_FREQ);
-    if (!AUTO_FREQ) LOG.log("Allele frequencies file:", freqfile);
-    else
-    {
-        if (nresample <= 0) LOG.log("Allele frequencies resampled: FALSE");
-        else LOG.log("Allele frequencies resampled:", nresample);
-    }
-
-    vector<int> multiWinsizes = params->getIntListFlag(ARG_WINSIZE_MULTI);
-    bool WINSIZE_EXPLORE = false;
-    argerr = argerr || checkMultiWinsizes(multiWinsizes, WINSIZE_EXPLORE, params->isFlagSet(ARG_WINSIZE_MULTI));
-    if (argerr) return 1;
-    LOG.log("Explore window sizes:", WINSIZE_EXPLORE);
-    if (WINSIZE_EXPLORE) LOG.logv("User defined window sizes:", multiWinsizes);
-
-    bool AUTO_WINSIZE = params->getBoolFlag(ARG_AUTO_WINSIZE);
-    argerr = argerr || checkAutoWinsize(WINSIZE_EXPLORE, AUTO_WINSIZE);
-    if (argerr) return 1;
-    LOG.log("Automatic window size:", AUTO_WINSIZE);
-
-    int AUTO_WINSIZE_STEP = params->getIntFlag(ARG_AUTO_WINSIZE_STEP);
-    argerr = argerr || checkAutoWinsizeStep(AUTO_WINSIZE_STEP);
-    if (argerr) return 1;
-    LOG.log("Automatic window step size:", AUTO_WINSIZE_STEP);
-
-    int winsize = params->getIntFlag(ARG_WINSIZE);
-    argerr = argerr || checkWinsize(winsize, WINSIZE_EXPLORE, AUTO_WINSIZE, WEIGHTED, FREQ_ONLY);
-    if (argerr) return 1;
-    if (!WINSIZE_EXPLORE && !AUTO_WINSIZE) LOG.log("User defined window size:", winsize);
-
-    double LOD_CUTOFF = params->getDoubleFlag(ARG_LOD_CUTOFF);
-    bool AUTO_CUTOFF = true;
-    argerr = argerr || checkAutoCutoff(LOD_CUTOFF, AUTO_CUTOFF, params->isFlagSet(ARG_LOD_CUTOFF));
-    if (argerr) return 1;
-    LOG.log("Choose LOD score cutoff automatically:", AUTO_CUTOFF);
-    if (!AUTO_CUTOFF) LOG.log("User defined LOD score cutoff:", LOD_CUTOFF);
-
-    vector<double> boundSizes = params->getDoubleListFlag(ARG_BOUND_SIZE);
-    bool AUTO_BOUNDS = true;
-    argerr = argerr || checkBoundSizes(boundSizes, AUTO_BOUNDS, params->isFlagSet(ARG_BOUND_SIZE));
-    if (argerr) return 1;
-    LOG.log("Choose ROH class thresholds automatically:", AUTO_BOUNDS);
-    if (!AUTO_BOUNDS) LOG.logv("User defined ROH class thresholds:", boundSizes);
-
-    int numThreads = params->getIntFlag(ARG_THREADS);
-    argerr = argerr || checkThreads(numThreads);
-    if (argerr) return 1;
-    LOG.log("Threads:", numThreads);
-    //--threads used to affect only the weighted LD stage; the KDE targets are
-    //independent, so give it the same budget.
-    setKDEThreads(numThreads);
-    setLODThreads(numThreads);
-
-    double error = params->getDoubleFlag(ARG_ERROR);
-    argerr = argerr || checkError(error, tglsfile, params->isFlagSet(ARG_ERROR));
-    if (argerr) return 1;
-    LOG.log("Genotyping error:", error);
-
-    int MAX_GAP = params->getIntFlag(ARG_MAX_GAP);
-    argerr = argerr || checkMaxGap(MAX_GAP);
-    if (argerr) return 1;
-    LOG.log("Max gap:", MAX_GAP);
-
-    double OVERLAP_FRAC = params->getDoubleFlag(ARG_OVERLAP_FRAC);
-    argerr = argerr || checkOverlapFrac(OVERLAP_FRAC);
-    if (argerr) return 1;
-    bool AUTO_OVERLAP_FRAC = params->getBoolFlag(ARG_AUTO_OVERLAP_FRAC);
-    if(AUTO_OVERLAP_FRAC) LOG.log("Overlap fraction: automatic");
-    else if(OVERLAP_FRAC != 0) LOG.log("Overlap fraction:", OVERLAP_FRAC);
-    else LOG.log("Overlap fraction: 1/winsize");
-
-    double mu = params->getDoubleFlag(ARG_MU);
-    argerr = argerr || checkMU(mu);
-    if (argerr) return 1;
-    LOG.log("mu:", mu);
-
-    int M = params->getIntFlag(ARG_M);
-    argerr = argerr || checkM(M);
-    if (argerr) return 1;
-    LOG.log("M:", M);
-
-    int NCLUST = params->getIntFlag(ARG_NCLUST);
-    argerr = argerr || checkNCLUST(NCLUST);
-    if (argerr) return 1;
-    LOG.log("# GMM clusters:", NCLUST);
-    warnBoundsOverridesNclust(params->isFlagSet(ARG_BOUND_SIZE), params->isFlagSet(ARG_NCLUST));
-
-    int KDE_SUBSAMPLE = params->getIntFlag(ARG_KDE_SUBSAMPLE);
-    if (KDE_SUBSAMPLE <= 0) LOG.log("# of rand individuals for KDE: ALL");
-    else LOG.log("# of rand individuals for KDE:", KDE_SUBSAMPLE);
-
-    int LD_SUBSAMPLE = params->getIntFlag(ARG_LD_SUBSAMPLE);
-    if (LD_SUBSAMPLE <= 0) LOG.log("# of rand individuals for LD: ALL");
-    else LOG.log("# of rand individuals for LD:", LD_SUBSAMPLE);
-
-    bool RAW_LOD = params->getBoolFlag(ARG_RAW_LOD);
-    LOG.log("Output raw LOD scores:", RAW_LOD);
-
-    bool PHASED = params->getBoolFlag(ARG_PHASED);
-    LOG.log("Use r2 for weighting phased data:", PHASED);
-
-    //Values that determine a scientific result and used to be unreachable
-    //constants in the source.
-    double AUTO_WINSIZE_THRESHOLD = params->getDoubleFlag(ARG_AUTO_WINSIZE_THRESHOLD);
-    argerr = argerr || checkAutoWinsizeThreshold(AUTO_WINSIZE_THRESHOLD);
-    if (argerr) return 1;
-    LOG.log("Auto window size smoothness threshold:", AUTO_WINSIZE_THRESHOLD);
-    setAutoWinsizeThreshold(AUTO_WINSIZE_THRESHOLD);
-
-    int KDE_POINTS = params->getIntFlag(ARG_KDE_POINTS);
-    double KDE_CUT = params->getDoubleFlag(ARG_KDE_CUT);
-    argerr = argerr || checkKDEPoints(KDE_POINTS) || checkKDECut(KDE_CUT);
-    if (argerr) return 1;
-    LOG.log("KDE grid points:", KDE_POINTS);
-    LOG.log("KDE range extension (bandwidths):", KDE_CUT);
-    setKDEGrid(KDE_POINTS, KDE_CUT);
-
-    int MODE_SPAN = params->getIntFlag(ARG_MODE_SPAN);
-    argerr = argerr || checkModeSpan(MODE_SPAN);
-    if (MODE_SPAN >= KDE_POINTS) {
-        LOG.err("ERROR: --mode-smooth-span must be smaller than --kde-points.");
-        argerr = true;
-    }
-    if (argerr) return 1;
-    LOG.log("Mode smoothing span:", MODE_SPAN);
-    setModeSpan(MODE_SPAN);
-
-    vector<double> awCoef = params->getDoubleListFlag(ARG_AUTO_WINSIZE_COEF);
-    if (params->isFlagSet(ARG_AUTO_WINSIZE_COEF)) {
-        argerr = argerr || checkCoefPair(awCoef, ARG_AUTO_WINSIZE_COEF);
-        if (argerr) return 1;
-        LOG.logv("Auto window size coefficients (slope intercept):", awCoef);
-        setAutoWinsizeCoef(awCoef[0], awCoef[1]);
-    }
-
-    vector<double> aoCoef = params->getDoubleListFlag(ARG_AUTO_OVERLAP_COEF);
-    if (params->isFlagSet(ARG_AUTO_OVERLAP_COEF)) {
-        argerr = argerr || checkCoefPair(aoCoef, ARG_AUTO_OVERLAP_COEF);
-        if (argerr) return 1;
-        LOG.logv("Auto overlap fraction coefficients (slope intercept):", aoCoef);
-        setAutoOverlapCoef(aoCoef[0], aoCoef[1]);
-    }
-
-    int GMM_MAX_ITER = params->getIntFlag(ARG_GMM_MAX_ITER);
-    double GMM_TOL = params->getDoubleFlag(ARG_GMM_TOL);
-    argerr = argerr || checkGMMParams(GMM_MAX_ITER, GMM_TOL);
-    if (argerr) return 1;
-    LOG.log("GMM max iterations:", GMM_MAX_ITER);
-    LOG.log("GMM tolerance:", GMM_TOL);
-    setGMMParams(GMM_MAX_ITER, GMM_TOL);
-
-    //0 means "follow the window size"; --no-kde-thinning is the old spelling of 1.
-    int KDE_THIN_STEP = params->getIntFlag(ARG_KDE_THIN_STEP);
-    argerr = argerr || checkKDEThinStep(KDE_THIN_STEP);
-    if (argerr) return 1;
-    if (!params->isFlagSet(ARG_KDE_THIN_STEP) && params->getBoolFlag(ARG_KDE_THINNING)) KDE_THIN_STEP = 1;
-    LOG.log("KDE thinning step (0 = window size):", KDE_THIN_STEP);
-    //double AUTO_WINSIZE_THRESHOLD = 0.5;
-
-    int MAX_WINSIZE = params->getIntFlag(ARG_MAX_WINSIZE);
-    argerr = argerr || checkMaxWinsize(MAX_WINSIZE, winsize);
-    if (argerr) return 1;
-
-    int seedFlag = params->getIntFlag(ARG_SEED);
-    argerr = argerr || checkSeed(seedFlag);
-    if (argerr) return 1;
-    unsigned long int SEED = (seedFlag == 0) ? drawRandomSeed() : (unsigned long int)(seedFlag);
-    {   //logged as a string: errlog has no unsigned long overload
-        stringstream seedss;
-        seedss << SEED;
-        LOG.log("Random seed:", seedss.str());
-        if (seedFlag == 0) LOG.log("\t(drawn automatically; pass --seed with this value to reproduce this run)");
-    }
-    //So the flags block of <out>.params.json is a command line that reproduces
-    //this run, rather than one that draws a fresh seed.
-    params->setIntFlag(ARG_SEED, int(SEED));
-    initRNG(SEED);
-
-    //All argument validation has passed.  Refuse to clobber a previous run's
-    //calls, then materialise <out>.log -- everything logged above has been held
-    //in memory so that a rejected command line leaves no files behind.
-    bool FORCE = params->getBoolFlag(ARG_FORCE);
-    if (checkOutfileClobber(outfile, FORCE)) return 1;
-    LOG.commit();
-
-    if (FREQ_ONLY){//calculated on the fly, as the file is read, to save RAM
-        freqOnly(tpedfile,outfile,nresample,TPED_MISSING);
-        freeRNG();
-        return 0;
-    }
+    //References rather than copies, so the pipeline below reads and writes the
+    //same objects it always did (winsize, LOD_CUTOFF and boundSizes are all
+    //reassigned further down when their automatic modes are in use).
+    string &outfile = opt.outfile;
+    string &tpedfile = opt.tpedfile;
+    string &tfamfile = opt.tfamfile;
+    string &tglsfile = opt.tglsfile;
+    char &TPED_MISSING = opt.TPED_MISSING;
+    string &GL_TYPE = opt.GL_TYPE;
+    bool &WEIGHTED = opt.WEIGHTED;
+    string &mapfile = opt.mapfile;
+    bool &CM = opt.CM;
+    string &BUILD = opt.BUILD;
+    string &centromereFile = opt.centromereFile;
+    bool &NO_CENTROMERE = opt.NO_CENTROMERE;
+    int &nresample = opt.nresample;
+    string &freqfile = opt.freqfile;
+    bool &AUTO_FREQ = opt.AUTO_FREQ;
+    vector<int> &multiWinsizes = opt.multiWinsizes;
+    bool &WINSIZE_EXPLORE = opt.WINSIZE_EXPLORE;
+    bool &AUTO_WINSIZE = opt.AUTO_WINSIZE;
+    int &AUTO_WINSIZE_STEP = opt.AUTO_WINSIZE_STEP;
+    int &winsize = opt.winsize;
+    double &LOD_CUTOFF = opt.LOD_CUTOFF;
+    bool &AUTO_CUTOFF = opt.AUTO_CUTOFF;
+    vector<double> &boundSizes = opt.boundSizes;
+    bool &AUTO_BOUNDS = opt.AUTO_BOUNDS;
+    int &numThreads = opt.numThreads;
+    double &error = opt.error;
+    int &MAX_GAP = opt.MAX_GAP;
+    double &OVERLAP_FRAC = opt.OVERLAP_FRAC;
+    bool &AUTO_OVERLAP_FRAC = opt.AUTO_OVERLAP_FRAC;
+    double &mu = opt.mu;
+    int &M = opt.M;
+    int &NCLUST = opt.NCLUST;
+    int &KDE_SUBSAMPLE = opt.KDE_SUBSAMPLE;
+    int &LD_SUBSAMPLE = opt.LD_SUBSAMPLE;
+    bool &RAW_LOD = opt.RAW_LOD;
+    bool &PHASED = opt.PHASED;
+    int &KDE_THIN_STEP = opt.KDE_THIN_STEP;
+    int &MAX_WINSIZE = opt.MAX_WINSIZE;
+    unsigned long int &SEED = opt.SEED;
 
 //++++++++++Datafile reading++++++++++
     centromere *centro;

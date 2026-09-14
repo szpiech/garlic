@@ -92,7 +92,8 @@ all : garlic
 
 OBJS = garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o \
        garlic-cli.o garlic-errlog.o gmm.o BoundFinder.o gzstream.o \
-       garlic-centromeres.o garlic-pbar.o garlic-math.o
+       garlic-centromeres.o garlic-pbar.o garlic-math.o \
+       garlic-options.o
 
 garlic : $(OBJS)
 	$(CC) -o garlic $(OBJS) -lz $(LINK_OPTS) -L$(L_PATH)
