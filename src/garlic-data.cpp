@@ -78,11 +78,12 @@ bool warnSexChromosomes(vector< MapData * > *mapDataByChr, IndData *indData)
 
     if (found.empty()) return false;
 
-    int males = 0, known = 0;
+    int males = 0, females = 0, unknown = 0;
     for (int i = 0; i < indData->nind; i++)
     {
         if (indData->sex[i] == 1) males++;
-        if (indData->sex[i] != 0) known++;
+        else if (indData->sex[i] == 2) females++;
+        else unknown++;
     }
 
     string list;
@@ -97,11 +98,42 @@ bool warnSexChromosomes(vector< MapData * > *mapDataByChr, IndData *indData)
     LOG.err("WARNING: it is indistinguishable from true autozygosity. Male X chromosomes will");
     LOG.err("WARNING: therefore be called as one run spanning the whole chromosome, and any");
     LOG.err("WARNING: FROH computed from that will be inflated. Use --autosomes-only to drop");
-    LOG.err("WARNING: these chromosomes, or restrict to females with --tfam.");
-    if (known == 0)
-        LOG.err("WARNING: the TFAM did not record sex, so the number of affected individuals is unknown.");
+    LOG.err("WARNING: these chromosomes, or restrict to females using the sex column of");
+    LOG.err("WARNING: the TFAM.");
+
+    //Reporting only the male count was misleading whenever sex was recorded
+    //for PART of the cohort: 3 of 45 coded male with 42 unknown printed
+    //"individuals coded male: 3", and 3 reads as the answer when up to 45
+    //could be affected.  Sex is optional in a TFAM and in a --pop file, so
+    //partial coverage is normal.  Report all three counts, and never state a
+    //number of affected individuals that the metadata cannot support.
+    if (males + females == 0)
+    {
+        LOG.err("WARNING: sex is not recorded for any of the", indData->nind, false);
+        LOG.err(" individuals, so the number affected cannot be determined.");
+    }
+    else if (unknown == 0)
+    {
+        LOG.err("WARNING: sex recorded for all", indData->nind, false);
+        LOG.err(" individuals:", males, false);
+        LOG.err(" male,", females, false);
+        LOG.err(" female.");
+        LOG.err("WARNING: affected individuals:", males);
+    }
     else
-        LOG.err("WARNING: individuals coded male in the TFAM:", males);
+    {
+        LOG.err("WARNING: sex recorded for", males + females, false);
+        LOG.err(" of", indData->nind, false);
+        LOG.err(" individuals:", males, false);
+        LOG.err(" male,", females, false);
+        LOG.err(" female,", unknown, false);
+        LOG.err(" unknown.");
+        LOG.err("WARNING: at least", males, false);
+        LOG.err(" individuals are affected; with", unknown, false);
+        LOG.err(" of unknown sex the true number");
+        LOG.err("WARNING: cannot be determined and may be as high as", males + unknown, false);
+        LOG.err(".");
+    }
 
     return true;
 }

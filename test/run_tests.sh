@@ -414,6 +414,32 @@ ind_metadata() {
             2>&1 | grep -q "Found multiple population IDs"; then
         bad "a single-population TFAM produced the pooled-population warning"
     else ok; fi
+    # The sex-chromosome warning must never state a number of affected
+    # individuals the metadata cannot support.  Sex is optional in a TFAM, so
+    # all three coverage cases are reachable.  The partial case used to print
+    # only the male count: 3 of 45 coded male with 42 unknown printed
+    # "individuals coded male in the TFAM: 3", and 3 reads as the answer.
+    gz "$EX/chr21.tped.gz" | sed 's/^21/chrX/' | gzip > "$WORK/chrX.tped.gz"
+    gz "$EX/chr21.tfam.gz" | awk '{print $1"\t"$2}' > "$WORK/nosex.tfam"
+    gz "$EX/chr21.tfam.gz" | awk 'NR<=3{print $1"\t"$2"\t0\t0\t1\t0"} NR>3{print $1"\t"$2}' > "$WORK/partial.tfam"
+    sexwarn() {   # $1 = tfam, $2 = pattern that must appear
+        if "$GARLIC" --tped "$WORK/chrX.tped.gz" --tfam "$1" --build hg18 --winsize 60 \
+                --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+                --out "$WORK/sx" --force 2>&1 | grep -q "$2"; then ok
+        else bad "sex warning on $(basename "$1"): expected /$2/"; fi
+    }
+    sexwarn "$WORK/nosex.tfam"  "sex is not recorded for any of the 45"
+    sexwarn "$WORK/partial.tfam" "3 male, 0 female, 42 unknown"
+    sexwarn "$WORK/partial.tfam" "may be as high as 45"
+    sexwarn "$EX/chr21.tfam.gz" "26 male, 19 female"
+    sexwarn "$EX/chr21.tfam.gz" "affected individuals: 26"
+    # ... and a partial-coverage run must NOT print a bare affected count, which
+    # is the misleading form it used to print.
+    if "$GARLIC" --tped "$WORK/chrX.tped.gz" --tfam "$WORK/partial.tfam" --build hg18 --winsize 60 \
+            --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/sx" --force 2>&1 \
+            | grep -q "affected individuals:"; then
+        bad "a partial-coverage run stated a bare affected count"
+    else ok; fi
 }
 
 # ---------------------------------------------------------------------------
