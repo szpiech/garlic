@@ -37,8 +37,10 @@ freq (optional, output during computation, can be generated without running whol
 centromere file (required if no --build is set):
 	<chr> <centromere start> <centromere end>
 
-GARLIC depends on zlib (http://zlib.net/) and nothing else.  A win32 build of zlib is
-included in lib/win32.
+GARLIC depends on zlib (http://zlib.net/) and POSIX threads.  On Linux and macOS both
+come from the system, so there is nothing to obtain or vendor: the Makefile links -lz and
+-pthread.  MinGW supplies neither, so win32 builds link libz.a and libpthreadGC2.a from
+lib/win32, which are the only archives still included here.
 
 GNU GSL and FIGTree were previously required and are no longer used.  FIGTree was replaced
 by a direct Gaussian sum, which made the KDE reproducible; GSL was replaced by
