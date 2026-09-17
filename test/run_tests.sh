@@ -508,6 +508,166 @@ ind_metadata() {
 }
 
 # ---------------------------------------------------------------------------
+# 4d. VCF input
+# ---------------------------------------------------------------------------
+# The headline property: the SAME genotypes in two formats must produce the
+# same calls.  The fixture is generated from chr21.tped.gz with REF/ALT chosen
+# ALPHABETICALLY, which is deliberately NOT how garlic picks its counted allele
+# (the first non-missing allele in individual order), so the dosage is flipped
+# at roughly half the loci -- 4,390 of 8,599 as generated here.  A bit-identical
+# raw LOD matrix across that flip is what makes "count ALT instead" safe.
+vcf_input() {
+    echo "== VCF input =="
+
+    # ---- build the fixture ----
+    gz "$EX/chr21.tfam.gz" | awk '{printf "\t%s", $2} END{print ""}' > "$WORK/vcf.samples"
+    {
+        printf '##fileformat=VCFv4.2\n'
+        printf '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+        printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT'
+        cat "$WORK/vcf.samples"
+        gz "$EX/chr21.tped.gz" | awk '
+        {
+            delete seen; n = 0
+            for (i = 5; i <= NF; i++) if ($i != "0" && !($i in seen)) { seen[$i] = 1; a[++n] = $i }
+            if (n == 0) next
+            if (n == 1) { ref = a[1]; alt = (ref == "A" ? "C" : (ref == "C" ? "A" : (ref == "G" ? "T" : "G"))) }
+            else if (a[1] < a[2]) { ref = a[1]; alt = a[2] }
+            else                  { ref = a[2]; alt = a[1] }
+            line = $1 "\t" $4 "\t" $2 "\t" ref "\t" alt "\t.\tPASS\t.\tGT"
+            for (i = 5; i <= NF; i += 2) {
+                if ($i == "0" || $(i+1) == "0") g = "./."
+                else g = ($i == alt ? 1 : 0) "/" ($(i+1) == alt ? 1 : 0)
+                line = line "\t" g
+            }
+            print line
+        }'
+    } > "$WORK/chr21.vcf"
+    gzip -c "$WORK/chr21.vcf" > "$WORK/chr21.vcf.gz"
+    gz "$EX/chr21.tfam.gz" | awk '{print $2"\t"$1}' > "$WORK/vcf.pop"
+
+    VB="--build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000"
+
+    # ---- the equivalence ----
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $VB --raw-lod \
+            --out "$WORK/vt" --quiet --force >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    $GARLIC --vcf "$WORK/chr21.vcf.gz" --pop "$WORK/vcf.pop" $VB --raw-lod \
+            --out "$WORK/vv" --quiet --force >/dev/null 2>&1
+    if [ -f "$WORK/vv.roh.bed" ]; then ok; else bad "--vcf produced no output"; fi
+    grep -v '^track' "$WORK/vt.roh.bed" > "$WORK/vt.nt" 2>/dev/null
+    grep -v '^track' "$WORK/vv.roh.bed" > "$WORK/vv.nt" 2>/dev/null
+    if cmp -s "$WORK/vt.nt" "$WORK/vv.nt"; then ok
+    else bad "--vcf and --tped called different ROH from the same genotypes"; fi
+    gz "$WORK/vt.chr21.raw.lod.windows.gz" > "$WORK/vt.raw"
+    gz "$WORK/vv.chr21.raw.lod.windows.gz" > "$WORK/vv.raw"
+    if cmp -s "$WORK/vt.raw" "$WORK/vv.raw"; then ok
+    else bad "--vcf and --tped produced different raw LOD scores"; fi
+    # the run must not be vacuous
+    n=$(grep -vc '^track' "$WORK/vv.roh.bed" 2>/dev/null || echo 0)
+    if [ "$n" -gt 0 ]; then ok; else bad "the --vcf equivalence case called no ROH"; fi
+
+    # ---- --freq-only streams, and must agree with the in-memory pass ----
+    # shellcheck disable=SC2086
+    $GARLIC --vcf "$WORK/chr21.vcf.gz" --pop "$WORK/vcf.pop" --build hg18 --error 0.001 \
+            --freq-only --out "$WORK/vfo" --quiet --force >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    $GARLIC --vcf "$WORK/chr21.vcf.gz" --pop "$WORK/vcf.pop" $VB \
+            --out "$WORK/vmem" --quiet --force >/dev/null 2>&1
+    gz "$WORK/vfo.freq.gz"  > "$WORK/vfo.freq"
+    gz "$WORK/vmem.freq.gz" > "$WORK/vmem.freq"
+    if cmp -s "$WORK/vfo.freq" "$WORK/vmem.freq"; then ok
+    else bad "freqOnlyVCF disagrees with loadVCFData's frequencies"; fi
+
+    # ---- a frequency file must cross between the two readers ----
+    # readFreqData compares the ALLELE column against mapData->allele and flips
+    # to 1-f on a mismatch, which is what makes this work at the 4,390 loci
+    # where the two readers count different alleles.
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --error 0.001 \
+            --freq-only --out "$WORK/tfo" --quiet --force >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $VB \
+            --freq-file "$WORK/vfo.freq.gz" --out "$WORK/xtv" --quiet --force >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    $GARLIC --vcf "$WORK/chr21.vcf.gz" --pop "$WORK/vcf.pop" $VB \
+            --freq-file "$WORK/tfo.freq.gz" --out "$WORK/xvt" --quiet --force >/dev/null 2>&1
+    grep -v '^track' "$WORK/xtv.roh.bed" > "$WORK/xtv.nt" 2>/dev/null
+    grep -v '^track' "$WORK/xvt.roh.bed" > "$WORK/xvt.nt" 2>/dev/null
+    if cmp -s "$WORK/vt.nt" "$WORK/xtv.nt" && cmp -s "$WORK/vt.nt" "$WORK/xvt.nt"; then ok
+    else bad "a frequency file did not cross between the --tped and --vcf readers"; fi
+
+    # ---- mutual exclusion ----
+    # The MESSAGE is asserted, not just the exit code: an unrecognised flag also
+    # exits 1, so an exit-only check here would pass against a binary that has
+    # no --vcf at all.
+    mutex() {  # $1 = pattern, $2 = label, rest = args
+        pat=$1; lbl=$2; shift 2
+        # shellcheck disable=SC2086
+        if "$GARLIC" "$@" 2>&1 | grep -q "$pat"; then ok; else bad "$lbl"; fi
+    }
+    mutex "alternative sources of the same data" "--vcf with --tped not diagnosed" \
+        --vcf "$WORK/chr21.vcf.gz" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" \
+        --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --out "$WORK/v1" --force
+    mutex "so --tfam is not used" "--vcf with --tfam not diagnosed" \
+        --vcf "$WORK/chr21.vcf.gz" --tfam "$EX/chr21.tfam.gz" \
+        --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --out "$WORK/v2" --force
+    expect_exit 1 "--vcf with --tped exits 1" "$GARLIC" --vcf "$WORK/chr21.vcf.gz" \
+        --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --winsize 60 \
+        --error 0.001 --lod-cutoff 2.5 --out "$WORK/v1" --force
+
+    # ---- malformed VCFs ----
+    HDR=$(head -3 "$WORK/chr21.vcf")
+    vcfmut() {  # $1 = out, $2 = awk program applied to the data lines
+        { printf '%s\n' "$HDR"; tail -n +4 "$WORK/chr21.vcf" | head -400 | awk -F'\t' -v OFS='\t' "$2"; } > "$1"
+    }
+    vcfmut "$WORK/inter.vcf"    '{ $1 = (NR % 2 == 1 ? "21" : "22"); print }'
+    vcfmut "$WORK/haploid.vcf"  '{ if (NR == 8) $13 = "1"; print }'
+    vcfmut "$WORK/triploid.vcf" '{ if (NR == 8) $13 = "0/1/1"; print }'
+    vcfmut "$WORK/phased.vcf"   '{ for (i = 10; i <= NF; i++) gsub("/", "|", $i); print }'
+    vcfmut "$WORK/ph1un.vcf"    '{ for (i = 10; i <= NF; i++) gsub("/", "|", $i); if (NR == 8) gsub("\\|", "/", $13); print }'
+    vcfmut "$WORK/indel.vcf"    '{ if (NR == 8) $4 = "AT"; print }'
+    vcfmut "$WORK/multi.vcf"    '{ if (NR == 8) $5 = "G,T"; print }'
+    vcfmut "$WORK/lowq.vcf"     '{ if (NR == 8) $7 = "LowQual"; print }'
+    printf '##fileformat=VCFv4.2\n' > "$WORK/onlymeta.vcf"
+
+    vcfrun() {  # $1 = file, $2 = expected exit, $3 = label; extra args after
+        f=$1; e=$2; l=$3; shift 3
+        # shellcheck disable=SC2086
+        expect_exit "$e" "$l" "$GARLIC" --vcf "$f" --pop "$WORK/vcf.pop" $VB \
+            --out "$WORK/vr" --force "$@"
+    }
+    vcfrun "$WORK/inter.vcf"    2 "an interleaved VCF is rejected"
+    vcfrun "$WORK/haploid.vcf"  2 "a haploid call is rejected"
+    vcfrun "$WORK/triploid.vcf" 2 "a triploid call is rejected"
+    vcfrun "$WORK/onlymeta.vcf" 2 "a VCF with no #CHROM header is rejected"
+    vcfrun "$WORK/phased.vcf"   0 "an all-phased VCF is accepted with --phased" --phased
+    vcfrun "$WORK/ph1un.vcf"    2 "one unphased call is rejected under --phased" --phased
+
+    # ---- skipped sites are skipped AND counted ----
+    skipmsg() {  # $1 = file, $2 = pattern
+        # shellcheck disable=SC2086
+        $GARLIC --vcf "$1" --pop "$WORK/vcf.pop" $VB --out "$WORK/vs" --force >/dev/null 2>&1
+        if grep -q "$2" "$WORK/vs.log"; then ok; else bad "VCF skip not reported: /$2/"; fi
+    }
+    skipmsg "$WORK/indel.vcf" "Sites skipped, not a SNV: 1"
+    skipmsg "$WORK/multi.vcf" "Sites skipped, multiallelic: 1"
+    skipmsg "$WORK/lowq.vcf"  "FILTER not PASS, KEPT"
+    # shellcheck disable=SC2086
+    $GARLIC --vcf "$WORK/lowq.vcf" --pop "$WORK/vcf.pop" $VB --vcf-pass-only \
+            --out "$WORK/vp" --force >/dev/null 2>&1
+    if grep -q "Sites skipped, FILTER not PASS: 1" "$WORK/vp.log"; then ok
+    else bad "--vcf-pass-only did not report the skipped site"; fi
+
+    # ---- omitting --pop is allowed but must say so ----
+    # shellcheck disable=SC2086
+    if $GARLIC --vcf "$WORK/chr21.vcf.gz" $VB --out "$WORK/vnp" --force 2>&1 \
+            | grep -q "no --pop given"; then ok
+    else bad "--vcf without --pop did not warn"; fi
+}
+
+# ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
 params_roundtrip() {
@@ -558,6 +718,7 @@ golden
 determinism
 likelihood_guards
 ind_metadata
+vcf_input
 exit_codes
 params_roundtrip
 bed_format

@@ -328,6 +328,13 @@ Rows are matched by sample ID, never by file order. Every sample in the data mus
 --tped-missing <char>: Single character missing data code for TPED files.
 	Default: 0
 
+--vcf <string>: A VCF file (plain or gzipped) to read genotypes from, instead of --tped. Biallelic SNVs with a GT field are used; multiallelic sites, indels and symbolic ALTs are skipped and the counts reported. Sample names come from the #CHROM line, so --tfam is neither needed nor accepted; use --pop to supply population labels.
+Sites must be grouped by chromosome. Ploidy must be 2 at every call, and with --phased every call must use '|'.
+	Default: none
+
+--vcf-pass-only <bool>: Skip sites whose FILTER column is neither PASS nor '.'. Without this, such sites are KEPT and their number is reported, because a FILTER column reflects the caller's thresholds rather than garlic's.
+	Default: false
+
 --verbose <bool>: Show the progress bar even when stderr is not a terminal. By default it is drawn only on a terminal, because it works by emitting backspaces.
 	Default: false
 

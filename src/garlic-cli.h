@@ -63,6 +63,14 @@ extern const string ARG_TFAM;
 extern const string DEFAULT_TFAM;
 extern const string HELP_TFAM;
 
+extern const string ARG_VCF;
+extern const string DEFAULT_VCF;
+extern const string HELP_VCF;
+
+extern const string ARG_VCF_PASS_ONLY;
+extern const bool DEFAULT_VCF_PASS_ONLY;
+extern const string HELP_VCF_PASS_ONLY;
+
 extern const string ARG_POP;
 extern const string DEFAULT_POP;
 extern const string HELP_POP;
@@ -253,7 +261,7 @@ param_t *getCLI(int argc, char *argv[], int &status);
 bool checkOutfileClobber(string outfile, bool force);
 bool checkSeed(int seed);
 bool checkMaxWinsize(int maxWinsize, int winsize);
-bool checkPopFile(string popfile, string tpedfile);
+bool checkPopFile(string popfile, string tpedfile, string vcffile);
 bool checkBuild(string BUILD);
 bool checkBuildAndCentromereFile(string BUILD, string centromereFile, bool NO_CENTROMERE);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE, bool wasSet);
@@ -262,7 +270,7 @@ bool checkAutoWinsizeStep(int auto_winsize_step);
 bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE);
 bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF, bool wasSet);
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet);
-bool checkRequiredFiles(string tpedfile, string tfamfile);
+bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile);
 bool checkMapFile(string mapfile, bool WEIGHTED);
 bool checkThreads(int numThreads);
 bool checkError(double error, string tglsfile, bool wasSet);

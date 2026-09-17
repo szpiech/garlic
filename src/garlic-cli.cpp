@@ -78,6 +78,23 @@ const string ARG_TFAM = "--tfam";
 const string DEFAULT_TFAM = "none";
 const string HELP_TFAM = "A tfam formatted file containing population and individual IDs.";
 
+const string ARG_VCF = "--vcf";
+const string DEFAULT_VCF = "none";
+const string HELP_VCF = "A VCF file (plain or gzipped) to read genotypes from, instead of --tped.\n\
+\tBiallelic SNVs with a GT field are used; multiallelic sites, indels and\n\
+\tsymbolic ALTs are skipped and the counts reported. Sample names come from\n\
+\tthe #CHROM line, so --tfam is neither needed nor accepted; use --pop to\n\
+\tsupply population labels.\n\
+\t\n\
+\tSites must be grouped by chromosome. Ploidy must be 2 at every call, and\n\
+\twith --phased every call must use '|'.";
+
+const string ARG_VCF_PASS_ONLY = "--vcf-pass-only";
+const bool DEFAULT_VCF_PASS_ONLY = false;
+const string HELP_VCF_PASS_ONLY = "Skip sites whose FILTER column is neither PASS nor '.'.\n\
+\tWithout this, such sites are KEPT and their number is reported, because a\n\
+\tFILTER column reflects the caller's thresholds rather than garlic's.";
+
 const string ARG_POP = "--pop";
 const string DEFAULT_POP = "none";
 const string HELP_POP = "A file mapping sample ID to population, replacing the population labels\n\
@@ -376,6 +393,8 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_RESAMPLE, DEFAULT_RESAMPLE, "", HELP_RESAMPLE);
 	params->addFlag(ARG_TPED, DEFAULT_TPED, "", HELP_TPED);
 	params->addFlag(ARG_TFAM, DEFAULT_TFAM, "", HELP_TFAM);
+	params->addFlag(ARG_VCF, DEFAULT_VCF, "", HELP_VCF);
+	params->addFlag(ARG_VCF_PASS_ONLY, DEFAULT_VCF_PASS_ONLY, "", HELP_VCF_PASS_ONLY);
 	params->addFlag(ARG_POP, DEFAULT_POP, "", HELP_POP);
 	params->addFlag(ARG_TGLS, DEFAULT_TGLS, "", HELP_TGLS);
 	params->addFlag(ARG_GL_TYPE, DEFAULT_GL_TYPE, "", HELP_GL_TYPE);
@@ -530,10 +549,10 @@ bool checkSeed(int seed){
 	return false;
 }
 
-bool checkPopFile(string popfile, string tpedfile){
+bool checkPopFile(string popfile, string tpedfile, string vcffile){
 	if (popfile.compare(DEFAULT_POP) == 0) return false;
-	if (tpedfile.compare(DEFAULT_TPED) == 0){
-		LOG.err("ERROR: --pop needs input data; give --tped.");
+	if (tpedfile.compare(DEFAULT_TPED) == 0 && vcffile.compare(DEFAULT_VCF) == 0){
+		LOG.err("ERROR: --pop needs input data; give --tped or --vcf.");
 		return true;
 	}
 	return false;
@@ -708,11 +727,31 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet)
 	return false;
 }
 
-bool checkRequiredFiles(string tpedfile, string tfamfile)
+bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile)
 {
-	if (tpedfile.compare(DEFAULT_TPED) == 0 || tfamfile.compare(DEFAULT_TFAM) == 0)
+	bool haveTped = (tpedfile.compare(DEFAULT_TPED) != 0);
+	bool haveVcf  = (vcffile.compare(DEFAULT_VCF)   != 0);
+	bool haveTfam = (tfamfile.compare(DEFAULT_TFAM) != 0);
+
+	if (haveTped && haveVcf)
 	{
-		//cerr << "ERROR: Must provide both a tped and a tfam file.\n";
+		LOG.err("ERROR: --tped and --vcf are alternative sources of the same data; give one.");
+		return true;
+	}
+	if (!haveTped && !haveVcf)
+	{
+		LOG.err("ERROR: Must provide genotypes, either --tped with --tfam, or --vcf.");
+		return true;
+	}
+	if (haveVcf && haveTfam)
+	{
+		//A VCF names its own samples, so a TFAM could only disagree with it.
+		LOG.err("ERROR: --vcf takes sample names from its #CHROM line, so --tfam is not used.");
+		LOG.err("\tUse --pop to supply population labels.");
+		return true;
+	}
+	if (haveTped && !haveTfam)
+	{
 		LOG.err("ERROR: Must provide both a tped and a tfam file.");
 		return true;
 	}

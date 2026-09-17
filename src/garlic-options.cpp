@@ -68,10 +68,16 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     opt.tfamfile = params->getStringFlag(ARG_TFAM);
     opt.tglsfile = params->getStringFlag(ARG_TGLS);
     opt.popfile  = params->getStringFlag(ARG_POP);
-    argerr = argerr || checkRequiredFiles(opt.tpedfile, opt.tfamfile);
-    argerr = argerr || checkPopFile(opt.popfile, opt.tpedfile);
+    opt.vcffile  = params->getStringFlag(ARG_VCF);
+    opt.VCF_PASS_ONLY = params->getBoolFlag(ARG_VCF_PASS_ONLY);
+    argerr = argerr || checkRequiredFiles(opt.tpedfile, opt.tfamfile, opt.vcffile);
+    argerr = argerr || checkPopFile(opt.popfile, opt.tpedfile, opt.vcffile);
     if (argerr) return OPTIONS_USAGE_ERROR;
-    LOG.log("TPED file:", opt.tpedfile);
+    if (opt.vcffile.compare(DEFAULT_VCF) != 0) {
+        LOG.log("VCF file:", opt.vcffile);
+        if (opt.VCF_PASS_ONLY) LOG.log("Skipping sites whose FILTER is not PASS.", "");
+    }
+    else LOG.log("TPED file:", opt.tpedfile);
 
     opt.TPED_MISSING = params->getCharFlag(ARG_TPED_MISSING);
     LOG.log("TPED missing data code:", opt.TPED_MISSING);
@@ -299,7 +305,10 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     LOG.commit();
 
     if (FREQ_ONLY){//calculated on the fly, as the file is read, to save RAM
-        freqOnly(opt.tpedfile,opt.outfile,opt.nresample,opt.TPED_MISSING);
+        if (opt.vcffile.compare(DEFAULT_VCF) != 0)
+            freqOnlyVCF(opt.vcffile, opt.outfile, opt.nresample, opt.VCF_PASS_ONLY);
+        else
+            freqOnly(opt.tpedfile,opt.outfile,opt.nresample,opt.TPED_MISSING);
         freeRNG();
         return OPTIONS_DONE;
     }

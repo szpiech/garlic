@@ -531,6 +531,167 @@ MapData *initMapData(const vector<double> &geneticPos, const vector<pos_t> &phys
     return mapData;
 }
 
+void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
+{
+    GarlicRNG *r = getRNG();
+
+    string freqoutfile = outfile + ".freq.gz";
+    ogzstream fout;
+    fout.open(freqoutfile.c_str());
+    if (fout.fail())
+    {
+        LOG.err("ERROR: Failed to open", freqoutfile);
+        throw 0;
+    }
+    fout << "CHR\tSNP\tPOS\tALLELE\tFREQ\n";
+
+    igzstream fin;
+    fin.open(vcffile.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: Failed to open", vcffile);
+        throw 0;
+    }
+
+    const int VCF_FIXED = 9;
+    string line, chr, locusName, ref, alt, filt, fmt;
+    long long lineno = 0, nwritten = 0;
+    int numInd = 0;
+    bool haveHeader = false;
+
+    while (getline(fin, line))
+    {
+        lineno++;
+        if (line.size() >= 2 && line[0] == '#' && line[1] == '#') continue;
+
+        const char *p    = line.c_str();
+        const char *pEnd = p + line.size();
+        const char *tEnd;
+
+        if (!line.empty() && line[0] == '#')
+        {
+            int ncols = countFields(line);
+            if (ncols < VCF_FIXED + 1)
+            {
+                LOG.err("ERROR:", vcffile, false);
+                LOG.err(" has no sample columns.");
+                throw 0;
+            }
+            numInd = ncols - VCF_FIXED;
+            haveHeader = true;
+            LOG.log("Samples in the VCF:", numInd);
+            continue;
+        }
+        if (!haveHeader)
+        {
+            LOG.err("ERROR: data before the #CHROM header at line", lineno, false);
+            LOG.err(" of", vcffile);
+            throw 0;
+        }
+        if (line.empty()) continue;
+
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); chr.assign(p, tEnd - p); p = tEnd;
+        pos_t ppos;
+        {
+            char *q;
+            p = skipSpace(p, pEnd);
+            double v = strtod(p, &q);
+            if (q == p)
+            {
+                LOG.err("ERROR: could not parse POS at line", lineno, false);
+                LOG.err(" of", vcffile);
+                throw 0;
+            }
+            p = q;
+            ppos = pos_t(v);
+        }
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); locusName.assign(p, tEnd - p); p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); ref.assign(p, tEnd - p);       p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); alt.assign(p, tEnd - p);       p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd);                                p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); filt.assign(p, tEnd - p);      p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd);                                p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); fmt.assign(p, tEnd - p);       p = tEnd;
+
+        //The same site rules as loadVCFData, in the same order, so the two
+        //readers keep the same set of sites.
+        bool pass = (filt.compare("PASS") == 0 || filt.compare(".") == 0);
+        if (PASS_ONLY && !pass) continue;
+        if (alt.find(',') != string::npos) continue;
+        if (!isSNV(ref) || !isSNV(alt))    continue;
+        int gtIndex = gtIndexOf(fmt);
+        if (gtIndex < 0) continue;
+
+        int nalleles = 0, total = 0;
+        for (int i = 0; i < numInd; i++)
+        {
+            p = skipSpace(p, pEnd);
+            tEnd = tokenEnd(p, pEnd);
+            if (tEnd == p)
+            {
+                LOG.err("ERROR: line", lineno, false);
+                LOG.err(" of", vcffile, false);
+                LOG.err(" has genotypes for fewer than", numInd, false);
+                LOG.err(" samples.");
+                throw 0;
+            }
+            int dosage, ploidy; bool fcopy, isPhased;
+            if (!parseGT(p, tEnd, gtIndex, 1, dosage, fcopy, ploidy, isPhased))
+            {
+                LOG.err("ERROR: could not parse a genotype at line", lineno, false);
+                LOG.err(" of", vcffile);
+                throw 0;
+            }
+            if (ploidy != 2)
+            {
+                LOG.err("ERROR: a genotype at line", lineno, false);
+                LOG.err(" of", vcffile, false);
+                LOG.err(" has ploidy", ploidy, false);
+                LOG.err("; garlic calls ROH from diploid genotypes only.");
+                throw 0;
+            }
+            p = tEnd;
+            if (dosage != GENO_MISSING) { nalleles += dosage; total += 2; }
+        }
+
+        double freq = (total == 0) ? 0 : (double(nalleles) / double(total));
+        if (nresample > 0 && total != 0)
+        {
+            int count = 0;
+            for (int i = 0; i < nresample; i++) if (r->uniform() <= freq) count++;
+            freq = double(count) / double(nresample);
+        }
+
+        //ALT in the ALLELE column.  readFreqData compares it against
+        //mapData->allele and flips to 1-f on a mismatch, so this file is
+        //interchangeable with one written from a TPED.
+        //An absent ID becomes CHROM:POS, matching loadVCFData, so a freq file
+        //and a run over the same VCF agree on locus names -- readFreqData
+        //errors on a locus-name mismatch.
+        string nm = locusName;
+        if (nm.compare(".") == 0)
+        {
+            stringstream ns;
+            ns << chr << ":" << ppos;
+            nm = ns.str();
+        }
+        fout << checkChrName(chr) << "\t" << nm
+             << "\t" << ppos << "\t" << alt[0] << "\t" << freq << endl;
+        nwritten++;
+    }
+
+    if (!haveHeader)
+    {
+        LOG.err("ERROR: no #CHROM header found in", vcffile, false);
+        LOG.err(". Is it a VCF?");
+        throw 0;
+    }
+    LOG.log("Sites written to the frequency file:", nwritten);
+
+    fin.close();
+    fout.close();
+}
+
 void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING){
     
     GarlicRNG *r = getRNG();
@@ -597,7 +758,9 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
         }
         ss.clear();
         
-        fout << checkChrName(chr) << "\t" << locusName << "\t" << int(ppos) << "\t" << oneAllele << "\t" << freq << endl;
+        //pos_t, not int: this was the last 32-bit truncation of a physical
+        //position left after 7899f42, and it silently wrapped past 2.147 Gb.
+        fout << checkChrName(chr) << "\t" << locusName << "\t" << pos_t(ppos) << "\t" << oneAllele << "\t" << freq << endl;
     }
 
     fin.close();
@@ -2105,6 +2268,404 @@ string lc(string str) {
         str.replace(i, 1, c);
     }
     return str;
+}
+
+int gtIndexOf(const string &fmt)
+{
+    int k = 0;
+    size_t a = 0;
+    while (a <= fmt.size())
+    {
+        size_t b = fmt.find(':', a);
+        size_t len = (b == string::npos ? fmt.size() : b) - a;
+        if (len == 2 && fmt.compare(a, 2, "GT") == 0) return k;
+        if (b == string::npos) break;
+        a = b + 1; k++;
+    }
+    return -1;
+}
+
+bool isSNV(const string &s)
+{
+    if (s.size() != 1) return false;
+    char c = s[0];
+    if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
+    return (c == 'A' || c == 'C' || c == 'G' || c == 'T');
+}
+
+//A VCF is self-describing where a TPED is not: it names its samples, states
+//REF and ALT, states ploidy per call, and marks phase per call.  Everything
+//loadTPEDData has to infer, this can check.  The outputs are deliberately the
+//same structures loadTPEDData produces, so nothing downstream knows which
+//reader ran.
+//
+//Two differences from the TPED path that are decisions, not omissions:
+//
+//  - the counted allele is ALT, not "the first allele observed at the locus".
+//    allele[locus] is set to the ALT character and freq to the ALT frequency
+//    over non-missing calls.  The LOD is symmetric in the counted allele, so
+//    this changes no call; it makes the .freq.gz interchangeable with the TPED
+//    path's through readFreqData.
+//  - geneticPos is 0 for every site, because a VCF has no genetic-position
+//    column.  Both consumers of geneticPos require --map: --weighted through
+//    checkMapFile, and --cm through the mapfile check in main.  interpolate-
+//    Geneticmap then overwrites it, so the zeros are never read.
+void loadVCFData(string vcffile, int &numLoci, int &numInd,
+                 vector< HapData * > **hapDataByChr,
+                 vector< MapData * > **mapDataByChr,
+                 vector< FreqData * > **freqDataByChr,
+                 int nresample, bool PHASED, bool AUTO_FREQ, bool PASS_ONLY,
+                 vector<string> &sampleIDs)
+{
+    igzstream fin;
+    fin.open(vcffile.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: Failed to open", vcffile);
+        throw 0;
+    }
+    if (!LOG.isQuiet()) cerr << "Reading " << vcffile << "\n";
+
+    GarlicRNG *r = getRNG();
+
+    const int VCF_FIXED = 9;   //CHROM POS ID REF ALT QUAL FILTER INFO FORMAT
+
+    string line;
+    //long long, not long: errlog has int/double/long long overloads and a
+    //plain long is ambiguous between them.
+    long long lineno = 0;
+    bool haveHeader = false;
+
+    string chr, locusName, ref, alt, filt, fmt;
+    string emptyChr = "_nochr";
+    string prevChr  = emptyChr;
+    int currChrLoci = 0;
+
+    vector<double> geneticPos;
+    vector<pos_t>  physicalPos;
+    vector<string> locusNames;
+    vector<char>   allele;
+    vector<double> freq;
+    vector< geno_t * > hap;
+    vector< bool * >   fc;
+
+    map<string, int> chrSeen;
+
+    long long nSkipIndel = 0, nSkipMulti = 0, nNonPass = 0, nSkipNonPass = 0, nSkipNoGT = 0;
+    numLoci = 0;
+    numInd  = 0;
+
+    while (getline(fin, line))
+    {
+        lineno++;
+        const char *p    = line.c_str();
+        const char *pEnd = p + line.size();
+        const char *tEnd;
+
+        if (line.size() >= 2 && line[0] == '#' && line[1] == '#') continue;
+
+        //--- the #CHROM header names the samples ---
+        if (!line.empty() && line[0] == '#')
+        {
+            if (haveHeader)
+            {
+                LOG.err("ERROR: a second #CHROM header at line", lineno, false);
+                LOG.err(" of", vcffile);
+                throw 0;
+            }
+            int ncols = countFields(line);
+            if (ncols < VCF_FIXED + 1)
+            {
+                LOG.err("ERROR:", vcffile, false);
+                LOG.err(" has no sample columns; its #CHROM line has", ncols, false);
+                LOG.err(" fields and at least", VCF_FIXED + 1, false);
+                LOG.err(" are needed.");
+                throw 0;
+            }
+            numInd = ncols - VCF_FIXED;
+            //Sample IDs, in file order.  Every later per-sample diagnostic
+            //names the sample rather than its column number.
+            for (int k = 0; k < ncols; k++)
+            {
+                p = skipSpace(p, pEnd);
+                tEnd = tokenEnd(p, pEnd);
+                if (k >= VCF_FIXED) sampleIDs.push_back(string(p, tEnd - p));
+                p = tEnd;
+            }
+            haveHeader = true;
+            LOG.log("Samples in the VCF:", numInd);
+            continue;
+        }
+
+        if (!haveHeader)
+        {
+            LOG.err("ERROR: data before the #CHROM header at line", lineno, false);
+            LOG.err(" of", vcffile);
+            throw 0;
+        }
+        if (line.empty()) continue;
+
+        //--- CHROM ---
+        p = skipSpace(p, pEnd);
+        tEnd = tokenEnd(p, pEnd);
+        if (tEnd == p)
+        {
+            LOG.err("ERROR: missing CHROM at line", lineno, false);
+            LOG.err(" of", vcffile);
+            throw 0;
+        }
+        chr.assign(p, tEnd - p);
+        p = tEnd;
+
+        //--- POS ---
+        pos_t ppos;
+        {
+            char *q;
+            p = skipSpace(p, pEnd);
+            double v = strtod(p, &q);
+            if (q == p)
+            {
+                LOG.err("ERROR: could not parse POS at line", lineno, false);
+                LOG.err(" of", vcffile);
+                throw 0;
+            }
+            p = q;
+            ppos = pos_t(v);
+        }
+
+        //--- ID, REF, ALT, QUAL, FILTER, INFO, FORMAT ---
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); locusName.assign(p, tEnd - p); p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); ref.assign(p, tEnd - p);       p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); alt.assign(p, tEnd - p);       p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd);                                p = tEnd; //QUAL
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); filt.assign(p, tEnd - p);      p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd);                                p = tEnd; //INFO
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); fmt.assign(p, tEnd - p);       p = tEnd;
+        if (fmt.empty())
+        {
+            LOG.err("ERROR: line", lineno, false);
+            LOG.err(" of", vcffile, false);
+            LOG.err(" has fewer than", VCF_FIXED, false);
+            LOG.err(" fixed fields.");
+            throw 0;
+        }
+
+        //--- site filters, counted so the skips are never silent ---
+        bool pass = (filt.compare("PASS") == 0 || filt.compare(".") == 0);
+        if (!pass) nNonPass++;
+        if (PASS_ONLY && !pass) { nSkipNonPass++; continue; }
+
+        //Multiallelic first: it is the more specific reason, and an ALT of
+        //"A,T" would otherwise be reported as an indel.
+        if (alt.find(',') != string::npos) { nSkipMulti++; continue; }
+        if (!isSNV(ref) || !isSNV(alt))    { nSkipIndel++; continue; }
+
+        //--- GT's position in FORMAT.  Per-line: FORMAT may vary by site. ---
+        int gtIndex = gtIndexOf(fmt);
+        if (gtIndex < 0) { nSkipNoGT++; continue; }
+
+        //--- chromosome blocks.  Downstream code zips per-chromosome vectors
+        //positionally and alignMapScaffold errors on a chromosome split into
+        //non-contiguous blocks, so an interleaved VCF is rejected here with a
+        //message that says what to do about it. ---
+        if (prevChr.compare(emptyChr) == 0) prevChr = chr;
+
+        if (chr.compare(prevChr) != 0)
+        {
+            if (chrSeen.count(chr) > 0)
+            {
+                LOG.err("ERROR: chromosome", chr, false);
+                LOG.err(" reappears at line", lineno, false);
+                LOG.err(" of", vcffile, false);
+                LOG.err(" after another chromosome.");
+                LOG.err("\tSites must be grouped by chromosome. Sort the VCF, e.g. with");
+                LOG.err("\tbcftools sort, and try again.");
+                throw 0;
+            }
+            chrSeen[prevChr] = 1;
+
+            LOG.log("Chromosome", checkChrName(prevChr), false);
+            LOG.log(":", currChrLoci, false);
+            LOG.log(" sites.");
+
+            (*mapDataByChr)->push_back(initMapData(geneticPos, physicalPos, locusNames, allele, currChrLoci, checkChrName(prevChr)));
+            geneticPos.clear(); physicalPos.clear(); allele.clear(); locusNames.clear();
+
+            (*hapDataByChr)->push_back(initHapData(hap, fc, currChrLoci, numInd, PHASED));
+            hap.clear(); fc.clear();
+
+            if (AUTO_FREQ)
+            {
+                (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
+                freq.clear();
+            }
+
+            prevChr = chr;
+            currChrLoci = 0;
+        }
+
+        numLoci++;
+        currChrLoci++;
+
+        //errlog's (string, value) overloads insert a space, so composing a site
+        //label from two calls rendered as "21: 13865210".  Build it once.
+        string site;
+        {
+            stringstream ss;
+            ss << chr << ":" << ppos;
+            site = ss.str();
+        }
+
+        geneticPos.push_back(0.0);
+        physicalPos.push_back(ppos);
+        //A VCF's ID column is '.' at most sites.  A locus name is only used to
+        //label output, and B3 was locus names being silently replaced by
+        //positions, so an absent ID becomes an explicit CHROM:POS rather than
+        //a file full of '.'.
+        if (locusName.compare(".") == 0) locusNames.push_back(site);
+        else locusNames.push_back(locusName);
+        allele.push_back(alt[0]);
+
+        //--- genotypes.  Raw rows, handed off to initHapData, exactly as in
+        //loadTPEDData: the locus count is not known until the file ends. ---
+        geno_t *data = new geno_t[numInd];
+        bool *firstCopy = NULL;
+        if (PHASED) firstCopy = new bool[numInd];
+
+        int nalleles = 0, total = 0;
+
+        for (int i = 0; i < numInd; i++)
+        {
+            p = skipSpace(p, pEnd);
+            tEnd = tokenEnd(p, pEnd);
+            if (tEnd == p)
+            {
+                delete [] data; if (PHASED) delete [] firstCopy;
+                LOG.err("ERROR: line", lineno, false);
+                LOG.err(" of", vcffile, false);
+                LOG.err(" has genotypes for fewer than", numInd, false);
+                LOG.err(" samples.");
+                throw 0;
+            }
+
+            int dosage, ploidy; bool fcopy, isPhased;
+            if (!parseGT(p, tEnd, gtIndex, 1, dosage, fcopy, ploidy, isPhased))
+            {
+                string bad(p, tEnd - p);
+                delete [] data; if (PHASED) delete [] firstCopy;
+                LOG.err("ERROR: could not parse the genotype of sample", sampleIDs[i], false);
+                LOG.err(" at", site, false);
+                LOG.err(" (field '", bad, false);
+                LOG.err("', FORMAT '", fmt, false);
+                LOG.err("').");
+                throw 0;
+            }
+            if (ploidy != 2)
+            {
+                delete [] data; if (PHASED) delete [] firstCopy;
+                LOG.err("ERROR: sample", sampleIDs[i], false);
+                LOG.err(" at", site, false);
+                LOG.err(" has ploidy", ploidy, false);
+                LOG.err("; garlic calls ROH from diploid genotypes only.");
+                if (isSexChromosome(checkChrName(chr)))
+                    LOG.err("\tThis is a sex chromosome: see --autosomes-only.");
+                throw 0;
+            }
+            if (PHASED && !isPhased)
+            {
+                delete [] data; if (PHASED) delete [] firstCopy;
+                LOG.err("ERROR: --phased was given but sample", sampleIDs[i], false);
+                LOG.err(" at", site, false);
+                LOG.err(" is unphased ('/' rather than '|').");
+                throw 0;
+            }
+
+            data[i] = geno_t(dosage);
+            if (PHASED) firstCopy[i] = fcopy;
+            p = tEnd;
+
+            //Frequency over NON-MISSING alleles only, matching loadTPEDData,
+            //which increments total only for an allele it could read.
+            if (dosage != GENO_MISSING) { nalleles += dosage; total += 2; }
+        }
+
+        p = skipSpace(p, pEnd);
+        if (p != pEnd)
+        {
+            delete [] data; if (PHASED) delete [] firstCopy;
+            LOG.err("ERROR: line", lineno, false);
+            LOG.err(" of", vcffile, false);
+            LOG.err(" has more columns than the", numInd, false);
+            LOG.err(" samples named in the header.");
+            throw 0;
+        }
+
+        hap.push_back(data);
+        data = NULL;
+        if (PHASED) { fc.push_back(firstCopy); firstCopy = NULL; }
+
+        if (AUTO_FREQ)
+        {
+            double freqtmp = (total == 0) ? 0 : (double(nalleles) / double(total));
+            if (nresample > 0 && total != 0)
+            {
+                int count = 0;
+                for (int i = 0; i < nresample; i++) if (r->uniform() <= freqtmp) count++;
+                freqtmp = double(count) / double(nresample);
+            }
+            freq.push_back(freqtmp);
+        }
+    }
+
+    if (!haveHeader)
+    {
+        LOG.err("ERROR: no #CHROM header found in", vcffile, false);
+        LOG.err(". Is it a VCF?");
+        throw 0;
+    }
+    if (numLoci == 0)
+    {
+        LOG.err("ERROR: no usable sites in", vcffile, false);
+        LOG.err(".");
+        //Composed in one string: errlog's (string, bool) overload prints the
+        //bool, so a trailing `false` meant as the newline flag rendered as
+        //"Skipped: FALSE".
+        {
+            stringstream ss;
+            ss << "\tgarlic uses biallelic SNVs only. Skipped: multiallelic " << nSkipMulti
+               << ", non-SNV " << nSkipIndel << ", no GT " << nSkipNoGT
+               << ", non-PASS " << nSkipNonPass << ".";
+            LOG.err(ss.str());
+        }
+        throw 0;
+    }
+
+    LOG.log("Chromosome", checkChrName(prevChr), false);
+    LOG.log(":", currChrLoci, false);
+    LOG.log(" sites.");
+
+    (*mapDataByChr)->push_back(initMapData(geneticPos, physicalPos, locusNames, allele, currChrLoci, checkChrName(prevChr)));
+    geneticPos.clear(); physicalPos.clear(); allele.clear(); locusNames.clear();
+
+    (*hapDataByChr)->push_back(initHapData(hap, fc, currChrLoci, numInd, PHASED));
+    hap.clear(); fc.clear();
+
+    if (AUTO_FREQ)
+    {
+        (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
+        freq.clear();
+    }
+
+    //Every skip is reported.  A VCF that is mostly indels, or whose FILTER
+    //column is populated, silently losing most of its sites is exactly the
+    //failure this tool should not have.
+    if (nSkipMulti    > 0) LOG.log("Sites skipped, multiallelic:", nSkipMulti);
+    if (nSkipIndel    > 0) LOG.log("Sites skipped, not a SNV:", nSkipIndel);
+    if (nSkipNoGT     > 0) LOG.log("Sites skipped, no GT in FORMAT:", nSkipNoGT);
+    if (nSkipNonPass  > 0) LOG.log("Sites skipped, FILTER not PASS:", nSkipNonPass);
+    else if (nNonPass > 0) LOG.log("Sites with FILTER not PASS, KEPT (see --vcf-pass-only):", nNonPass);
+
+    return;
 }
 
 bool parseGT(const char *sample, const char *sampleEnd, int gtIndex, int altIndex,

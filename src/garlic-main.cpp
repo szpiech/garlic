@@ -117,18 +117,59 @@ int main(int argc, char *argv[])
         mapDataByChr = new vector< MapData * >;
         if(AUTO_FREQ) freqDataByChr = new vector< FreqData * >;
 
-        loadTPEDData(tpedfile, numLoci, numInd,
-                     &hapDataByChr, &mapDataByChr, &freqDataByChr,
-                     TPED_MISSING, nresample, PHASED, AUTO_FREQ);
+        //Two readers, one set of structures.  Everything after this point is
+        //identical for both paths, which is the property worth preserving: a
+        //VCF-specific branch anywhere downstream would be a second pipeline.
+        string metaSource;
+        if (opt.vcffile.compare(DEFAULT_VCF) != 0)
+        {
+            vector<string> sampleIDs;
+            loadVCFData(opt.vcffile, numLoci, numInd,
+                        &hapDataByChr, &mapDataByChr, &freqDataByChr,
+                        nresample, PHASED, AUTO_FREQ, opt.VCF_PASS_ONLY, sampleIDs);
 
-        LOG.log("Total loci:", numLoci);
+            LOG.log("Total loci:", numLoci);
 
-        scanIndData3(tfamfile, numInd);
-        indData = readIndData3(tfamfile, numInd);
+            //A VCF carries sample names but no population and no sex, so the
+            //labels start as a single placeholder population and --pop
+            //replaces them.  Without --pop every sample shares one label,
+            //which is honest -- frequencies really are pooled over all of
+            //them -- but it cannot be what a multi-population cohort wants,
+            //so it warns.
+            indData = initIndData(numInd);
+            for (int i = 0; i < numInd; i++)
+            {
+                indData->indID[i] = sampleIDs[i];
+                indData->pop[i]   = "unknown";
+                indData->sex[i]   = 0;
+            }
+            metaSource = opt.vcffile;
+            if (opt.popfile.compare(DEFAULT_POP) == 0)
+                LOG.err("WARNING: no --pop given, so every sample is labelled 'unknown'. Allele");
+            if (opt.popfile.compare(DEFAULT_POP) == 0)
+                LOG.err("WARNING: frequencies are pooled over all of them; see --pop.");
+        }
+        else
+        {
+            loadTPEDData(tpedfile, numLoci, numInd,
+                         &hapDataByChr, &mapDataByChr, &freqDataByChr,
+                         TPED_MISSING, nresample, PHASED, AUTO_FREQ);
+
+            LOG.log("Total loci:", numLoci);
+
+            scanIndData3(tfamfile, numInd);
+            indData = readIndData3(tfamfile, numInd);
+            metaSource = tfamfile;
+        }
+
         //--pop replaces the labels before they are checked, so the pooled-
         //population warning is computed on the labels actually used.
-        if (opt.popfile.compare(DEFAULT_POP) != 0) applyPopFile(opt.popfile, indData);
-        checkIndData(indData, opt.popfile.compare(DEFAULT_POP) != 0 ? opt.popfile : tfamfile);
+        if (opt.popfile.compare(DEFAULT_POP) != 0)
+        {
+            applyPopFile(opt.popfile, indData);
+            metaSource = opt.popfile;
+        }
+        checkIndData(indData, metaSource);
 
         //LOG.log("Population:", popName);
         LOG.log("Total diploid individuals:", numInd);

@@ -255,7 +255,25 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                   vector< FreqData * > **freqDataByChr,
                   char TPED_MISSING, int nresample, bool PHASED, bool AUTO_FREQ);
 
+//Reads a VCF (plain or gzipped) into the same structures loadTPEDData
+//produces, so nothing downstream knows which reader ran.  sampleIDs receives
+//the sample names from the #CHROM line, in file order; main builds IndData
+//from them, which --pop can then relabel.
+void loadVCFData(string vcffile, int &numLoci, int &numInd,
+                 vector< HapData * > **hapDataByChr,
+                 vector< MapData * > **mapDataByChr,
+                 vector< FreqData * > **freqDataByChr,
+                 int nresample, bool PHASED, bool AUTO_FREQ, bool PASS_ONLY,
+                 vector<string> &sampleIDs);
+
 void freqOnly(string tpedfile, string outfile, int nresample, char TPED_MISSING);
+
+//The --freq-only pass for VCF input.  Streams like freqOnly rather than going
+//through loadVCFData, which is the point of --freq-only: the genotypes are
+//never held.  Writes the same five columns, with the ALT allele in the ALLELE
+//column, so readFreqData's orientation check makes the file interchangeable
+//with one written from a TPED.
+void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY);
 
 double calcDensity(int numLoci, vector< MapData * > *mapDataByChr, centromere *centro);
 
@@ -434,6 +452,18 @@ void applyPopFile(const string &filename, IndData *indData);
 //assembled metadata rather than of a TFAM's text, so they belong here, where
 //every input path reaches them.  `source` names the file in the messages.
 void checkIndData(IndData *indData, const string &source);
+
+//True when a VCF REF or ALT field is a single unambiguous nucleotide, which is
+//garlic's whole domain: a biallelic SNV coded 0/1/2.  Case-insensitive ACGT
+//only -- 'N' is excluded deliberately, since a site whose REF or ALT is
+//unknown cannot be coded as a dosage, as are the symbolic ALTs a VCF permits
+//('*', '.', '<NON_REF>').
+bool isSNV(const string &s);
+
+//Position of GT within a VCF FORMAT string, or -1 if absent.  Shared by
+//loadVCFData and freqOnlyVCF so the two readers cannot disagree about where
+//the genotype is -- the failure mode the filterMonomorphic* overloads had.
+int gtIndexOf(const string &fmt);
 
 //Parses one sample's VCF genotype column.
 //
