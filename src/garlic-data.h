@@ -408,6 +408,15 @@ int countFields(const string &str);
 string lc(string str);
 string checkChrName(string chr);
 
+//The duplicate-individual-ID error and the pooled-population warning.  Both
+//used to live inside scanIndData3, which only the --tfam path calls, so under
+//any other input path they silently stopped applying -- and the pooled-
+//population warning is the one that catches a TFAM with population 0 for every
+//sample, which is what vcf2tped.pl writes.  They are properties of the
+//assembled metadata rather than of a TFAM's text, so they belong here, where
+//every input path reaches them.  `source` names the file in the messages.
+void checkIndData(IndData *indData, const string &source);
+
 //Parses one sample's VCF genotype column.
 //
 //  sample..sampleEnd  the whole colon-separated sample field, e.g. "0|1:35:99"

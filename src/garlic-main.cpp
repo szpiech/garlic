@@ -125,6 +125,7 @@ int main(int argc, char *argv[])
 
         scanIndData3(tfamfile, numInd);
         indData = readIndData3(tfamfile, numInd);
+        checkIndData(indData, tfamfile);
 
         //LOG.log("Population:", popName);
         LOG.log("Total diploid individuals:", numInd);

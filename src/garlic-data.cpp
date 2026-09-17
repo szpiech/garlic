@@ -2184,16 +2184,10 @@ void scanIndData3(string filename, int &numInd) {
 
     cout << "Reading " << filename << "\n";
 
-    map<string, int> indList;
-
     string line;
     int nind = 0;
     int min_cols = 2;
     int current_cols = 0;
-    string pop, ind;
-    string popName;
-    bool multiPopWarned = false;
-    stringstream ss;
     while (getline(fin, line))
     {
         nind++;
@@ -2208,50 +2202,9 @@ void scanIndData3(string filename, int &numInd) {
             LOG.err(", but expected at least", min_cols);
             throw 0;
         }
-        //stringstream ss;
-        ss.str(line);
-        ss >> pop >> ind;
-        if (indList.count(ind) > 0)
-        {
-            cerr << "ERROR: Found duplicate individual ID (" << ind << ") in " << filename << endl;
-            LOG.err("ERROR: Found duplicate individual ID ( ", ind, false);
-            LOG.err(" ) in", filename);
-            throw 0;
-        }
-        else indList[ind] = 1;
-
-        //Allele frequencies are computed by pooling every individual in the
-        //file, and the LOD ratio is parameterised by population allele
-        //frequency.  Pooling distinct populations inflates heterozygosity
-        //relative to any one of them and biases the autozygous/non-autozygous
-        //ratio, so this is worth saying out loud even though it is allowed.
-        if (nind == 1) popName = pop;
-        else if (!multiPopWarned && pop.compare(popName) != 0) {
-            LOG.err("WARNING: Found multiple population IDs in", filename, false);
-            LOG.err(" (e.g.", popName, false);
-            LOG.err(",", pop, false);
-            LOG.err(").");
-            LOG.err("\tAllele frequencies are computed by pooling ALL individuals in the file,");
-            LOG.err("\twhich biases the LOD scores for every population present.");
-            LOG.err("\tRun each population separately, or supply --freq-file.");
-            multiPopWarned = true;
-        }
-
-        //Single population only, check to see if more than
-        /*
-        if (nind == 1) {
-            popName = pop;
-        }
-        else if (pop.compare(popName) != 0) {
-            cerr << "ERROR: Found multiple population IDs (" << pop << ", " << popName << ") in " << filename << endl;
-            if (!LOG.isQuiet()) cerr << "\tGARLIC must be given only a single population at a time.\n";
-            LOG.err("ERROR: Found multiple population IDs ( ", pop, false);
-            LOG.err(",", popName, false);
-            LOG.err(" ) in", filename);
-            throw 0;
-        }
-        */
-        ss.clear();
+        //The duplicate-ID check and the pooled-population warning that used to
+        //be here are now in checkIndData, over the assembled IndData, so they
+        //apply to every input path and not only to --tfam.
     }
 
     fin.close();
@@ -2261,6 +2214,50 @@ void scanIndData3(string filename, int &numInd) {
     return;
 }
 
+
+void checkIndData(IndData *indData, const string &source)
+{
+    if (indData == NULL) return;
+
+    //Duplicate individual IDs.  Messages preserved verbatim from where this
+    //lived in scanIndData3, including the spacing, so anything parsing them
+    //sees no change.
+    map<string, int> indList;
+    for (int i = 0; i < indData->nind; i++)
+    {
+        string ind = indData->indID[i];
+        if (indList.count(ind) > 0)
+        {
+            cerr << "ERROR: Found duplicate individual ID (" << ind << ") in " << source << endl;
+            LOG.err("ERROR: Found duplicate individual ID ( ", ind, false);
+            LOG.err(" ) in", source);
+            throw 0;
+        }
+        else indList[ind] = 1;
+    }
+
+    //Allele frequencies are computed by pooling every individual in the file,
+    //and the LOD ratio is parameterised by population allele frequency.
+    //Pooling distinct populations inflates heterozygosity relative to any one
+    //of them and biases the autozygous/non-autozygous ratio, so this is worth
+    //saying out loud even though it is allowed.
+    for (int i = 1; i < indData->nind; i++)
+    {
+        if (indData->pop[i].compare(indData->pop[0]) != 0)
+        {
+            LOG.err("WARNING: Found multiple population IDs in", source, false);
+            LOG.err(" (e.g.", indData->pop[0], false);
+            LOG.err(",", indData->pop[i], false);
+            LOG.err(").");
+            LOG.err("\tAllele frequencies are computed by pooling ALL individuals in the file,");
+            LOG.err("\twhich biases the LOD scores for every population present.");
+            LOG.err("\tRun each population separately, or supply --freq-file.");
+            break;
+        }
+    }
+
+    return;
+}
 
 IndData *readIndData3(string filename, int numInd)
 {

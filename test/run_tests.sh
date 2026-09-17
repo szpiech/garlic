@@ -376,6 +376,47 @@ likelihood_guards() {
 }
 
 # ---------------------------------------------------------------------------
+# 4c. Individual metadata
+# ---------------------------------------------------------------------------
+# The duplicate-ID error and the pooled-population warning were moved out of
+# scanIndData3, which only --tfam calls, into checkIndData over the assembled
+# IndData, so they apply to every input path.  These cases pin the TFAM path's
+# behaviour across that move: same messages, same exit codes.  The pooled-
+# population warning in particular is what catches a TFAM with population 0
+# for every sample, which is what the deprecated vcf2tped.pl writes.
+ind_metadata() {
+    echo "== individual metadata =="
+
+    # A duplicate individual ID.
+    gz "$EX/chr21.tfam.gz" | awk 'NR==5{$2="HGDP00607"} {print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6}' > "$WORK/dup.tfam"
+    expect_exit 2 "a duplicate individual ID is rejected" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$WORK/dup.tfam" --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 \
+        --size-bounds 500000 1000000 --out "$WORK/i1" --force
+    if "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$WORK/dup.tfam" --build hg18 --winsize 60 \
+            --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/i1" --force \
+            2>&1 | grep -q "Found duplicate individual ID"; then ok
+    else bad "the duplicate-ID error message is missing"; fi
+
+    # Two populations in one file: allowed, but it must say so, because
+    # frequencies are pooled across all of them.
+    gz "$EX/chr21.tfam.gz" | awk 'NR>20{$1="OTHERPOP"} {print $1"\t"$2"\t"$3"\t"$4"\t"$5"\t"$6}' > "$WORK/twopop.tfam"
+    expect_exit 0 "two populations in one TFAM still runs" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$WORK/twopop.tfam" --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 \
+        --size-bounds 500000 1000000 --out "$WORK/i2" --force
+    if "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$WORK/twopop.tfam" --build hg18 --winsize 60 \
+            --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/i2" --force \
+            2>&1 | grep -q "Found multiple population IDs"; then ok
+    else bad "the pooled-population warning is missing"; fi
+
+    # A single-population TFAM must NOT warn.
+    if "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --winsize 60 \
+            --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/i3" --force \
+            2>&1 | grep -q "Found multiple population IDs"; then
+        bad "a single-population TFAM produced the pooled-population warning"
+    else ok; fi
+}
+
+# ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
 params_roundtrip() {
@@ -425,6 +466,7 @@ unit_tests
 golden
 determinism
 likelihood_guards
+ind_metadata
 exit_codes
 params_roundtrip
 bed_format
