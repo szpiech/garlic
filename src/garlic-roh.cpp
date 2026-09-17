@@ -1003,7 +1003,7 @@ double selectLODCutoff(KDEResult *kdeResult, int wsize, bool &ok)
 {
     double LOD_CUTOFF;
     ok = true;
-    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512, wsize); }
+    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, kdeResult->size, wsize); }
     catch (...)
     {
         logCurrentException("locating the minimum between LOD score modes");
@@ -1037,7 +1037,7 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
     try { writeKDEResult(kdeResult, kdeoutfile); }
     catch (...) { logCurrentException("writing the KDE"); ok = false; return -1; }
 
-    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, 512, wsize); }
+    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, kdeResult->size, wsize); }
     catch (...)
     {
         logCurrentException("locating the minimum between LOD score modes");
