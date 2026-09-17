@@ -408,6 +408,24 @@ int countFields(const string &str);
 string lc(string str);
 string checkChrName(string chr);
 
+//Applies a --pop file to already-assembled IndData, matching BY SAMPLE ID.
+//
+//Format: whitespace-separated, '#' comments and blank lines skipped, read
+//through igzstream so a .gz works like every other input.
+//
+//    <sample_id>  <population>  [sex]
+//
+//Two required columns in that order -- note this is the OPPOSITE order to a
+//TFAM, whose first column is the population.  The optional third column is
+//sex in PLINK coding (1 male, 2 female, 0 or -9 unknown); unlike a TFAM, which
+//has to tolerate legacy variants, anything else is an error, because in a
+//purpose-built file an unrecognised value is a typo.
+//
+//Every sample in the data must have a row.  Extra rows are allowed and
+//counted: a cohort-wide population file used against a subset of the samples
+//is a normal workflow.
+void applyPopFile(const string &filename, IndData *indData);
+
 //The duplicate-individual-ID error and the pooled-population warning.  Both
 //used to live inside scanIndData3, which only the --tfam path calls, so under
 //any other input path they silently stopped applying -- and the pooled-

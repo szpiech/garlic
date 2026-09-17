@@ -98,8 +98,8 @@ bool warnSexChromosomes(vector< MapData * > *mapDataByChr, IndData *indData)
     LOG.err("WARNING: it is indistinguishable from true autozygosity. Male X chromosomes will");
     LOG.err("WARNING: therefore be called as one run spanning the whole chromosome, and any");
     LOG.err("WARNING: FROH computed from that will be inflated. Use --autosomes-only to drop");
-    LOG.err("WARNING: these chromosomes, or restrict to females using the sex column of");
-    LOG.err("WARNING: the TFAM.");
+    LOG.err("WARNING: these chromosomes, or restrict to females using the sex column of the");
+    LOG.err("WARNING: TFAM or of --pop.");
 
     //Reporting only the male count was misleading whenever sex was recorded
     //for PART of the cohort: 3 of 45 coded male with 42 unknown printed
@@ -2246,6 +2246,176 @@ void scanIndData3(string filename, int &numInd) {
     return;
 }
 
+
+void applyPopFile(const string &filename, IndData *indData)
+{
+    if (indData == NULL) return;
+
+    igzstream fin;
+    fin.open(filename.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: Failed to open", filename);
+        throw 0;
+    }
+    if (!LOG.isQuiet()) cerr << "Reading population labels from " << filename << "\n";
+
+    map<string, string> popOf;
+    map<string, int>    sexOf;      //only for rows that supplied a third column
+    vector<string>      col1, col2; //every row, in file order
+    vector<string>      sexRaw;     //"" where the row had no third column
+    vector<int>         lineOf;
+    string line;
+    int lineno = 0;
+
+    while (getline(fin, line))
+    {
+        lineno++;
+        //Trim and skip blanks and comments.
+        size_t b = line.find_first_not_of(" \t\r\n");
+        if (b == string::npos || line[b] == '#') continue;
+
+        stringstream ss(line);
+        string id, pop, sexField;
+        if (!(ss >> id >> pop))
+        {
+            LOG.err("ERROR: line", lineno, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" has fewer than 2 fields; --pop takes <sample_id> <population> [sex].");
+            throw 0;
+        }
+
+        //pop is interpolated into a quoted UCSC track name in writeROHData, so
+        //a double quote there would break the BED.
+        if (pop.find('"') != string::npos)
+        {
+            LOG.err("ERROR: population label", pop, false);
+            LOG.err(" on line", lineno, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" contains a double quote, which would break the BED track name.");
+            throw 0;
+        }
+
+        //The duplicate check is deliberately NOT here.  A TFAM-ordered file --
+        //population first -- has the same population on every row, so checking
+        //duplicates during the read would report "duplicate sample ID ( 36 )"
+        //for the swapped-columns case and hide the diagnostic that explains it.
+        //Rows are collected first; the swap check runs before the duplicate
+        //check below.
+        col1.push_back(id);
+        col2.push_back(pop);
+        sexRaw.push_back("");
+        lineOf.push_back(lineno);
+
+        if (ss >> sexField)
+        {
+            sexRaw[sexRaw.size() - 1] = sexField;
+            if      (sexField.compare("1")  == 0) {}
+            else if (sexField.compare("2")  == 0) {}
+            else if (sexField.compare("0")  == 0 || sexField.compare("-9") == 0) {}
+            else
+            {
+                LOG.err("ERROR: sex", sexField, false);
+                LOG.err(" on line", lineno, false);
+                LOG.err(" of", filename, false);
+                LOG.err(" is not 1 (male), 2 (female), 0 or -9 (unknown).");
+                throw 0;
+            }
+        }
+    }
+    fin.close();
+
+    if (col1.empty())
+    {
+        LOG.err("ERROR: no usable rows in", filename);
+        throw 0;
+    }
+
+    //Which of the data's samples does each column account for?  A TFAM-ordered
+    //file -- population first -- is the mistake this format invites, and it
+    //produces a confusing "sample not found" for every sample otherwise.
+    map<string, int> haveID;
+    for (int i = 0; i < indData->nind; i++) haveID[indData->indID[i]] = 1;
+
+    int m1 = 0, m2 = 0;
+    for (unsigned int i = 0; i < col1.size(); i++)
+    {
+        if (haveID.count(col1[i]) > 0) m1++;
+        if (haveID.count(col2[i]) > 0) m2++;
+    }
+    if (m1 == 0 && m2 == int(col2.size()))
+    {
+        LOG.err("ERROR:", filename, false);
+        LOG.err(" looks like its columns are swapped: no value in column 1 is a sample");
+        LOG.err("\tin the data, but every value in column 2 is.");
+        LOG.err("\t--pop takes <sample_id> <population>, unlike a TFAM, which is");
+        LOG.err("\t<population> <sample_id>.");
+        throw 0;
+    }
+
+    //Now that the swapped-columns case has been ruled out, duplicates in
+    //column 1 really are duplicate sample IDs.
+    for (unsigned int i = 0; i < col1.size(); i++)
+    {
+        if (popOf.count(col1[i]) > 0)
+        {
+            LOG.err("ERROR: Found duplicate sample ID ( ", col1[i], false);
+            LOG.err(" ) in", filename);
+            throw 0;
+        }
+        popOf[col1[i]] = col2[i];
+        if (!sexRaw[i].empty())
+            sexOf[col1[i]] = (sexRaw[i].compare("1") == 0) ? 1
+                           : (sexRaw[i].compare("2") == 0) ? 2 : 0;
+    }
+
+    //Every sample must have a row.  Assigning a default would be the silent
+    //pooling that the pooled-population warning exists to catch.
+    int missing = 0;
+    string firstMissing;
+    for (int i = 0; i < indData->nind; i++)
+    {
+        if (popOf.count(indData->indID[i]) == 0)
+        {
+            if (missing == 0) firstMissing = indData->indID[i];
+            missing++;
+        }
+    }
+    if (missing > 0)
+    {
+        LOG.err("ERROR:", missing, false);
+        LOG.err(" of", indData->nind, false);
+        LOG.err(" samples have no row in", filename, false);
+        LOG.err("; the first is", firstMissing, false);
+        LOG.err(".");
+        throw 0;
+    }
+
+    int changedPop = 0, changedSex = 0, setSex = 0;
+    for (int i = 0; i < indData->nind; i++)
+    {
+        const string &id = indData->indID[i];
+        if (indData->pop[i].compare(popOf[id]) != 0) changedPop++;
+        indData->pop[i] = popOf[id];
+
+        if (sexOf.count(id) > 0)
+        {
+            int s = sexOf[id];
+            if (indData->sex[i] == 0 && s != 0) setSex++;
+            else if (indData->sex[i] != s)      changedSex++;
+            indData->sex[i] = s;
+        }
+    }
+
+    LOG.log("Population labels read from", filename);
+    if (changedPop > 0) LOG.log("--pop overrode the population label of", changedPop);
+    if (setSex > 0)     LOG.log("--pop supplied a sex for", setSex);
+    if (changedSex > 0) LOG.log("--pop overrode the sex of", changedSex);
+    int extra = int(popOf.size()) - indData->nind;
+    if (extra > 0)      LOG.log("rows in the file with no matching sample (ignored):", extra);
+
+    return;
+}
 
 void checkIndData(IndData *indData, const string &source)
 {

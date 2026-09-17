@@ -292,6 +292,12 @@ GL Log10 probability that the genotype is CORRECT:  error = 1 - 10^GL.   The sam
 --phased <bool>: Set if data are phased and you want to calculate r2 instead of hr2 while --weighted is set. Uses extra RAM. Has no effect on computations without --weighted.
 	Default: false
 
+--pop <string>: A file mapping sample ID to population, replacing the population labels that would otherwise come from the TFAM. Whitespace separated, '#' comments and blank lines ignored, .gz accepted:
+  <sample_id>  <population>  [sex]
+Two required columns in THAT order. Note this is the opposite order to a TFAM, whose first column is the population. The optional third column is sex in PLINK coding (1 male, 2 female, 0 or -9 unknown); unlike a TFAM, anything else is an error rather than being read as unknown.
+Rows are matched by sample ID, never by file order. Every sample in the data must have a row; extra rows are ignored and counted, so a cohort-wide file can be used against a subset.
+	Default: none
+
 --quiet <bool>: Suppress the progress bar and informational messages. Errors and warnings still go to stderr and to <out>.error.
 	Default: false
 

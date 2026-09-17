@@ -78,6 +78,23 @@ const string ARG_TFAM = "--tfam";
 const string DEFAULT_TFAM = "none";
 const string HELP_TFAM = "A tfam formatted file containing population and individual IDs.";
 
+const string ARG_POP = "--pop";
+const string DEFAULT_POP = "none";
+const string HELP_POP = "A file mapping sample ID to population, replacing the population labels\n\
+\tthat would otherwise come from the TFAM. Whitespace separated, '#' comments\n\
+\tand blank lines ignored, .gz accepted:\n\
+\t\n\
+\t  <sample_id>  <population>  [sex]\n\
+\t\n\
+\tTwo required columns in THAT order. Note this is the opposite order to a\n\
+\tTFAM, whose first column is the population. The optional third column is\n\
+\tsex in PLINK coding (1 male, 2 female, 0 or -9 unknown); unlike a TFAM,\n\
+\tanything else is an error rather than being read as unknown.\n\
+\t\n\
+\tRows are matched by sample ID, never by file order. Every sample in the\n\
+\tdata must have a row; extra rows are ignored and counted, so a\n\
+\tcohort-wide file can be used against a subset.";
+
 const string ARG_TGLS = "--tgls";
 const string DEFAULT_TGLS = "none";
 const string HELP_TGLS = "A tgls file containing one per-genotype likelihood value per individual,\n\
@@ -359,6 +376,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_RESAMPLE, DEFAULT_RESAMPLE, "", HELP_RESAMPLE);
 	params->addFlag(ARG_TPED, DEFAULT_TPED, "", HELP_TPED);
 	params->addFlag(ARG_TFAM, DEFAULT_TFAM, "", HELP_TFAM);
+	params->addFlag(ARG_POP, DEFAULT_POP, "", HELP_POP);
 	params->addFlag(ARG_TGLS, DEFAULT_TGLS, "", HELP_TGLS);
 	params->addFlag(ARG_GL_TYPE, DEFAULT_GL_TYPE, "", HELP_GL_TYPE);
 	params->addFlag(ARG_MAP, DEFAULT_MAP, "", HELP_MAP);
@@ -507,6 +525,15 @@ bool checkOutfileClobber(string outfile, bool force)
 bool checkSeed(int seed){
 	if(seed < 0){
 		LOG.err("ERROR: Random seed must be >= 0 (0 means draw one automatically).");
+		return true;
+	}
+	return false;
+}
+
+bool checkPopFile(string popfile, string tpedfile){
+	if (popfile.compare(DEFAULT_POP) == 0) return false;
+	if (tpedfile.compare(DEFAULT_TPED) == 0){
+		LOG.err("ERROR: --pop needs input data; give --tped.");
 		return true;
 	}
 	return false;

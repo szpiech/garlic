@@ -67,7 +67,9 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     opt.tpedfile = params->getStringFlag(ARG_TPED);
     opt.tfamfile = params->getStringFlag(ARG_TFAM);
     opt.tglsfile = params->getStringFlag(ARG_TGLS);
+    opt.popfile  = params->getStringFlag(ARG_POP);
     argerr = argerr || checkRequiredFiles(opt.tpedfile, opt.tfamfile);
+    argerr = argerr || checkPopFile(opt.popfile, opt.tpedfile);
     if (argerr) return OPTIONS_USAGE_ERROR;
     LOG.log("TPED file:", opt.tpedfile);
 
@@ -75,6 +77,7 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     LOG.log("TPED missing data code:", opt.TPED_MISSING);
     LOG.log("TFAM file:", opt.tfamfile);
     LOG.log("TGLS file:", opt.tglsfile);
+    if (opt.popfile.compare(DEFAULT_POP) != 0) LOG.log("Population file:", opt.popfile);
 
     opt.GL_TYPE = params->getStringFlag(ARG_GL_TYPE);
     argerr = argerr || checkGLType(opt.GL_TYPE, opt.tglsfile);

@@ -125,7 +125,10 @@ int main(int argc, char *argv[])
 
         scanIndData3(tfamfile, numInd);
         indData = readIndData3(tfamfile, numInd);
-        checkIndData(indData, tfamfile);
+        //--pop replaces the labels before they are checked, so the pooled-
+        //population warning is computed on the labels actually used.
+        if (opt.popfile.compare(DEFAULT_POP) != 0) applyPopFile(opt.popfile, indData);
+        checkIndData(indData, opt.popfile.compare(DEFAULT_POP) != 0 ? opt.popfile : tfamfile);
 
         //LOG.log("Population:", popName);
         LOG.log("Total diploid individuals:", numInd);

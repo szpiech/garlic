@@ -440,6 +440,71 @@ ind_metadata() {
             | grep -q "affected individuals:"; then
         bad "a partial-coverage run stated a bare affected count"
     else ok; fi
+    # --- --pop -------------------------------------------------------------
+    # Rows are matched by sample ID, never by position.  The column order is
+    # <id> <pop>, which is the OPPOSITE of a TFAM's, so a TFAM-ordered file is
+    # the mistake the format invites and gets its own diagnostic.
+    gz "$EX/chr21.tfam.gz" | awk '{print $2"\tFrench"}'          > "$WORK/good.pop"
+    gz "$EX/chr21.tfam.gz" | awk '{print $2"\tFrench\t"$5}'      > "$WORK/withsex.pop"
+    gz "$EX/chr21.tfam.gz" | awk '{print $1"\t"$2}'              > "$WORK/swapped.pop"
+    gz "$EX/chr21.tfam.gz" | awk 'NR>1{print $2"\tFrench"}'      > "$WORK/missing1.pop"
+    gz "$EX/chr21.tfam.gz" | awk 'NR==3{print $2"\tFrench"} {print $2"\tFrench"}' > "$WORK/dup.pop"
+    gz "$EX/chr21.tfam.gz" | awk '{print $2"\tFrench\t7"}'       > "$WORK/badsex.pop"
+    gz "$EX/chr21.tfam.gz" | awk '{print $2"\tFre\"nch"}'        > "$WORK/quote.pop"
+    gz "$EX/chr21.tfam.gz" | awk 'NR<=20{print $2"\tPopA"} NR>20{print $2"\tPopB"}' > "$WORK/twopop.pop"
+    { cat "$WORK/good.pop"; printf 'NOT_A_SAMPLE\tElsewhere\nALSO_NOT\tElsewhere\n'; } > "$WORK/extra.pop"
+
+    POPBASE="--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000"
+    poprun() {  # $1 = pop file, $2 = expected exit, $3 = label
+        # shellcheck disable=SC2086
+        expect_exit "$2" "$3" "$GARLIC" $POPBASE --pop "$1" --out "$WORK/p1" --force
+    }
+    poprun "$WORK/swapped.pop"  2 "--pop with TFAM-ordered columns is rejected"
+    poprun "$WORK/missing1.pop" 2 "--pop missing a sample is rejected"
+    poprun "$WORK/dup.pop"      2 "--pop with a duplicate ID is rejected"
+    poprun "$WORK/badsex.pop"   2 "--pop with an unrecognised sex value is rejected"
+    poprun "$WORK/quote.pop"    2 "--pop with a quote in a label is rejected"
+    poprun "$WORK/good.pop"     0 "--pop with well-formed input is accepted"
+    poprun "$WORK/extra.pop"    0 "--pop with extra rows is accepted"
+
+    # The swapped file must get the SWAP diagnostic, not the duplicate-ID one.
+    # Column 1 of a TFAM is the population, identical on every row, so a
+    # duplicate check running first would hide the message that explains the
+    # mistake.  These two are easy to conflate, which is why this is asserted.
+    # shellcheck disable=SC2086
+    if "$GARLIC" $POPBASE --pop "$WORK/swapped.pop" --out "$WORK/p2" --force 2>&1 \
+            | grep -q "looks like its columns are swapped"; then ok
+    else bad "--pop swapped columns did not produce the swap diagnostic"; fi
+
+    # The override must reach the outputs: the FROH pop column and the BED
+    # track name both carry pop[ind], and the calls must not change.
+    # shellcheck disable=SC2086
+    $GARLIC $POPBASE --pop "$WORK/good.pop" --froh --out "$WORK/pg" --quiet --force >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    $GARLIC $POPBASE --froh --out "$WORK/pn" --quiet --force >/dev/null 2>&1
+    if [ "$(grep -v '^##' "$WORK/pg.froh.tsv" | awk 'NR==2{print $2}')" = "French" ] &&
+       [ "$(grep -v '^##' "$WORK/pn.froh.tsv" | awk 'NR==2{print $2}')" != "French" ]; then ok
+    else bad "--pop did not reach the FROH population column"; fi
+    grep -v '^track' "$WORK/pg.roh.bed" > "$WORK/pg.notrack"
+    grep -v '^track' "$WORK/pn.roh.bed" > "$WORK/pn.notrack"
+    if cmp -s "$WORK/pg.notrack" "$WORK/pn.notrack"; then ok
+    else bad "--pop changed the calls, not just the labels"; fi
+
+    # checkIndData must see the OVERRIDDEN labels, which is why applyPopFile
+    # runs before it: a single-population TFAM relabelled into two populations
+    # by --pop must warn.
+    # shellcheck disable=SC2086
+    if "$GARLIC" $POPBASE --pop "$WORK/twopop.pop" --out "$WORK/p3" --force 2>&1 \
+            | grep -q "Found multiple population IDs"; then ok
+    else bad "--pop introducing two populations did not warn"; fi
+
+    # --pop's sex column must feed the sex-chromosome warning, which is the
+    # reason the column exists.
+    gz "$EX/chr21.tfam.gz" | awk '{print $1"\t"$2}' > "$WORK/nosex2.tfam"
+    if "$GARLIC" --tped "$WORK/chrX.tped.gz" --tfam "$WORK/nosex2.tfam" --build hg18 --winsize 60 \
+            --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --pop "$WORK/withsex.pop" \
+            --out "$WORK/p4" --force 2>&1 | grep -q "26 male, 19 female"; then ok
+    else bad "--pop sex column did not reach the sex-chromosome warning"; fi
 }
 
 # ---------------------------------------------------------------------------

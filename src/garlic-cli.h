@@ -63,6 +63,10 @@ extern const string ARG_TFAM;
 extern const string DEFAULT_TFAM;
 extern const string HELP_TFAM;
 
+extern const string ARG_POP;
+extern const string DEFAULT_POP;
+extern const string HELP_POP;
+
 extern const string ARG_TGLS;
 extern const string DEFAULT_TGLS;
 extern const string HELP_TGLS;
@@ -249,6 +253,7 @@ param_t *getCLI(int argc, char *argv[], int &status);
 bool checkOutfileClobber(string outfile, bool force);
 bool checkSeed(int seed);
 bool checkMaxWinsize(int maxWinsize, int winsize);
+bool checkPopFile(string popfile, string tpedfile);
 bool checkBuild(string BUILD);
 bool checkBuildAndCentromereFile(string BUILD, string centromereFile, bool NO_CENTROMERE);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE, bool wasSet);

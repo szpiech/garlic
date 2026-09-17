@@ -22,6 +22,7 @@ struct GarlicOptions
     string          tpedfile;
     string          tfamfile;
     string          tglsfile;
+    string          popfile;
     char            TPED_MISSING;
     string          GL_TYPE;
     bool            WEIGHTED;
