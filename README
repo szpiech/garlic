@@ -80,10 +80,15 @@ freq (optional, output during computation, can be generated without running whol
 centromere file (required if no --build is set):
 	<chr> <centromere start> <centromere end>
 
-GARLIC depends on zlib (http://zlib.net/) and POSIX threads.  On Linux and macOS both
-come from the system, so there is nothing to obtain or vendor: the Makefile links -lz and
--pthread.  MinGW supplies neither, so win32 builds link libz.a and libpthreadGC2.a from
-lib/win32, which are the only archives still included here.
+GARLIC's only external dependency is zlib (http://zlib.net/), which comes from the system
+on Linux and macOS -- the Makefile links -lz and there is nothing to obtain or vendor.
+Threading is std::thread from the C++11 standard library rather than pthreads called
+directly; on Linux libstdc++ implements it over pthreads, so the Makefile still passes
+-pthread there, but no pthreads library is named or vendored on any platform.  A static
+Linux build additionally wraps -lpthread in --whole-archive, because libstdc++ decides at
+run time whether threading is available by testing a weak symbol that a static link can
+otherwise leave out.  win32 builds link libz.a from lib/win32, and require a MinGW GCC
+configured with the POSIX threading model, which is what supplies std::thread there.
 
 GNU GSL and FIGTree were previously required and are no longer used.  FIGTree was replaced
 by a direct Gaussian sum, which made the KDE reproducible; GSL was replaced by
