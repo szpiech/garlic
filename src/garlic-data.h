@@ -74,8 +74,11 @@ struct HapData
 };
 
 struct GenMapScaffold {
-  pos_t *physicalPos;
-  double *geneticPos;
+  //Raw arrays over new[]/delete[] became vectors: the releaseX function no
+  //longer has to enumerate them, which is how B11-style leaks happened.
+
+  vector<pos_t> physicalPos;
+  vector<double> geneticPos;
   map<pos_t, int> ppos2index;
   int nloci;
   string chr;
@@ -86,10 +89,13 @@ struct GenMapScaffold {
 
 struct MapData
 {
-  pos_t *physicalPos;
-  double *geneticPos;
-  string *locusName;
-  char *allele;
+  //Raw arrays over new[]/delete[] became vectors: the releaseX function no
+  //longer has to enumerate them, which is how B11-style leaks happened.
+
+  vector<pos_t> physicalPos;
+  vector<double> geneticPos;
+  vector<string> locusName;
+  vector<char> allele;
   //char *allele0;
   int nloci;
   string chr;
@@ -112,13 +118,13 @@ struct IndData
 
 struct FreqData
 {
-  double *freq;
+  vector<double> freq;
   int nloci;
 };
 
 struct GenoFreqData
 {
-  double *homFreq;
+  vector<double> homFreq;
   int nloci;
 };
 
@@ -141,7 +147,7 @@ struct GenoLikeData
 
 struct DoubleData
 {
-  double *data;
+  vector<double> data;
   int size;
 };
 

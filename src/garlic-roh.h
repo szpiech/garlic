@@ -53,7 +53,7 @@ struct ROHData
 struct ROHLength
 {
   //string pop;
-  double *length;
+  vector<double> length;
   double size;
 };
 

@@ -436,7 +436,7 @@ GenoLikeData *initGLData(const vector< double * > &GL, int nloci, int nind){
 
 FreqData *initFreqData(const vector<double> &freq, int nloci){
     FreqData *freqData = new FreqData;
-    freqData->freq = new double[nloci];
+    freqData->freq.resize(nloci);
     freqData->nloci = nloci;
 
     for(int i = 0; i < nloci; i++){
@@ -474,10 +474,10 @@ HapData *initHapData(const vector< geno_t * > &hap, const vector< bool * > &fc, 
 MapData *initMapData(const vector<double> &geneticPos, const vector<pos_t> &physicalPos, const vector<string> &locusNames, const vector<char> &allele, int nloci, string chr){
 
     MapData *mapData = new MapData;
-    mapData->physicalPos = new pos_t[nloci];
-    mapData->geneticPos = new double[nloci];
-    mapData->locusName = new string[nloci];
-    mapData->allele = new char[nloci];
+    mapData->physicalPos.resize(nloci);
+    mapData->geneticPos.resize(nloci);
+    mapData->locusName.resize(nloci);
+    mapData->allele.resize(nloci);
     mapData->nloci = nloci;
     mapData->chr = chr;
 
@@ -1033,13 +1033,12 @@ GenoFreqData *calculateGenoFreq(HapData *hapData){
 
 GenoFreqData *initGenoFreq(int nloci){
     GenoFreqData *data = new GenoFreqData;
-    data->homFreq = new double[nloci];
+    data->homFreq.resize(nloci);
     data->nloci = nloci;
     return data;
 }
 
 void releaseGenoFreq(GenoFreqData *genoFreqData){
-    delete [] genoFreqData->homFreq;
     delete genoFreqData;
     return;
 }
@@ -1258,16 +1257,14 @@ vector< GenMapScaffold *> *loadMapScaffold(string mapfile, centromere *centro) {
 
 GenMapScaffold *initGenMapScaffold(int nloci) {
     GenMapScaffold *scaffoldMap = new GenMapScaffold;
-    scaffoldMap->physicalPos = new pos_t[nloci];
-    scaffoldMap->geneticPos = new double[nloci];
+    scaffoldMap->physicalPos.resize(nloci);
+    scaffoldMap->geneticPos.resize(nloci);
     scaffoldMap->nloci = nloci;
     scaffoldMap->currentIndex = 0;
     return scaffoldMap;
 }
 
 void releaseGenMapScaffold(GenMapScaffold *scaffoldMap) {
-    delete [] scaffoldMap->physicalPos;
-    delete [] scaffoldMap->geneticPos;
     scaffoldMap->ppos2index.clear();
     delete scaffoldMap;
     return;
@@ -1637,8 +1634,8 @@ FreqData *initFreqData(int nloci)
 
     FreqData *data = new FreqData;
     data->nloci = nloci;
-    data->freq = new double[nloci];
-    //data->allele = new string[nloci];
+    data->freq.resize(nloci);
+    //data->allele.resize(nloci);
 
     for (int locus = 0; locus < nloci; locus++)
     {
@@ -1653,8 +1650,6 @@ void releaseFreqData(FreqData *data)
 {
     if (data == NULL) return;
     data->nloci = -9;
-    delete [] data->freq;
-    //delete [] data->allele;
     delete data;
     data = NULL;
     return;
@@ -1814,10 +1809,10 @@ MapData *initMapData(int nloci)
 
     MapData *data = new MapData;
     data->nloci = nloci;
-    data->locusName = new string[nloci];
-    data->physicalPos = new pos_t[nloci];
-    data->geneticPos = new double[nloci];
-    data->allele = new char[nloci];
+    data->locusName.resize(nloci);
+    data->physicalPos.resize(nloci);
+    data->geneticPos.resize(nloci);
+    data->allele.resize(nloci);
     //data->allele0 = new char[nloci];
     data->chr = "--";
 
@@ -1837,10 +1832,6 @@ void releaseMapData(MapData *data)
 {
     if (data == NULL) return;
     data->nloci = -9;
-    delete [] data->locusName;
-    delete [] data->physicalPos;
-    delete [] data->geneticPos;
-    delete [] data->allele;
     //delete [] data->allele0;
     delete data;
     data = NULL;
@@ -2362,7 +2353,7 @@ DoubleData *initDoubleData(int n)
     DoubleData *data = new DoubleData;
 
     data->size = n;
-    data->data = new double[n];
+    data->data.resize(n);
 
     return data;
 }
@@ -2489,7 +2480,6 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
 
 void releaseDoubleData(DoubleData *data)
 {
-    delete [] data->data;
     delete data;
     return;
 }

@@ -58,8 +58,8 @@ static void *parallelLOD(void *order)
     LOD_work_order_t *p = (LOD_work_order_t *)order;
     Matrix<geno_t> &data = p->hapData->data;
     const int nloci = p->hapData->nloci;
-    const pos_t *physicalPos = p->mapData->physicalPos;
-    const double *freq = p->freqData->freq;
+    const pos_t *physicalPos = p->mapData->physicalPos.data();
+    const double *freq = p->freqData->freq.data();
     Matrix<double> &win = p->winData->data;
     GenoLikeData *GLData = p->GLData;
     const double *lut = p->lut;
@@ -172,7 +172,7 @@ void calcLOD(MapData *mapData,
     if (!USE_GL)
     {
         lut = new double[4 * size_t(nloci)];
-        const double *freq = freqData->freq;
+        const double *freq = freqData->freq.data();
         for (int i = 0; i < nloci; i++)
         {
             lut[4 * size_t(i) + 0] = lod(0, freq[i], error);
@@ -312,9 +312,9 @@ void parallelwLOD(void *order){
     Matrix<geno_t> &data = p->hapData->data;
     int nloci = p->hapData->nloci;
     int nind = p->hapData->nind;
-    pos_t *physicalPos = p->mapData->physicalPos;
-    double *geneticPos = p->mapData->geneticPos;
-    double *freq = p->freqData->freq;
+    pos_t *physicalPos = p->mapData->physicalPos.data();
+    double *geneticPos = p->mapData->geneticPos.data();
+    double *freq = p->freqData->freq.data();
     Matrix<double> &win = p->winData->data;
 
     int cStart = p->cStart;
@@ -545,8 +545,8 @@ static void *parallelAssembleROH(void *order)
             MapData *mapData = mapDataByChr->at(chr);
             pos_t *pos;
             double *gpos;
-            gpos = mapData->geneticPos;
-            pos = mapData->physicalPos;
+            gpos = mapData->geneticPos.data();
+            pos = mapData->physicalPos.data();
 
             pos_t cStart = centro->centromereStart(mapData->chr);
             pos_t cEnd = centro->centromereEnd(mapData->chr);
@@ -742,14 +742,13 @@ ROHLength *initROHLength(int size)
 {
     ROHLength *rohLength = new ROHLength;
     //rohLength->pop = pop;
-    rohLength->length = new double[size];
+    rohLength->length.resize(size);
     rohLength->size = size;
     return rohLength;
 }
 
 void releaseROHLength(ROHLength *rohLength)
 {
-    delete [] rohLength->length;
     delete rohLength;
     return;
 }
@@ -1003,7 +1002,7 @@ double selectLODCutoff(KDEResult *kdeResult, int wsize, bool &ok)
 {
     double LOD_CUTOFF;
     ok = true;
-    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, kdeResult->size, wsize); }
+    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x.data(), kdeResult->y.data(), kdeResult->size, wsize); }
     catch (...)
     {
         logCurrentException("locating the minimum between LOD score modes");
@@ -1030,14 +1029,14 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
 
     //Compute KDE of LOD score distribution
     if (!LOG.isQuiet()) cerr << "Estimating distribution of raw LOD score windows:\n";
-    KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+    KDEResult *kdeResult = computeKDE(rawWinData->data.data(), rawWinData->size);
     releaseDoubleData(rawWinData);
 
     //Output kde points
     try { writeKDEResult(kdeResult, kdeoutfile); }
     catch (...) { logCurrentException("writing the KDE"); ok = false; return -1; }
 
-    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x, kdeResult->y, kdeResult->size, wsize); }
+    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x.data(), kdeResult->y.data(), kdeResult->size, wsize); }
     catch (...)
     {
         logCurrentException("locating the minimum between LOD score modes");
@@ -1116,7 +1115,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : multiWinsizes[i]));
         releaseWinData(winDataByChr);
 
-        KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+        KDEResult *kdeResult = computeKDE(rawWinData->data.data(), rawWinData->size);
         releaseDoubleData(rawWinData);
 
         try { writeKDEResult(kdeResult, makeKDEFilename(outfile, multiWinsizes[i])); }
@@ -1210,7 +1209,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : winsizeQuery));
         releaseWinData(winDataByChr);
 
-        KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+        KDEResult *kdeResult = computeKDE(rawWinData->data.data(), rawWinData->size);
         releaseDoubleData(rawWinData);
 
         mse = calculateWiggle(kdeResult);
@@ -1309,7 +1308,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
         DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : multiWinsizes->at(i)));
         releaseWinData(winDataByChr);
 
-        KDEResult *kdeResult = computeKDE(rawWinData->data, rawWinData->size);
+        KDEResult *kdeResult = computeKDE(rawWinData->data.data(), rawWinData->size);
         releaseDoubleData(rawWinData);
 
         mse = calculateWiggle(kdeResult);
@@ -1359,8 +1358,8 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
     sortIndex = new size_t[ngaussians];
 
     //calculate mean and var for the population size distribution to use for initial guess
-    double var = garlicVariance(rohLength->length, rohLength->size);
-    double mu = garlicMean(rohLength->length, rohLength->size);
+    double var = garlicVariance(rohLength->length.data(), rohLength->size);
+    double mu = garlicMean(rohLength->length.data(), rohLength->size);
     for (int n = 0; n < ngaussians; n++)
     {
         W[n] = 1.0 / double(ngaussians);
@@ -1370,7 +1369,7 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
 
     GMM gmm(ngaussians, W, Mu, Sigma, maxIter, tolerance, true, true);
 
-    gmm.estimate(rohLength->length, rohLength->size);
+    gmm.estimate(rohLength->length.data(), rohLength->size);
 
     for (int n = 0; n < ngaussians; n++)
     {

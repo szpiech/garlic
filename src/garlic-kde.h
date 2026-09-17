@@ -15,8 +15,8 @@
 struct KDEResult
 {
     int size;
-    double *x;
-    double *y;
+    vector<double> x;
+    vector<double> y;
 };
 
 double nrd0(double *data, const int n);

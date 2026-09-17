@@ -46,21 +46,20 @@ KDEResult *computeKDE(double *data, int size)
     //cout << "\n\tMin LOD: " << min << "\n\tMax LOD: " << max
     //<< "\n\th: " << h << "\n\tsize: " << size << endl;
 
-    //Results
-    double *kde_points = new double[M];
-    //Create target array
-    double *targets = new double [M];
-
-    //memset(kde_points, 0, sizeof(double)*M);
-    //memset(targets, 0, sizeof(double)*M);
+    //Built in place in the result rather than as raw arrays handed over to it,
+    //so nothing owns these but the KDEResult.
+    KDEResult *kdeResult = new KDEResult;
+    kdeResult->size = M;
+    kdeResult->y.assign(M, 0.0);          //kde_points
+    kdeResult->x.resize(M);               //targets
+    double *kde_points = kdeResult->y.data();
+    double *targets = kdeResult->x.data();
 
     //Initialize the equally spaced target points
     for (int i = 0; i < M; i++)
     {
-        kde_points[i] = 0;
         double obs = (double(i + 1) / double(M)) * ( max - min ) + min;
         targets[i] = obs;
-        //cout << obs << " " << kde(data,obs,n,h) << endl;
     }
 
     double targetPointSpacing = targets[1] - targets[0];
@@ -78,11 +77,6 @@ KDEResult *computeKDE(double *data, int size)
         kde_points[i] /= (sum * targetPointSpacing);
     }
 
-    KDEResult *kdeResult = new KDEResult;
-    kdeResult->x = targets;
-    kdeResult->y = kde_points;
-    kdeResult->size = M;
-
     return kdeResult;
 }
 
@@ -91,8 +85,8 @@ KDEResult *cloneKDEResult(KDEResult *data)
 {
     KDEResult *kdeResult = new KDEResult;
     kdeResult->size = data->size;
-    kdeResult->x = new double[kdeResult->size];
-    kdeResult->y = new double[kdeResult->size];
+    kdeResult->x.resize(kdeResult->size);
+    kdeResult->y.resize(kdeResult->size);
 
     for (int i = 0; i < kdeResult->size; i++)
     {
@@ -104,8 +98,6 @@ KDEResult *cloneKDEResult(KDEResult *data)
 
 void releaseKDEResult(KDEResult *data)
 {
-    delete [] data->x;
-    delete [] data->y;
     delete data;
     data = NULL;
     return;
