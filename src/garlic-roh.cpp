@@ -56,7 +56,7 @@ struct LOD_work_order_t
 static void *parallelLOD(void *order)
 {
     LOD_work_order_t *p = (LOD_work_order_t *)order;
-    geno_t **data = p->hapData->data;
+    Matrix<geno_t> &data = p->hapData->data;
     const int nloci = p->hapData->nloci;
     const pos_t *physicalPos = p->mapData->physicalPos;
     const double *freq = p->freqData->freq;
@@ -309,7 +309,7 @@ void parallelwLOD(void *order){
     Bar *bar = p->bar;
     int numThreads = p->numThreads;
 
-    geno_t **data = p->hapData->data;
+    Matrix<geno_t> &data = p->hapData->data;
     int nloci = p->hapData->nloci;
     int nind = p->hapData->nind;
     pos_t *physicalPos = p->mapData->physicalPos;

@@ -450,25 +450,23 @@ HapData *initHapData(const vector< geno_t * > &hap, const vector< bool * > &fc, 
     HapData *hapData = new HapData;
     hapData->nind = nind;
     hapData->nloci = nloci;
-    hapData->data = new geno_t*[nloci];
-    if(PHASED) hapData->firstCopy = new bool*[nloci];
-    else hapData->firstCopy = NULL;
-
     //The reader allocates a row per locus because it does not know the locus
     //count in advance.  Gather them into one block here and release the rows,
     //so the transient overlap is one chromosome rather than the whole genome.
-    geno_t *block = new geno_t[size_t(nloci) * size_t(nind)];
-    bool *fcBlock = PHASED ? new bool[size_t(nloci) * size_t(nind)] : NULL;
+    hapData->data.reserveRows(nloci, nind);
+    if(PHASED) hapData->firstCopy.reserveRows(nloci, nind);
+    vector<unsigned char> fcRow(PHASED ? nind : 0);
     for(int i = 0; i < nloci; i++){
-        hapData->data[i] = block + size_t(i) * size_t(nind);
-        memcpy(hapData->data[i], hap[i], sizeof(geno_t) * size_t(nind));
+        hapData->data.appendRow(hap[i]);
         delete [] hap[i];
         if(PHASED){
-            hapData->firstCopy[i] = fcBlock + size_t(i) * size_t(nind);
-            memcpy(hapData->firstCopy[i], fc[i], sizeof(bool) * size_t(nind));
+            for(int j = 0; j < nind; j++) fcRow[j] = fc[i][j] ? 1 : 0;
+            hapData->firstCopy.appendRow(&fcRow[0]);
             delete [] fc[i];
         }
     }
+    hapData->data.finishRows();
+    if(PHASED) hapData->firstCopy.finishRows();
 
     return hapData;
 }
@@ -2117,21 +2115,8 @@ HapData *initHapData(unsigned int nind, unsigned int nloci, bool PHASED)
     data->nind = nind;
     data->nloci = nloci;
 
-    data->data = new geno_t*[nloci];
-    if(PHASED) data->firstCopy = new bool*[nloci];
-    else data->firstCopy = NULL;
-    geno_t *block = new geno_t[size_t(nloci) * size_t(nind)];
-    bool *fcBlock = PHASED ? new bool[size_t(nloci) * size_t(nind)] : NULL;
-    for (unsigned int i = 0; i < nloci; i++)
-    {
-        data->data[i] = block + size_t(i) * size_t(nind);
-        if(PHASED) data->firstCopy[i] = fcBlock + size_t(i) * size_t(nind);
-        for (unsigned int j = 0; j < nind; j++)
-        {
-            data->data[i][j] = GENO_UNSET;
-            if(PHASED) data->firstCopy[i][j] = 0;
-        }
-    }
+    data->data.assign(nloci, nind, GENO_UNSET);
+    if(PHASED) data->firstCopy.assign(nloci, nind, 0);
 
     return data;
 }
@@ -2140,23 +2125,9 @@ void releaseHapData(HapData *data)
 {
     if (data == NULL) return;
 
-    //one contiguous block per structure: free row 0, not every row
-    if (data->nloci > 0)
-    {
-        if(data->firstCopy != NULL) delete [] data->firstCopy[0];
-        delete [] data->data[0];
-    }
-
-    delete [] data->data;
-
-    if(data->firstCopy != NULL) delete [] data->firstCopy;
-
-    data->data = NULL;
-    data->firstCopy = NULL;
-    data->nind = -9;
-    data->nloci = -9;
+    //The Matrix members free their own contiguous block; there is no row-0
+    //bookkeeping left to get wrong.
     delete data;
-    data = NULL;
     return;
 }
 

@@ -12,6 +12,7 @@
 #include <cctype>
 #include <map>
 #include "garlic-pos.h"
+#include "garlic-matrix.h"
 #include "garlic-math.h"
 #include <pthread.h>
 #include "gzstream.h"
@@ -63,8 +64,11 @@ const geno_t GENO_UNSET = -9;
 //therefore free row 0 and the pointer array, not every row.
 struct HapData
 {
-  bool **firstCopy;
-  geno_t **data;
+  //Matrix<unsigned char> rather than Matrix<bool>: vector<bool> is the proxy
+  //specialisation and has no bool* to hand out (see garlic-matrix.h).  Only
+  //populated under --phased; empty() otherwise.
+  Matrix<unsigned char> firstCopy;
+  Matrix<geno_t> data;
   int nind;
   int nloci;
 };
