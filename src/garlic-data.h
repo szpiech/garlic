@@ -345,11 +345,14 @@ void writeFreqData(string freqOutfile,
 vector< FreqData * > *readFreqData(string freqfile,
                                    vector< MapData * > *mapDataByChr);
 
+//indData is used only to name the individual in a diagnostic; the values are
+//read positionally as before.
 vector< GenoLikeData * > *readTGLSData(string filename,
                                        int expectedLoci,
                                        int expectedInd,
                                        vector< MapData * > *mapDataByChr,
-                                       string GL_TYPE);
+                                       string GL_TYPE,
+                                       IndData *indData);
 
 MapData *initMapData(int nloci);
 void releaseMapData(MapData *data);

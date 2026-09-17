@@ -222,7 +222,9 @@ strings. Do not edit by hand.
 --froh <bool>: Also write <out>.froh.tsv: per-individual autozygous total and fraction, broken down by ROH size class. The denominator is stated in the file header.
 	Default: false
 
---gl-type <string>: Specify the form of the genotype likelihood data: GQ, GL, or PL. GQ is a phred-scaled likelihood of the genotype being incorrect. PL is a phred-scaled likelihood of the genotype being correct. GL is a log10-scaled likelihood of the genotype being correct.
+--gl-type <string>: Form of the genotype likelihood data supplied per genotype with --tgls. GQ Phred-scaled probability that the genotype call is WRONG, as defined   by the VCF spec:  error = 10^(-GQ/10).  GQ 20/30/40 gives an error   rate of 0.01/0.001/0.0001.  This is the only form whose values can be   taken from a VCF and used directly, because it needs no normalisation.
+PL Phred-scaled probability that the genotype is CORRECT:     error = 1 - 10^(-PL/10).   *** This is NOT the VCF PL field. *** VCF normalises PL so the CALLED   genotype is exactly 0, and VCF PL is an integer.  Under the definition   above, PL=0 means an error of 0, and the integers map to 0, 0.21, 0.37,   0.50, ... -- none of which is a realistic genotype error rate (0.001   would be PL=0.00435).  Feeding VCF PLs here is rejected with an error.   Use GQ unless your values genuinely are P(genotype correct).
+GL Log10 probability that the genotype is CORRECT:  error = 1 - 10^GL.   The same caveat as PL: this is not the VCF GL field, which is   normalised to 0 for the called genotype.
 	Default: none
 
 --gmm-max-iter <int>: Maximum EM iterations when fitting ROH size classes.
@@ -308,7 +310,7 @@ strings. Do not edit by hand.
 --tfam <string>: A tfam formatted file containing population and individual IDs.
 	Default: none
 
---tgls <string>: A tgls file containing per-genotype likelihoods.
+--tgls <string>: A tgls file containing one per-genotype likelihood value per individual, in the same row order as the tped.  See --gl-type for what the values must mean: for PL and GL this is NOT the VCF convention.
 	Default: none
 
 --threads <int>: The number of threads to use. Applies to LOD score calculation, the LD calculations under --weighted, the LOD score KDE, and ROH assembly.

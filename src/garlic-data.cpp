@@ -1,4 +1,5 @@
 #include "garlic-data.h"
+#include <cmath>
 #include <random>
 
 static GarlicRNG *GARLIC_RNG = NULL;
@@ -1699,11 +1700,23 @@ void releaseIndData(IndData *data)
     return;
 }
 
+//Names a value's location for a diagnostic: "chr21:14834892 (sample HGDP00521)".
+static string tglsWhere(vector< MapData * > *mapDataByChr, IndData *indData,
+                        unsigned int chr, int locus, int ind)
+{
+    stringstream ss;
+    ss << mapDataByChr->at(chr)->chr << ":" << mapDataByChr->at(chr)->physicalPos[locus];
+    if (indData != NULL && ind < indData->nind) ss << " (sample " << indData->indID[ind] << ")";
+    else ss << " (column " << (ind + 5) << ")";
+    return ss.str();
+}
+
 vector< GenoLikeData * > *readTGLSData(string filename,
                                        int expectedLoci,
                                        int expectedInd,
                                        vector< MapData * > *mapDataByChr,
-                                       string GL_TYPE)
+                                       string GL_TYPE,
+                                       IndData *indData)
 {
     igzstream fin;
     if (!LOG.isQuiet()) cerr << "Loading genotype likelihoods from " << filename << "\n";
@@ -1719,6 +1732,19 @@ vector< GenoLikeData * > *readTGLSData(string filename,
     string line;
     stringstream ss;
     vector< GenoLikeData * > *GLDataByChr = new vector< GenoLikeData * >;
+
+    //A tgls file states P(genotype CORRECT) for PL and GL (see HELP_GL_TYPE),
+    //which is NOT the quantity a VCF's PL/GL fields carry: VCF normalises them
+    //so the called genotype is exactly 0.  Feeding those in yields an error
+    //rate of 0, clamped to 1e-16 by glToError, which makes every heterozygote
+    //contribute -16 to the window LOD instead of the -3 an error of 0.001
+    //gives -- 113 ROH instead of 171 on the bundled chr21 data, with no other
+    //symptom.  The two checks below reject that input instead of computing
+    //with it.  Neither applies to GQ, where 0 legitimately means "no
+    //confidence" and yields an error rate of 1.
+    bool rejectZero = (GL_TYPE.compare("PL") == 0 || GL_TYPE.compare("GL") == 0);
+    bool allInteger = true;     //verdict deferred: a property of the whole file
+    long nvalues = 0;
 
     //For each chromosome
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++){
@@ -1739,12 +1765,71 @@ vector< GenoLikeData * > *readTGLSData(string filename,
             ss >> junk;
             ss >> junk;
             for (int ind = 0; ind < expectedInd; ind++){
-                ss >> gl;
+                //An unparseable token used to leave gl at 0 and put the stream
+                //in a failed state, so the rest of the line silently became
+                //zeros -- error rate 1 under GQ, 1e-16 under PL/GL.
+                if (!(ss >> gl)){
+                    LOG.err("ERROR: could not read a " + GL_TYPE + " value at",
+                            tglsWhere(mapDataByChr, indData, chr, locus, ind), false);
+                    LOG.err(" in", filename);
+                    throw 0;
+                }
+                nvalues++;
+
+                //Values that cannot occur on their own scale.
+                if (GL_TYPE.compare("GL") == 0 && gl > 0){
+                    LOG.err("ERROR: GL is log10 of a probability and cannot exceed 0, but the value at",
+                            tglsWhere(mapDataByChr, indData, chr, locus, ind), false);
+                    LOG.err(" is", gl);
+                    throw 0;
+                }
+                if (GL_TYPE.compare("GL") != 0 && gl < 0){
+                    LOG.err("ERROR: " + GL_TYPE + " is phred-scaled and cannot be negative, but the value at",
+                            tglsWhere(mapDataByChr, indData, chr, locus, ind), false);
+                    LOG.err(" is", gl);
+                    throw 0;
+                }
+
+                if (rejectZero && gl == 0){
+                    LOG.err("ERROR: --gl-type " + GL_TYPE + ", but the value at",
+                            tglsWhere(mapDataByChr, indData, chr, locus, ind), false);
+                    LOG.err(" in", filename, false);
+                    LOG.err(" is 0.");
+                    LOG.err("\ta " + GL_TYPE + " of 0 asserts P(genotype correct) = 1 exactly, which becomes a");
+                    LOG.err("\tper-genotype error of 0 -- clamped to 1e-16, making every heterozygote");
+                    LOG.err("\tcontribute -16 to the window LOD instead of the -3 that an error rate of");
+                    LOG.err("\t0.001 gives.  On the bundled chr21 data that is 113 ROH instead of 171,");
+                    LOG.err("\twith no other symptom.");
+                    LOG.err("\tIf these values came from a VCF: VCF normalises PL and GL so the CALLED");
+                    LOG.err("\tgenotype is exactly 0, which is not the quantity --tgls expects.  Either");
+                    LOG.err("\tuse --gl-type GQ, a phred-scaled P(call is wrong) that needs no");
+                    LOG.err("\tnormalisation, or supply values that really are P(genotype correct).");
+                    throw 0;
+                }
+
+                if (gl != floor(gl)) allInteger = false;
+
                 GLDataByChr->at(chr)->data[locus][ind] = glToError(gl, GL_TYPE);
 
             }
             ss.clear();
         }
+    }
+
+    //Deferred verdict: no INTEGER PL expresses a realistic genotype error rate
+    //under this convention -- the integers map to 0, 0.206, 0.369, 0.499, ...
+    //and an error of 0.001 would need PL = 0.00435.  An all-integer PL file is
+    //therefore a VCF-derived file however it was produced.
+    if (GL_TYPE.compare("PL") == 0 && allInteger && nvalues > 0){
+        LOG.err("ERROR: --gl-type PL, but every value in", filename, false);
+        LOG.err(" is an integer.");
+        LOG.err("\t--tgls expects PL as a phred-scaled P(genotype CORRECT), which requires");
+        LOG.err("\tfractional values -- an error rate of 0.001 is PL = 0.00435.  Integers map");
+        LOG.err("\tto error 0 (PL=0), 0.206 (1), 0.369 (2), 0.499 (3), so no integer PL");
+        LOG.err("\texpresses a realistic genotype error rate.");
+        LOG.err("\tInteger PLs almost certainly came from a VCF.  Use --gl-type GQ instead,");
+        LOG.err("\twhich is a phred-scaled P(call is wrong) and needs no normalisation.");
+        throw 0;
     }
 
     fin.close();

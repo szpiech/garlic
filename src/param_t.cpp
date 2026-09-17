@@ -303,15 +303,38 @@ static void splitHelpEntry(const string &entry, string &type, string &desc, stri
 
 //The HELP_ strings wrap with "\n\t" for terminal output; documentation
 //formats re-flow, so collapse those to single spaces.
-static string unwrap(const string &s)
+//The HELP_ strings are hard-wrapped for an 80-column terminal, and every
+//newline in them is followed by a tab, so a newline is a COSMETIC break that
+//must not be inherited by the generated documentation -- hence collapsing it
+//to a space.  A BLANK line is different: no help string used one until
+//--gl-type needed to separate three labelled forms, so it is available as an
+//unambiguous structural break.  keepParagraphs preserves those and nothing
+//else, which is why turning it on changes no other entry.
+static string unwrap(const string &s, bool keepParagraphs = false)
 {
     string o;
     for (size_t i = 0; i < s.size(); i++)
     {
-        if (s[i] == '\n' || s[i] == '\t') { if (!o.empty() && o[o.size()-1] != ' ') o += ' '; }
+        if (s[i] == '\n' || s[i] == '\t')
+        {
+            if (keepParagraphs && s[i] == '\n')
+            {
+                //Look ahead past tabs and spaces for a second newline.
+                size_t j = i + 1;
+                while (j < s.size() && (s[j] == '\t' || s[j] == ' ')) j++;
+                if (j < s.size() && s[j] == '\n')
+                {
+                    while (!o.empty() && o[o.size()-1] == ' ') o.erase(o.size()-1);
+                    o += '\n';
+                    i = j;
+                    continue;
+                }
+            }
+            if (!o.empty() && o[o.size()-1] != ' ' && o[o.size()-1] != '\n') o += ' ';
+        }
         else o += s[i];
     }
-    while (!o.empty() && o[o.size()-1] == ' ') o.erase(o.size()-1);
+    while (!o.empty() && (o[o.size()-1] == ' ' || o[o.size()-1] == '\n')) o.erase(o.size()-1);
     return o;
 }
 
@@ -386,8 +409,8 @@ bool param_t::writeHelpDoc(ostream &out, string format)
         splitHelpEntry(it->second, type, desc, def);
         if (format == "txt")
         {
-            out << it->first << " <" << type << ">: " << unwrap(desc) << "\n";
-            if (!def.empty()) out << "\tDefault: " << unwrap(def) << "\n";
+            out << it->first << " <" << type << ">: " << unwrap(desc, true) << "\n";
+            if (!def.empty()) out << "\tDefault: " << unwrap(def, true) << "\n";
             out << "\n";
         }
         else

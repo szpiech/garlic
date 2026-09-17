@@ -80,14 +80,30 @@ const string HELP_TFAM = "A tfam formatted file containing population and indivi
 
 const string ARG_TGLS = "--tgls";
 const string DEFAULT_TGLS = "none";
-const string HELP_TGLS = "A tgls file containing per-genotype likelihoods.";
+const string HELP_TGLS = "A tgls file containing one per-genotype likelihood value per individual,\n\
+\tin the same row order as the tped.  See --gl-type for what the values must\n\
+\tmean: for PL and GL this is NOT the VCF convention.";
 
 const string ARG_GL_TYPE = "--gl-type";
 const string DEFAULT_GL_TYPE = "none";
-const string HELP_GL_TYPE = "Specify the form of the genotype likelihood data: GQ, GL, or PL.\n\
-\tGQ is a phred-scaled likelihood of the genotype being incorrect.\n\
-\tPL is a phred-scaled likelihood of the genotype being correct.\n\
-\tGL is a log10-scaled likelihood of the genotype being correct.";
+const string HELP_GL_TYPE = "Form of the genotype likelihood data supplied per genotype with --tgls.\n\
+\tGQ\tPhred-scaled probability that the genotype call is WRONG, as defined\n\
+\t  \tby the VCF spec:  error = 10^(-GQ/10).  GQ 20/30/40 gives an error\n\
+\t  \trate of 0.01/0.001/0.0001.  This is the only form whose values can be\n\
+\t  \ttaken from a VCF and used directly, because it needs no normalisation.\n\
+\t\n\
+\tPL\tPhred-scaled probability that the genotype is CORRECT:\n\
+\t  \t  error = 1 - 10^(-PL/10).\n\
+\t  \t*** This is NOT the VCF PL field. *** VCF normalises PL so the CALLED\n\
+\t  \tgenotype is exactly 0, and VCF PL is an integer.  Under the definition\n\
+\t  \tabove, PL=0 means an error of 0, and the integers map to 0, 0.21, 0.37,\n\
+\t  \t0.50, ... -- none of which is a realistic genotype error rate (0.001\n\
+\t  \twould be PL=0.00435).  Feeding VCF PLs here is rejected with an error.\n\
+\t  \tUse GQ unless your values genuinely are P(genotype correct).\n\
+\t\n\
+\tGL\tLog10 probability that the genotype is CORRECT:  error = 1 - 10^GL.\n\
+\t  \tThe same caveat as PL: this is not the VCF GL field, which is\n\
+\t  \tnormalised to 0 for the called genotype.";
 
 const string ARG_MAP = "--map";
 const string DEFAULT_MAP = "none";

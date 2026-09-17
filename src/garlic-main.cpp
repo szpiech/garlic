@@ -130,7 +130,7 @@ int main(int argc, char *argv[])
         LOG.log("Total diploid individuals:", numInd);
 
         if (tglsfile.compare(DEFAULT_TGLS) != 0) {
-            GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr, GL_TYPE);
+            GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr, GL_TYPE, indData);
             USE_GL = true;
         }
 

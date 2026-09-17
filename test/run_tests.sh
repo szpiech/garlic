@@ -28,6 +28,32 @@ elif command -v md5 >/dev/null 2>&1; then
 else
     echo "ERROR: neither md5sum nor md5 found"; exit 1
 fi
+
+# gzip -cd is spelled the same on macOS and Linux; gzcat/zcat are not.
+gz() { gzip -cd "$1"; }
+
+# Builds a .tgls fixture from a tracked .tped: same four leading columns, the
+# same number of genotype columns, every value set to $2.  Derived rather than
+# committed so there is no new binary fixture to keep in step with the data.
+mk_tgls() {
+    gz "$EX/chr21.tped.gz" | awk -v v="$2" '{
+        printf "%s\t%s\t%s\t%s", $1, $2, $3, $4
+        n = (NF - 4) / 2
+        for (i = 0; i < n; i++) printf "\t%s", v
+        printf "\n"
+    }' | gzip > "$1"
+}
+
+# As mk_tgls, but puts $4 at locus $2 (1-based) for individual $3 and $5
+# everywhere else -- for the guards that fire on a single bad value.
+mk_tgls_one() {
+    gz "$EX/chr21.tped.gz" | awk -v L="$2" -v S="$3" -v bad="$4" -v good="$5" '{
+        printf "%s\t%s\t%s\t%s", $1, $2, $3, $4
+        n = (NF - 4) / 2
+        for (i = 0; i < n; i++) printf "\t%s", (NR == L && i == S) ? bad : good
+        printf "\n"
+    }' | gzip > "$1"
+}
 # Compare gzipped output by content, not by bytes: gzip embeds an mtime.
 sumgz() { gzip -cd "$1" | { if command -v md5sum >/dev/null 2>&1; then md5sum; else md5 -q; fi; } | cut -d' ' -f1; }
 
@@ -84,10 +110,17 @@ unit_tests() {
 #
 # TWO VACUITY TRAPS, both of which produced silently meaningless cases here
 # before being caught:
-#   - chr21.tgls.gz yields ZERO ROH at every cutoff tried, so a --tgls case on
-#     chr21 comparing .roh.bed compares two empty files.  c21_tgls_rawlod
-#     therefore compares raw LOD scores instead, which are non-empty (45 rows
-#     x 8,319 windows) and verified to DIFFER from the same run without --tgls.
+#   - chr21.tgls.gz is a GL-convention file (-0.0004 everywhere, plus 9 exact
+#     zeros).  Read as GQ, BOTH of those values convert to an error rate of 1,
+#     so every LOD score is exactly 0: the raw matrix held 371,700 zeros and
+#     2,655 NA, two distinct values, and the run called zero ROH.  The earlier
+#     c21_tgls_rawlod case pinned that matrix -- non-empty, and still a
+#     checksum of nothing.  It is replaced by c21_tgls_gq30, on a generated
+#     GQ-30 fixture, whose raw matrix holds 274,055 distinct values; the
+#     likelihood_guards stage asserts it equals the --error 0.001 run exactly,
+#     which is the equivalence that makes the case meaningful rather than
+#     merely non-empty.  chr21.tgls.gz is now rejected under every --gl-type:
+#     negative values are invalid as GQ and PL, and its zeros are invalid as GL.
 #   - example.GQ.tgls.gz is GQ 30 for every genotype, and GQ 30 converts to an
 #     error rate of exactly 0.001, so tgls_gq reproduces the unweighted run
 #     byte for byte.  That is expected, not a redundant case.
@@ -114,7 +147,7 @@ c21_phased|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --phased --build hg
 c21_froh|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --froh|roh.bed froh.tsv
 c21_rawlod|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
 c21_freqonly|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --error 0.001 --freq-only|freq.gz
-c21_tgls_rawlod|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --tgls $EX/chr21.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
+c21_tgls_gq30|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --tgls $WORK/gq30.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
 tgls_gq|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $EX/example.GQ.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
 "
 
@@ -247,6 +280,102 @@ exit_codes() {
 }
 
 # ---------------------------------------------------------------------------
+# 4b. Genotype-likelihood guards
+# ---------------------------------------------------------------------------
+# A tgls file states P(genotype CORRECT) for PL and GL, which is NOT what a
+# VCF's PL/GL fields carry: VCF normalises them so the CALLED genotype is
+# exactly 0.  Feeding those in used to run to completion with an error rate of
+# 0 clamped to 1e-16, which makes every heterozygote contribute -16 to the
+# window LOD -- 113 ROH instead of 171 on this data, with no other symptom.
+# These are the checks that reject such input instead of computing with it.
+#
+# The fixtures are generated from chr21.tped.gz so the row and column counts
+# match; the guards fire on the first offending value, but the file still has
+# to be the right shape to reach them.
+likelihood_guards() {
+    echo "== genotype likelihood guards =="
+
+    # An exact 0 is P(genotype correct) = 1, which no measurement supports and
+    # which is exactly what VCF normalisation writes.  Field-specific: a GQ of
+    # 0 legitimately means "no confidence".
+    mk_tgls_one "$WORK/zero_gl.tgls.gz" 500 7 0 -0.0004
+    mk_tgls_one "$WORK/zero_pl.tgls.gz" 500 7 0 0.00435
+    expect_exit 2 "GL of exactly 0 is rejected" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$EX/chr21.tfam.gz" --tgls "$WORK/zero_gl.tgls.gz" --gl-type GL \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g1" --force
+    expect_exit 2 "PL of exactly 0 is rejected" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$EX/chr21.tfam.gz" --tgls "$WORK/zero_pl.tgls.gz" --gl-type PL \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g2" --force
+
+    # No INTEGER PL expresses a realistic error rate under this convention:
+    # they map to 0, 0.206, 0.369, 0.499, ... while 0.001 needs PL = 0.00435.
+    # So an all-integer PL file came from a VCF however it was produced.
+    mk_tgls "$WORK/int_pl.tgls.gz" 3
+    expect_exit 2 "all-integer PL file is rejected" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$EX/chr21.tfam.gz" --tgls "$WORK/int_pl.tgls.gz" --gl-type PL \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g3" --force
+    # ... and the same file as GQ is fine: integer GQ is the native scale.
+    expect_exit 0 "the same file as GQ is accepted" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$EX/chr21.tfam.gz" --tgls "$WORK/int_pl.tgls.gz" --gl-type GQ \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g4" --force
+
+    # Values impossible on their own scale.
+    mk_tgls_one "$WORK/neg_gq.tgls.gz" 3 0 -1 30
+    mk_tgls_one "$WORK/pos_gl.tgls.gz" 3 0 0.5 -0.0004
+    mk_tgls_one "$WORK/junk.tgls.gz"   9 3 NA 30
+    expect_exit 2 "negative GQ is rejected" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$EX/chr21.tfam.gz" --tgls "$WORK/neg_gq.tgls.gz" --gl-type GQ \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g5" --force
+    expect_exit 2 "positive GL is rejected" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$EX/chr21.tfam.gz" --tgls "$WORK/pos_gl.tgls.gz" --gl-type GL \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g6" --force
+    # An unparseable token used to leave the value at 0 and fail the stream, so
+    # the rest of the line silently became zeros.
+    expect_exit 2 "an unparseable value is rejected" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$EX/chr21.tfam.gz" --tgls "$WORK/junk.tgls.gz" --gl-type GQ \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g7" --force
+
+    # A fractional PL file is what the convention actually asks for, and runs.
+    mk_tgls "$WORK/frac_pl.tgls.gz" 0.00435
+    expect_exit 0 "a fractional PL file is accepted" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+        --tfam "$EX/chr21.tfam.gz" --tgls "$WORK/frac_pl.tgls.gz" --gl-type PL \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g8" --force
+
+    # The shipped chr21.tgls.gz is now invalid under every --gl-type: it holds
+    # negative values (invalid as GQ and PL) and exact zeros (invalid as GL).
+    # This is the file the replaced c21_tgls_rawlod case used to read as GQ.
+    if [ -f "$EX/chr21.tgls.gz" ]; then
+        expect_exit 2 "shipped chr21.tgls.gz rejected as GQ" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+            --tfam "$EX/chr21.tfam.gz" --tgls "$EX/chr21.tgls.gz" --gl-type GQ \
+            --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g9" --force
+        expect_exit 2 "shipped chr21.tgls.gz rejected as GL" "$GARLIC" --tped "$EX/chr21.tped.gz" \
+            --tfam "$EX/chr21.tfam.gz" --tgls "$EX/chr21.tgls.gz" --gl-type GL \
+            --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/g10" --force
+    else
+        echo "  SKIP shipped chr21.tgls.gz: input not present"
+    fi
+
+    # The equivalence that makes c21_tgls_gq30 a real case rather than a
+    # non-empty one: GQ 30 IS an error rate of 0.001, so supplying it per
+    # genotype must reproduce --error 0.001 exactly.  If the GQ conversion ever
+    # drifts, these two stop matching.
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --tgls "$WORK/gq30.tgls.gz" \
+        --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+        --raw-lod --out "$WORK/eqgq" --quiet --force >/dev/null 2>&1
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --error 0.001 \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+        --raw-lod --out "$WORK/eqfl" --quiet --force >/dev/null 2>&1
+    if [ "$(sum "$WORK/eqgq.chr21.raw.lod.windows.gz")" = "$(sum "$WORK/eqfl.chr21.raw.lod.windows.gz")" ]; then
+        ok
+    else
+        bad "GQ 30 per genotype did not reproduce --error 0.001"
+    fi
+    # ... and that case must not be vacuous the way the one it replaced was.
+    n=$(gz "$WORK/eqgq.chr21.raw.lod.windows.gz" | tr -s ' \t' '\n' | sort -u | grep -c .)
+    if [ "$n" -gt 1000 ]; then ok; else bad "c21_tgls_gq30 raw LOD has only $n distinct values"; fi
+}
+
+# ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
 params_roundtrip() {
@@ -290,9 +419,12 @@ for f in "$EX/example.tped.gz" "$EX/example.tfam" "$EX/example.map.gz"; do
     [ -f "$f" ] || { echo "ERROR: required example data missing: $f"; exit 1; }
 done
 
+mk_tgls "$WORK/gq30.tgls.gz" 30
+
 unit_tests
 golden
 determinism
+likelihood_guards
 exit_codes
 params_roundtrip
 bed_format
