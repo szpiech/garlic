@@ -331,6 +331,108 @@ static void test_getMapInfo()
     releaseGenMapScaffold(sc);
 }
 
+// ------------------------------------------------------- keepSites() -------
+// The site-retention predicate.  This is the case the review's D4 filtering
+// item was about: the predicate used to be re-derived inline in ten separate
+// functions and could not be tested at all -- reaching it meant running the
+// whole pipeline and inferring the outcome from the locus count of the output.
+// Now it is one function taking a hand-built scaffold.
+static void test_keepSites()
+{
+    // Six sites at 1000..6000.  Frequencies make site 0 monomorphic (0.0) and
+    // site 5 fixed (1.0); both must be dropped in every mode.
+    const int N = 6;
+    double freqs[N] = {0.0, 0.25, 0.5, 0.5, 0.75, 1.0};
+
+    MapData *md = initMapData(N);
+    FreqData *fd = initFreqData(N);
+    for (int i = 0; i < N; i++)
+    {
+        md->physicalPos[i] = 1000 * (i + 1);
+        md->geneticPos[i]  = i;
+        fd->freq[i]        = freqs[i];
+    }
+    md->chr = "chr1";
+
+    // --- NULL scaffold: monomorphic filter only -------------------------
+    vector<int> keep = keepSites(md, fd, NULL);
+    ck(keep.size() == 4, "keepSites drops monomorphic and fixed sites");
+    ck(keep.size() == 4 && keep[0] == 1 && keep[1] == 2 && keep[2] == 3 && keep[3] == 4,
+       "keepSites returns ORIGINAL indices of the retained sites, in order");
+
+    // --- scaffold spanning 2500..5500, no centromere ---------------------
+    // Site 1 (1000) is below the map; sites 2,3,4 are inside.
+    GenMapScaffold *sc = initGenMapScaffold(2);
+    sc->physicalPos[0] = 2500;
+    sc->physicalPos[1] = 5500;
+    sc->geneticPos[0]  = 0.0;
+    sc->geneticPos[1]  = 1.0;
+    sc->chr = "chr1";
+    sc->centroStart = 0;
+    sc->centroEnd   = 0;
+
+    keep = keepSites(md, fd, sc);
+    ck(keep.size() == 3 && keep[0] == 2 && keep[1] == 3 && keep[2] == 4,
+       "keepSites drops sites below the scaffold's first position");
+
+    // Shrink the map to 2500..3500: sites 3 (4000) and 4 (5000) are now both
+    // above it, leaving only site 2 (3000).
+    sc->physicalPos[1] = 3500;
+    keep = keepSites(md, fd, sc);
+    ck(keep.size() == 1 && keep[0] == 2,
+       "keepSites drops sites above the scaffold's last position");
+
+    // --- centromere gap ---------------------------------------------------
+    sc->physicalPos[1] = 5500;
+    sc->centroStart = 2500;
+    sc->centroEnd   = 3500;
+    keep = keepSites(md, fd, sc);
+    ck(keep.size() == 2 && keep[0] == 3 && keep[1] == 4,
+       "keepSites drops sites strictly inside the centromere gap");
+
+    // The gap test is STRICT on both sides (pos > start && pos < end), so a
+    // site sitting exactly on an edge is retained.  Widen the map to 0..99999
+    // so only the gap decides, and put the gap edges exactly on sites 1 (2000)
+    // and 3 (4000): both survive, and site 2 (3000) between them does not.
+    sc->physicalPos[0] = 0;
+    sc->physicalPos[1] = 99999;
+    sc->centroStart = 2000;
+    sc->centroEnd   = 4000;
+    keep = keepSites(md, fd, sc);
+    ck(keep.size() == 3 && keep[0] == 1 && keep[1] == 3 && keep[2] == 4,
+       "keepSites RETAINS sites exactly at both gap boundaries (predicate is strict)");
+
+    // --- every site dropped ----------------------------------------------
+    for (int i = 0; i < N; i++) fd->freq[i] = 0.0;
+    keep = keepSites(md, fd, NULL);
+    ck(keep.empty(), "keepSites returns an empty list when nothing is retained");
+
+    // --- every site retained ---------------------------------------------
+    for (int i = 0; i < N; i++) fd->freq[i] = 0.5;
+    sc->centroStart = 0; sc->centroEnd = 0;
+    sc->physicalPos[0] = 0; sc->physicalPos[1] = 99999;
+    keep = keepSites(md, fd, sc);
+    ck(keep.size() == (size_t)N, "keepSites retains every site when nothing excludes any");
+
+    // The invariant the old code could violate: the count that sizes the
+    // destination and the indices that fill it come from the same list, so
+    // the largest index is always addressable within keep.size() rows.
+    bool monotone = true;
+    for (size_t k = 1; k < keep.size(); k++) if (keep[k] <= keep[k - 1]) monotone = false;
+    ck(monotone, "keepSites indices are strictly increasing");
+
+    // The scaffold is bounded by freqData->nloci, not mapData->nloci, exactly
+    // as all ten predecessors were.  A shorter FreqData must shorten the scan.
+    fd->nloci = 3;
+    keep = keepSites(md, fd, NULL);
+    ck(keep.size() == 3, "keepSites scans freqData->nloci, not mapData->nloci");
+    fd->nloci = N;
+
+    releaseGenMapScaffold(sc);
+    releaseMapData(md);
+    releaseFreqData(fd);
+}
+
 int main()
 {
     printf("garlic unit tests\n");
@@ -343,6 +445,7 @@ int main()
     test_glToError();
     test_kde_helpers();
     test_getMapInfo();
+    test_keepSites();
     printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

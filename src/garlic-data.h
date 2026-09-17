@@ -322,15 +322,13 @@ int filterMonomorphicAndOOBSites(vector< MapData * > **mapDataByChr,
                                  vector< GenMapScaffold * > *scaffoldMapByChr,
                                  bool USE_GL, bool PHASED);
 
-MapData *filterMonomorphicSites(MapData *mapData, FreqData *freqData, int &newLoci);
-HapData *filterMonomorphicSites(HapData *hapData, FreqData *freqData, int &newLoci, bool PHASED);
-GenoLikeData *filterMonomorphicSites(GenoLikeData *GLData, FreqData *freqData, int &newLoci);
-FreqData *filterMonomorphicSites(FreqData *freqData, int &newLoci);
+//The site-retention predicate, exposed so it can be unit-tested.  NULL
+//scaffold = monomorphic only; non-NULL also drops out-of-map and in-centromere
+//sites.  Returns the indices of the retained sites in the original arrays.
+vector<int> keepSites(const MapData *mapData, const FreqData *freqData,
+                      const GenMapScaffold *scaffold);
 
-MapData *filterMonomorphicAndOOBSites(MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci);
-HapData *filterMonomorphicAndOOBSites(HapData *hapData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci, bool PHASED);
-GenoLikeData *filterMonomorphicAndOOBSites(GenoLikeData *GLData, MapData *mapData, FreqData *freqData, GenMapScaffold *scaffold, int &newLoci);
-FreqData *filterMonomorphicAndOOBSites(FreqData *freqData, MapData *mapData, GenMapScaffold *scaffold, int &newLoci);
+
 
 string getPost(int num);
 bool goodDouble(string str);
