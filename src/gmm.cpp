@@ -176,6 +176,9 @@ GMM::GMM(int n, double* a_init, double* mean_init, double* var_init, int maxIt =
   mean = new double [numGaussians];
   var = new double [numGaussians];
 
+  //Class members, freed by ~GMM.  The object is constructed on the stack in
+  //selectSizeClasses, so an exception out of estimate() unwinds through the
+  //destructor and these are released.
   resp = new double[numGaussians];
   sum_wj = new double[numGaussians];
   sum_wj_xj = new double[numGaussians];

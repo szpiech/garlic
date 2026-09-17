@@ -213,7 +213,7 @@ void kdeGaussian(double *data, int n, double h, const double *targets, int M, do
     }
 
     vector<pthread_t> peer(nt);
-    KDE_work_order_t *orders = new KDE_work_order_t[nt];
+    vector<KDE_work_order_t> orders(nt);
     for (int i = 0; i < nt; i++)
     {
         orders[i] = proto;
@@ -222,7 +222,6 @@ void kdeGaussian(double *data, int n, double h, const double *targets, int M, do
         pthread_create(&(peer[i]), NULL, parallelKDE, (void *)&(orders[i]));
     }
     for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
-    delete [] orders;
 }
 
 
@@ -232,8 +231,8 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
     
     int winsize = KDE_MODE_SPAN;
     double maxes;
-    double *uniq_maxes = new double[size-winsize];
-    double *uniq_counts = new double[size-winsize];
+    vector<double> uniq_maxes(size-winsize);
+    vector<double> uniq_counts(size-winsize);
     for(int i = 0; i < size-winsize; i++){
         uniq_counts[i] = 0;
         uniq_maxes[i] = 0;
@@ -242,7 +241,7 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
     //Record WHICH grid point was the windowed maximum alongside its value, so
     //the mode's location never has to be recovered by scanning y for a float
     //that compares exactly equal (see below).
-    int *uniq_argmax = new int[size-winsize];
+    vector<int> uniq_argmax(size-winsize);
     for(int i = 0; i < size-winsize; i++) uniq_argmax[i] = -1;
 
     int index = 0;
@@ -290,9 +289,6 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
     //"between the modes" to minimise over.  This used to leave
     //leftMaxIndex/rightMaxIndex at -1 and index y[-1].
     if(values.size() < 2){
-        delete [] uniq_maxes;
-        delete [] uniq_counts;
-        delete [] uniq_argmax;
         LOG.err("ERROR: Found fewer than two modes in the LOD score density (", int(values.size()), false);
         LOG.err(" candidate(s)).");
         throw 0;
@@ -315,9 +311,6 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
         }
     }
 
-    delete [] uniq_maxes;
-    delete [] uniq_counts;
-    delete [] uniq_argmax;
 
     if(leftMaxIndex < 0 || rightMaxIndex < 0){
         LOG.err("ERROR: Could not locate two modes in the LOD score density.");

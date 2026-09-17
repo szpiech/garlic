@@ -169,9 +169,11 @@ void calcLOD(MapData *mapData,
     //this replaces nind * nloci log10() calls with 4 * nloci.  Not applicable
     //when --tgls supplies a per-genotype error rate.
     double *lut = NULL;
+    vector<double> lutBuf;
     if (!USE_GL)
     {
-        lut = new double[4 * size_t(nloci)];
+        lutBuf.assign(4 * size_t(nloci), 0.0);
+        lut = lutBuf.data();
         const double *freq = freqData->freq.data();
         for (int i = 0; i < nloci; i++)
         {
@@ -202,7 +204,7 @@ void calcLOD(MapData *mapData,
     else
     {
         vector<pthread_t> peer(nt);
-        LOD_work_order_t *orders = new LOD_work_order_t[nt];
+        vector<LOD_work_order_t> orders(nt);
         int per = nind / nt;
         int extra = nind % nt;
         int at = 0;
@@ -215,10 +217,8 @@ void calcLOD(MapData *mapData,
             pthread_create(&(peer[i]), NULL, parallelLOD, (void *)&(orders[i]));
         }
         for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
-        delete [] orders;
     }
 
-    if (lut) delete [] lut;
     finalize(bar);
     return;
 }
@@ -322,6 +322,7 @@ void parallelwLOD(void *order){
 
     int size = stop-start+winsize+1;
     double *score;
+    vector<double> scoreBuf;
 
     //cerr << "XXX " << start << " " << stop << endl;
 
@@ -330,7 +331,8 @@ void parallelwLOD(void *order){
     //For each individual
     for (int ind = 0; ind < nind; ind++){
         advanceBar(*bar,1.0/double(numThreads));
-        score = new double[size];
+        scoreBuf.resize(size);
+        score = scoreBuf.data();
         for (int locus = start; locus < ((stop+winsize+1 > nloci) ? nloci : stop+winsize+1); locus++){
             if (USE_GL) error = GLData->data[locus][ind];
             double physInterval = ( locus > 0 ) ? (physicalPos[locus] - physicalPos[locus - 1]) : physicalPos[locus];
@@ -362,7 +364,6 @@ void parallelwLOD(void *order){
             }
         }
 
-        delete [] score;
     }
 }
 
@@ -560,7 +561,7 @@ static void *parallelAssembleROH(void *order)
             //up to winSize-1 elements past the end.  It was masked only
             //because the tail windows hold MISSING (-9999) and so failed the
             //cutoff test -- passing --lod-cutoff below -9999 wrote past the end.
-            int *inWinDiff = new int[mapData->nloci + 1];
+            vector<int> inWinDiff(mapData->nloci + 1);
             for (int w = 0; w <= mapData->nloci; w++) inWinDiff[w] = 0;
             for (int w = 0; w < winData->nloci; w++)
             {
@@ -572,14 +573,13 @@ static void *parallelAssembleROH(void *order)
                     if (lo < mapData->nloci) { inWinDiff[lo]++; inWinDiff[hi]--; }
                 }
             }
-            short *inWin = new short[mapData->nloci];
+            vector<short> inWin(mapData->nloci);
             int running = 0;
             for (int w = 0; w < mapData->nloci; w++)
             {
                 running += inWinDiff[w];
                 inWin[w] = short(running);
             }
-            delete [] inWinDiff;
 
             double gwinStart = -1;
             double gwinStop = -1;
@@ -659,7 +659,6 @@ static void *parallelAssembleROH(void *order)
                 }
             }
 
-            delete [] inWin;
         }
     }
     return NULL;
@@ -686,7 +685,7 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
     if (nt > indData->nind) nt = indData->nind;
     if (nt < 1) nt = 1;
 
-    ROH_work_order_t *orders = new ROH_work_order_t[nt];
+    vector<ROH_work_order_t> orders(nt);
     int per = indData->nind / nt;
     int extra = indData->nind % nt;
     int at = 0;
@@ -722,7 +721,6 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
     vector<double> lengths;
     for (int i = 0; i < nt; i++)
         lengths.insert(lengths.end(), orders[i].lengths.begin(), orders[i].lengths.end());
-    delete [] orders;
 
     ROHLength *rohLengths = initROHLength(lengths.size());
     for (unsigned int i = 0; i < lengths.size(); i++)
@@ -1339,19 +1337,16 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
 vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
 {
     vector<double> bounds;
-    size_t *sortIndex;
 
     int ngaussians = NCLUST;
     size_t maxIter = size_t(GMM_MAX_ITER);
     double tolerance = GMM_TOL;
-    double * W;
-    double * Mu;
-    double * Sigma;
-
-    W = new double[ngaussians];
-    Mu = new double[ngaussians];
-    Sigma = new double[ngaussians];
-    sortIndex = new size_t[ngaussians];
+    //Vectors, not new[]: gmm.estimate() below can throw (a collapsed component
+    //trips garlicLogChecked), and the raw version leaked all four on that path.
+    vector<double> W(ngaussians);
+    vector<double> Mu(ngaussians);
+    vector<double> Sigma(ngaussians);
+    vector<size_t> sortIndex(ngaussians);
 
     //calculate mean and var for the population size distribution to use for initial guess
     double var = garlicVariance(rohLength->length.data(), rohLength->size);
@@ -1363,7 +1358,7 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
         Sigma[n] = var * (n + 1) / double(ngaussians);
     }
 
-    GMM gmm(ngaussians, W, Mu, Sigma, maxIter, tolerance, true, true);
+    GMM gmm(ngaussians, W.data(), Mu.data(), Sigma.data(), maxIter, tolerance, true, true);
 
     gmm.estimate(rohLength->length.data(), rohLength->size);
 
@@ -1375,7 +1370,7 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
         sortIndex[n] = n;
     }
 
-    garlicSortIndex(sortIndex, Mu, ngaussians);
+    garlicSortIndex(sortIndex.data(), Mu.data(), ngaussians);
     char sizeClass = 'A';
 
     for(int i = 0; i < ngaussians; i++){
@@ -1399,10 +1394,6 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
         bounds.push_back(BF.findBoundary());
     }
 
-    delete [] W;
-    delete [] Mu;
-    delete [] Sigma;
-    delete [] sortIndex;
     return bounds;
 }
 

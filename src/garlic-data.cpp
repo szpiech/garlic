@@ -319,6 +319,13 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         //what `ss >> char` did (TPED alleles are single characters).
         nalleles = 0;
         total = 0;
+        //Deliberately still raw: these rows are an ownership HANDOFF.  The
+        //reader cannot size the whole block because it does not know nloci
+        //yet, so it allocates a row per locus and initHapData consumes and
+        //frees each one as it appends it (see appendRow in garlic-matrix.h).
+        //Making them vectors would mean either copying twice or moving them
+        //into a vector<vector<>>, which gives up the contiguity the LOD stage
+        //depends on.
         data = new geno_t[numInd];
         if(PHASED) firstCopy = new bool[numInd];
         oneAllele = TPED_MISSING;
@@ -664,7 +671,8 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
     int nWindows = nloci - winsize + 1;
     if (nWindows < 0) nWindows = 0;
 
-    double *band = new double[(size_t)nloci * (size_t)winsize];
+    vector<double> bandBuf((size_t)nloci * (size_t)winsize);
+    double *band = bandBuf.data();
 
     Bar bar;
     barInit(bar, double(nloci) + double(nWindows), 100);
@@ -702,7 +710,6 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
     //--- phase 2: window sums from the band ---
     runLDPhases(LD, nloci, winsize, numThreads, NULL, NULL, band, &bar);
 
-    delete [] band;
     finalize(bar);
 
     return LD;
@@ -715,7 +722,8 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
     int nWindows = nloci - winsize + 1;
     if (nWindows < 0) nWindows = 0;
 
-    double *band = new double[(size_t)nloci * (size_t)winsize];
+    vector<double> bandBuf((size_t)nloci * (size_t)winsize);
+    double *band = bandBuf.data();
 
     Bar bar;
     barInit(bar, double(nloci) + double(nWindows), 100);
@@ -753,7 +761,6 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
     //--- phase 2: window sums from the band ---
     runLDPhases(LD, nloci, winsize, numThreads, NULL, NULL, band, &bar);
 
-    delete [] band;
     finalize(bar);
 
     return LD;
