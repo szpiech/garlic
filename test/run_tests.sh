@@ -12,6 +12,10 @@ set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 GARLIC=${GARLIC:-$ROOT/src/garlic}
+# On MinGW the binary is garlic.exe.  The MSYS2 runtime usually resolves a stat
+# of "garlic" to it, but relying on that makes the failure obscure when it does
+# not; resolve it here instead.
+[ -x "$GARLIC" ] || { [ -x "$GARLIC.exe" ] && GARLIC="$GARLIC.exe"; }
 EX=$ROOT/example
 GOLDEN=$ROOT/test/golden
 WORK=${TMPDIR:-/tmp}/garlic-tests.$$
@@ -78,8 +82,17 @@ unit_tests() {
         return
     fi
     # zlib is the only external library left; garlic-math.o replaced GSL.
+    #
+    # On MinGW zlib is not a system library: include/ contains nothing but the
+    # win32 subdirectory, so zlib.h lives at include/win32/zlib.h and the
+    # archive at lib/win32/libz.a.  Without these the unit-test stage cannot
+    # link on Windows even when the main build succeeded.
+    WINPATHS=""
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) WINPATHS="-I$ROOT/include/win32 -L$ROOT/lib/win32";;
+    esac
     # shellcheck disable=SC2086
-    if $CXX -O1 -std=c++11 -I"$ROOT/include" -I"$ROOT/src" \
+    if $CXX -O1 -std=c++11 -I"$ROOT/include" -I"$ROOT/src" $WINPATHS \
             "$ROOT/test/unit_tests.cpp" $OBJ -lz \
             -o "$WORK/unit_tests" 2>"$WORK/unit_build.log"; then
         if "$WORK/unit_tests"; then ok; else bad "unit tests reported failures"; fi

@@ -192,3 +192,82 @@ jobs:
           done < /tmp/cmds
           [ "$fail" -eq 0 ] || { echo "at least one documented command failed"; exit 1; }
           echo "all documented commands ran"
+  # The win32 branch of the Makefile had never been built by anything: no
+  # Windows toolchain was available while this branch was written and there was
+  # no Windows runner.  Since 3c15065 that matters more than it used to --
+  # threading is std::thread, which on MinGW comes from the toolchain's own
+  # winpthreads and requires a GCC configured with the POSIX threading model.
+  # With a win32-threads GCC libstdc++ does not define std::thread at all.
+  windows:
+    name: windows (msys2 mingw64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          # coreutils for md5sum/wc/cut/tr, diffutils for cmp, gawk for awk --
+          # the suite needs all of them and none is in the base install.
+          install: >-
+            mingw-w64-x86_64-gcc
+            make
+            coreutils
+            diffutils
+            gawk
+            grep
+            sed
+            gzip
+
+      - name: Toolchain threading model
+        run: |
+          # The load-bearing precondition, asserted rather than assumed: a
+          # win32-threads GCC would fail later at compile time with a confusing
+          # "no member named thread in namespace std", so fail here instead and
+          # say why.
+          g++ --version | head -1
+          model=$(g++ -v 2>&1 | sed -n 's/.*Thread model: //p')
+          echo "thread model: $model"
+          case "$model" in
+            posix) echo "ok: std::thread is available" ;;
+            *) echo "ERROR: this GCC uses the '$model' threading model."
+               echo "garlic needs a POSIX-threads GCC since 3c15065; libstdc++"
+               echo "does not define std::thread under win32 threads."
+               exit 1 ;;
+          esac
+
+      - name: Build
+        working-directory: src
+        run: |
+          # No PLATFORM= here on purpose: uname -s reports MINGW64_NT-* and the
+          # autodetect must map that to win32 by itself.  If it ever regresses
+          # to linux this build looks for ../lib/linux and fails loudly.
+          make
+          # garlic.exe by name, not ./garlic: the target is garlic$(EXE) and
+          # MinGW's ld produces the .exe.  The MSYS2 runtime would resolve the
+          # bare name, but depending on that is what made the suffix implicit
+          # in the first place.
+          ls -l garlic.exe
+          ./garlic.exe --version
+
+      - name: Confirm the win32 configuration was the one built
+        working-directory: src
+        run: |
+          plat=$(make -p 2>/dev/null | sed -n 's/^PLATFORM = //p' | head -1)
+          echo "PLATFORM=$plat"
+          [ "$plat" = "win32" ] || { echo "autodetect picked '$plat', not win32"; exit 1; }
+          # zlib on this platform is the vendored 2017 archive rather than a
+          # system library, so this is also the first test that it still links
+          # against a current MinGW GCC.
+          echo "linked zlib: lib/win32/libz.a (vendored)"
+
+      - name: Test suite
+        run: |
+          # This is what actually exercises std::thread: the thread-count
+          # independence stage runs --threads 4, so if the first std::thread
+          # constructor threw, those checks fail rather than silently passing.
+          sh test/run_tests.sh
