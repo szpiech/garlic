@@ -665,6 +665,22 @@ vcf_input() {
     if $GARLIC --vcf "$WORK/chr21.vcf.gz" $VB --out "$WORK/vnp" --force 2>&1 \
             | grep -q "no --pop given"; then ok
     else bad "--vcf without --pop did not warn"; fi
+    # ---- BGZF ----
+    # A VCF from bcftools or GATK is BGZF, not plain gzip: multi-member gzip
+    # with a BC extra field per block and an EOF marker.  igzstream reads it
+    # because BGZF is valid gzip.  Skipped rather than failed where bgzip is
+    # absent, since it is not a build dependency.
+    if command -v bgzip >/dev/null 2>&1; then
+        bgzip -c "$WORK/chr21.vcf" > "$WORK/chr21.bgzf.vcf.gz"
+        # shellcheck disable=SC2086
+        $GARLIC --vcf "$WORK/chr21.bgzf.vcf.gz" --pop "$WORK/vcf.pop" $VB \
+                --out "$WORK/vbg" --quiet --force >/dev/null 2>&1
+        grep -v '^track' "$WORK/vbg.roh.bed" > "$WORK/vbg.nt" 2>/dev/null
+        if cmp -s "$WORK/vt.nt" "$WORK/vbg.nt"; then ok
+        else bad "a BGZF VCF gave different calls than the TPED"; fi
+    else
+        echo "  SKIP  bgzip VCF: bgzip not installed"
+    fi
 }
 
 # ---------------------------------------------------------------------------

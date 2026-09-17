@@ -1358,7 +1358,10 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST)
         Sigma[n] = var * (n + 1) / double(ngaussians);
     }
 
-    GMM gmm(ngaussians, W.data(), Mu.data(), Sigma.data(), maxIter, tolerance, true, true);
+    //verbose = !isQuiet: the EM iteration counter is progress output, and it
+    //went to stderr even under --quiet.  GMM already gates it on its own
+    //`verbose` member; the caller was passing an unconditional true.
+    GMM gmm(ngaussians, W.data(), Mu.data(), Sigma.data(), maxIter, tolerance, !LOG.isQuiet(), true);
 
     gmm.estimate(rohLength->length.data(), rohLength->size);
 
