@@ -1718,7 +1718,11 @@ void writeFreqData(string freqOutfile,
         {
             fout << mapDataByChr->at(chr)->chr << "\t"
                  << mapDataByChr->at(chr)->locusName[locus] << "\t"
-                 << int(mapDataByChr->at(chr)->physicalPos[locus]) << "\t"
+                 //pos_t, not int: the last 32-bit truncation of a physical
+                 //position left after 7899f42.  A position past 2.147 Gb wrote
+                 //a negative number into the frequency file, and readFreqData
+                 //would then fail the locus-name check on the way back in.
+                 << pos_t(mapDataByChr->at(chr)->physicalPos[locus]) << "\t"
                  << mapDataByChr->at(chr)->allele[locus] << "\t"
                  << freqDataByChr->at(chr)->freq[locus] << "\n";
         }

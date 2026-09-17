@@ -6,7 +6,7 @@ A Blant, et al. (2017) BMC genomics 18 (1), 928.
 ZA Szpiech, et al. (2017) Bioinformatics 33 (13), 2059-2062.
 TJ Pemberton, et al. (2012) AJHG, 91: 275–292
 
-**NOTE TO WINDOWS USERS: In order to successfully run GARLIC you must have ann_figtree_version.dll and figtree.dll in the same folder as garlic.exe 
+**NOTE TO WINDOWS USERS: garlic no longer links FIGTree or ANN, so ann_figtree_version.dll and figtree.dll are no longer needed. The KDE evaluates its Gaussian sum directly; see the CHANGES entry below.
 
 This ROH calling pipeline has four phases.
 
@@ -17,8 +17,38 @@ IV.		Gaussian Mixture Modeling of ROH size distribution
 
 Input files:
 
-tped/tfam (required): 
+Genotypes come from EITHER a VCF (--vcf) or a tped/tfam pair (--tped/--tfam).
+The two are mutually exclusive.
+
+vcf (--vcf; plain, gzip, or BGZF as written by bgzip/bcftools):
+	Biallelic SNVs with a GT field are used; multiallelic sites, indels,
+	symbolic ALTs (*, <NON_REF>) and sites with no GT in FORMAT are skipped
+	and counted in the log.  The ALT allele is the one counted, so allele
+	frequencies may come out as 1-f relative to the same data in a tped --
+	this changes no ROH call, and a .freq.gz file is interchangeable between
+	the two readers because readFreqData re-orients on the ALLELE column.
+
+	A VCF names its own samples in its #CHROM line, so --tfam is not
+	accepted with --vcf; use --pop for population labels.  Chromosomes must
+	be grouped (all records for a chromosome contiguous), which is what
+	`bcftools sort` produces.  Genotypes must be diploid, and under --phased
+	every call must use '|'.
+
+	Genetic positions are not in a VCF, so --weighted and --cm still need
+	--map.
+
+tped/tfam (required unless --vcf is given): 
 	http://zzz.bwh.harvard.edu/plink/data.shtml#tr
+
+pop (optional; with --vcf it is the only way to set population labels):
+	<sample id> <population> [sex]
+
+	Whitespace-separated, '#' comments and blank lines skipped, .gz allowed.
+	Rows are matched BY SAMPLE ID, never by position.  Note the column order
+	is <id> <pop>, the opposite of a tfam's first two columns; a tfam-ordered
+	file is diagnosed as such.  The optional third column is PLINK sex coding
+	(1 male, 2 female, 0 or -9 unknown) and is used only to make the
+	sex-chromosome warning specific.
 
 map (required when --weighted or --cm are set):
 	<chr> <snpid> <genetic pos> <physical pos>
@@ -29,6 +59,19 @@ tgls (optional):
 	<chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
 
 	Per-genotype likelihoods should be given as either a phred-scaled (--gl-type PL) or a log10-scaled (--gl-type GL) representing the probability that the genotype is correct or a phred-scaled likelihood that the genotype is wrong (--gl-type GQ).  For example, if p = 0.999 is the probability that the genotype is correct, then PL = -10*log10(p) = 0.00434511774018, GL = log10(p) = -0.000434511774018, and GQ = -10*log10(1-p) = 30.
+
+	*** THESE ARE NOT THE VCF PL AND GL FIELDS. ***  A VCF normalises PL and
+	GL so the CALLED genotype's value is exactly 0, which under the
+	definitions above means an error rate of 0.  Dropping VCF PLs or GLs into
+	a tgls file is now rejected with an error rather than silently producing
+	a LOD of -16 per heterozygote (or, for an all-integer PL file, calling
+	nothing at all).  --gl-type GQ is the one form whose VCF values can be
+	used here directly, because GQ needs no normalisation.
+
+	For VCF-derived likelihoods use --vcf --gl-type PL/GL instead: that path
+	reads the whole FORMAT array and computes the posterior, which is the
+	only correct use of a normalised PL.  vcf2tped.pl is deprecated for this
+	reason.
 
 freq (optional, output during computation, can be generated without running whole pipeling with --freq-only): 
 	CHR SNP POS ALLELE FREQ
@@ -97,6 +140,58 @@ rather than once per window, the four possible per-locus LOD values are precompu
 of calling log10 per genotype, TPED parsing no longer goes through std::istream, bulk arrays
 are allocated as one contiguous block with genotypes stored as one byte instead of two, and
 LOD calculation and ROH assembly are threaded.
+
+VCF input. garlic reads a VCF directly with --vcf: plain, gzipped, or BGZF as written by
+bgzip or bcftools. Biallelic SNVs with a GT field are used; multiallelic sites, indels,
+symbolic ALTs and records with no GT in FORMAT are skipped and counted in the log. Records
+for a chromosome must be contiguous, which is what bcftools sort produces. The VCF path
+checks things a TPED cannot state: ploidy per call, phase per call (so --phased requires
+'|' rather than silently mis-reading a '/'), and sample names from the #CHROM line -- so
+--tfam is not accepted with --vcf and --pop supplies population labels instead. The ALT
+allele is the one counted, so frequencies may come out as 1-f relative to the same data in
+a TPED; this changes no call, and a .freq.gz file remains interchangeable between the two
+readers because readFreqData re-orients on the ALLELE column. Verified by converting the
+bundled chr21 TPED to a VCF with REF/ALT chosen alphabetically, which flips the dosage at
+4,390 of 8,599 loci: both paths call the same 171 ROH with a bit-identical raw LOD matrix.
+
+--pop maps sample ID to population, and works with --tped as well. Rows are matched by
+sample ID, never by position; the column order is <id> <pop>, the opposite of a TFAM's, and
+a TFAM-ordered file is diagnosed as such. An optional third column carries PLINK sex coding.
+Population labels are not cosmetic -- they name the UCSC track and are column 2 of --froh.
+
+*** Genotype likelihoods from a VCF were being used incorrectly, and silently. *** A VCF
+normalises PL and GL so the CALLED genotype's value is exactly 0. The .tgls format holds one
+value per genotype, and under --gl-type PL/GL that value is read as the probability the
+genotype is correct -- so a VCF-derived file gave an error rate of 0 for every genotype,
+clamped to 1e-16, which is a LOD of -16 per heterozygote; on chr21 that called 113 ROH
+instead of 171. An all-integer PL file, which is what a VCF actually contains, gave error
+rates of 0, 0.206, 0.369, 0.499, ... -- 0.001 would need PL = 0.00435, so no integer PL
+expresses a realistic rate -- and called nothing at all. Both are now hard errors naming the
+chromosome, position and sample, as are GQ < 0, PL < 0, GL > 0, and an unparseable value
+(which previously left the value at 0 and failed the stream, so the rest of the line
+silently became zeros).
+
+--vcf --gl-type PL/GL is the correct path: it reads the whole FORMAT array and computes
+P(g) proportional to 10^(-PL_g/10), error = 1 - P(called)/sum. A PL of (0,30,60) gives
+0.001, exactly GQ 30. If the requested field is absent the run stops and names whichever of
+GQ, PL and GL the record does carry. vcf2tped.pl is deprecated for this reason and prints a
+notice; --gl-type GQ is the one form its output still works with, because GQ needs no
+normalisation.
+
+Physical positions are 64-bit throughout, so assemblies past 2.147 Gb no longer wrap
+negative. The last two 32-bit truncations, in the --freq-only writer and in writeFreqData,
+are fixed.
+
+garlic no longer links GNU GSL, FIGTree or ANN. The ten GSL routines it used are reproduced
+bit for bit in garlic-math.cpp, which removes 44 MB of vendored archives from every clone
+and the largest source of build friction. Windows users no longer need the FIGTree DLLs.
+
+A test suite is included: sh test/run_tests.sh runs 92 checks (91 where bgzip is not installed) -- unit tests, golden-output
+regression, mode smoke tests, exit-code and --load-params round-trip contracts, and the VCF
+equivalences above -- from tracked data only. A GitHub Actions workflow builds on
+ubuntu/macos-arm/macos-x86, runs the suite, runs every mode under ASan and UBSan, checks
+that the generated command line reference in this file and manual/flags.tex is in sync with
+the help strings, and runs every command in example/example_README.txt.
 
 Command line. Exit codes are now 0 for success, 1 for a usage error, and 2 for a runtime
 error; a misspelled flag used to exit 0, and argument errors exited 255. A rejected command

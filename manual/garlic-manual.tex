@@ -149,7 +149,23 @@ Using the command line flag {\tt --help}, will print a help dialog with a summar
 
 \subsection{Input Files}
 
-All genetic data is required to be in TPED/TFAM format (see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}) and may be directly read as a gzipped ({\tt http://www.gzip.org/}) version without first decompressing.  Consecutive loci are assumed to be in order with respect to their physical location on the chromosome.  {\tt garlic} assumes only one population per file, and different populations should be computed separately.  VCF support is planned, but until then the companion perl script {\tt vcf2tped.pl} will convert VCF files to TPED/TFAM files.
+Genotypes are read from either a VCF ({\tt --vcf}) or a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}).  The two are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Consecutive loci are assumed to be in order with respect to their physical position, and all records for a chromosome must be contiguous --- what {\tt bcftools sort} produces.  {\tt garlic} computes allele frequencies over every sample in the file, so different populations should be analysed separately; {\tt --pop} supplies the population label that appears in the output.
+
+\subsubsection{VCF input}
+
+Biallelic SNVs carrying a {\tt GT} field are used.  Multiallelic sites, indels, symbolic ALT alleles ({\tt *}, {\tt <NON\_REF>}) and records with no {\tt GT} in {\tt FORMAT} are skipped, and the counts are written to the log rather than passed over silently.  The {\tt FILTER} column is reported either way and only acted on under {\tt --vcf-pass-only}, since it records the variant caller's thresholds rather than {\tt garlic}'s.
+
+A VCF states things a TPED cannot, and {\tt garlic} checks them: ploidy is per call, so anything other than a diploid genotype is an error naming the site and the sample; phase is per call, so {\tt --phased} requires {\tt |} everywhere rather than silently mis-reading a {\tt /}; and samples are named in the {\tt \#CHROM} line, so {\tt --tfam} is not accepted alongside {\tt --vcf} --- it could only disagree.  Use {\tt --pop} for population labels; omitting it labels every sample {\tt unknown} and warns, because the allele frequencies really are pooled over all of them.
+
+The counted allele is ALT.  For the same genotypes a TPED counts whichever allele it saw first, so the frequency column may come out as $1-f$ relative to a TPED run.  This changes no ROH call, and a {\tt .freq.gz} file remains interchangeable between the two readers: {\tt readFreqData} compares the {\tt ALLELE} column against the reader's own coding and flips the frequency when they differ.
+
+Genetic map positions are not part of a VCF, so {\tt --weighted} and {\tt --cm} still require {\tt --map}.
+
+Per-genotype genotype qualities are read from the {\tt FORMAT} column with {\tt --gl-type}.  This is the only correct way to use a VCF's {\tt PL} or {\tt GL}: a VCF normalises both so the called genotype's value is exactly $0$, so that single value is $0$ for every call, confident or not, and the information is in how much worse the alternatives are.  {\tt garlic} therefore reads the whole array and computes
+\[ P(g) \propto 10^{-\mathrm{PL}_g/10}, \qquad \mathrm{error} = 1 - \frac{P(\mathrm{called})}{\sum_g P(g)}, \]
+with {\tt GL} entering the same expression as $\mathrm{PL} = -10\,\mathrm{GL}$.  This reproduces the {\tt GQ} that encodes the same confidence: a {\tt PL} of $(0,30,60)$ gives $0.001$, exactly {\tt GQ} $30$.  If the requested field is absent the run stops and the message names whichever of {\tt GQ}, {\tt PL} and {\tt GL} the record does carry.
+
+The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED plus a {\tt tgls} file, and a {\tt tgls} file holds one value per genotype, which cannot represent a normalised {\tt PL} or {\tt GL}; {\tt garlic} now rejects such a file rather than computing with it.
 \subsubsection{File formats}
 \noindent tped/tfam (required):\\
 \begin{verbatim}
@@ -161,10 +177,17 @@ All genetic data is required to be in TPED/TFAM format (see \\{\tt http://pngu.m
 	http://zzz.bwh.harvard.edu/plink/data.shtml#map 
 	(negative positions will cause errors)
 \end{verbatim}
-\noindent tgls (optional):
+\noindent tgls (optional; legacy --- see the note on {\tt vcf2tped.pl} above):
 \begin{verbatim}
 	<chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
 \end{verbatim}
+\noindent One value per genotype.  Under {\tt --gl-type PL} or {\tt GL} these are read as the probability that the genotype is {\em correct}, which is {\em not} what a VCF's {\tt PL} and {\tt GL} fields hold; a file of VCF-derived values is rejected with an error.  {\tt --gl-type GQ} is the one form whose VCF values can be used here directly.
+
+\noindent pop (optional; with {\tt --vcf}, the only way to set population labels):
+\begin{verbatim}
+	<sample id> <population> [sex]
+\end{verbatim}
+\noindent Matched by sample ID, never by position.  Note the column order is the opposite of a TFAM's first two columns; a TFAM-ordered file is diagnosed as such.  The optional third column uses PLINK sex coding and only makes the sex-chromosome warning specific.
 \noindent freq (optional, output during computation, can be generated without running whole pipeling with --freq-only): 
 \begin{verbatim}
 	CHR SNP POS ALLELE FREQ
