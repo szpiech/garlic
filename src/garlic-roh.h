@@ -78,7 +78,7 @@ void writeFROH(string outfile,
                vector< ROHData * > *rohDataByInd,
                vector< MapData * > *mapDataByChr,
                vector< double > bounds,
-               string *pop,
+               const vector<string> &pop,
                centromere *centro,
                bool CM);
 void calcLOD(MapData *mapData,
@@ -148,7 +148,7 @@ void writeROHData(string outfile,
                   vector< ROHData * > *rohDataByInd,
                   vector< MapData * > *mapDataByChr,
                   vector< double > bounds,
-                  string* pop,
+                  const vector<string> &pop,
                   string version,
                   bool CM);
 void releaseROHData(vector< ROHData * > *rohDataByInd);

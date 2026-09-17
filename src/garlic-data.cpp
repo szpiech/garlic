@@ -1882,9 +1882,7 @@ void releaseIndData(vector< IndData * > *indDataByPop)
 
 void releaseIndData(IndData *data)
 {
-    delete [] data->indID;
-    delete [] data->pop;
-    delete [] data->sex;
+    //The members own themselves now; there is nothing here to forget.
     delete data;
     return;
 }
@@ -2426,16 +2424,9 @@ IndData *initIndData(int nind)
 
     IndData *data = new IndData;
     data->nind = nind;
-    data->indID = new string[nind];
-    data->pop = new string[nind];
-    data->sex = new int[nind];
-
-    for (int ind = 0; ind < nind; ind++) data->sex[ind] = 0;
-
-    for (int ind = 0; ind < nind; ind++)
-    {
-        data->indID[ind] = "--";
-    }
+    data->indID.assign(nind, "--");
+    data->pop.resize(nind);
+    data->sex.assign(nind, 0);
 
     return data;
 }
@@ -2626,7 +2617,7 @@ void subsetData(vector< HapData * > *hapDataByChr,
         newIndData->indID[ind] = indData->indID[randInd[ind]];
         newIndData->pop[ind]   = indData->pop[randInd[ind]];
     }
-    LOG.loga("Individuals used for KDE:", newIndData->indID, nind);
+    LOG.loga("Individuals used for KDE:", newIndData->indID.data(), nind);
 
     vector< HapData * > *newHapDataByChr = new vector< HapData * >;
     vector< GenoLikeData * > *newGLDataByChr;

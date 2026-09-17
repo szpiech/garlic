@@ -93,12 +93,16 @@ struct MapData
 
 struct IndData
 {
-  string *pop;
-  string *indID;
+  //These were string*/int* over new[]/delete[].  B1 was exactly that: subsetData
+  //did `newIndData->pop = indData->pop`, which aliased the caller's array and
+  //then freed it twice, aborting --auto-winsize.  As vectors that assignment
+  //copies and the bug cannot be written.
+  vector<string> pop;
+  vector<string> indID;
   //TFAM column 5, PLINK coding: 1 male, 2 female, 0 or -9 unknown.  Only used
   //to make the sex-chromosome warning specific about how many individuals
   //would be affected; garlic does not condition any calculation on it.
-  int *sex;
+  vector<int> sex;
   int nind;
 };
 
