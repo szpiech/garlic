@@ -46,6 +46,13 @@ public:
 	//nor the double overload; without this, printing one is ambiguous, and
 	//routing it through double would render large values in scientific
 	//notation.
+	//BOTH long and long long, deliberately.  int64_t is long long under
+	//LLP64 (macOS arm64, Windows) and long under LP64 (Linux, most BSDs),
+	//so a single 64-bit overload gives an exact match on one ABI and none
+	//on the other -- where long then converts equally well to int, long
+	//long, double, bool and char, and the call is ambiguous.  That is what
+	//broke the first CI run on linux-x86_64 while macOS stayed green.
+	void err(string str, long val, bool nl = true);
 	void err(string str, long long val, bool nl = true);
 	void err(string str, double val, bool nl = true);
 	void err(string str, bool val, bool nl = true);
@@ -70,6 +77,7 @@ public:
 	void logn(char val);
 
 	void log(string str, int val, bool nl = true);
+	void log(string str, long val, bool nl = true);
 	void log(string str, long long val, bool nl = true);
 	void log(string str, double val, bool nl = true);
 	void log(string str, bool val, bool nl = true);

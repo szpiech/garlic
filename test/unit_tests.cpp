@@ -557,8 +557,46 @@ static void test_plToError()
     #undef PL3
 }
 
+// --------------------------------------------- logger overload coverage ----
+// A COMPILE-TIME check, never called.  int64_t is long long under LLP64
+// (macOS arm64, Windows) and long under LP64 (Linux, most BSDs), so an errlog
+// that overloads on only one of the two 64-bit types gives an exact match on
+// one ABI and none on the other -- where the argument then converts equally
+// well to int, long long, double, bool and char, and the call is ambiguous.
+//
+// That is exactly how the first CI run failed: garlic-data.cpp:1353 logs a
+// pos_t, which compiled on macOS and was ambiguous on linux-x86_64.  Nothing
+// in a macOS build can notice, so the check has to be structural rather than
+// a test that runs.  If an overload goes missing this file stops compiling,
+// and the unit-test stage runs on every platform in CI.
+static void compile_time_logger_overload_coverage(errlog &L)
+{
+    int       i  = 0;
+    long      l  = 0;
+    long long ll = 0;
+    int64_t   i64 = 0;
+    pos_t     p  = 0;
+    double    d  = 0;
+    char      c  = 'x';
+    bool      b  = false;
+    std::string s = "s";
+
+    L.err("x", i, false);   L.log("x", i, false);
+    L.err("x", l, false);   L.log("x", l, false);
+    L.err("x", ll, false);  L.log("x", ll, false);
+    L.err("x", i64, false); L.log("x", i64, false);
+    L.err("x", p, false);   L.log("x", p, false);
+    L.err("x", d, false);   L.log("x", d, false);
+    L.err("x", c, false);   L.log("x", c, false);
+    L.err("x", b, false);   L.log("x", b, false);
+    L.err("x", s, false);   L.log("x", s, false);
+}
+
 int main()
 {
+    //Referenced, never invoked: taking the address requires the function to
+    //compile (which is the whole point) while keeping it out of the run.
+    (void)&compile_time_logger_overload_coverage;
     printf("garlic unit tests\n");
     test_lod();
     test_interpolate();

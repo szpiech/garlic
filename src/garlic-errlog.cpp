@@ -146,6 +146,16 @@ void errlog::err(string str, int val, bool nl)
 	return;
 }
 
+void errlog::err(string str, long val, bool nl)
+{
+	//See the header: int64_t is long on LP64 and long long on LLP64, so
+	//both need an exact match.  Same string routing as the long long form.
+	stringstream ss;
+	ss << val;
+	this->err(str, ss.str(), nl);
+	return;
+}
+
 void errlog::err(string str, long long val, bool nl)
 {
 	//Formatted through the string overload rather than adding another out():
@@ -287,6 +297,16 @@ void errlog::log(string str, int val, bool nl)
 {
 	this->out(&cout, str, val, nl);
 	this->out(logstream, str, val, nl);
+	return;
+}
+
+void errlog::log(string str, long val, bool nl)
+{
+	//See the header: int64_t is long on LP64 and long long on LLP64, so
+	//both need an exact match.  Same string routing as the long long form.
+	stringstream ss;
+	ss << val;
+	this->log(str, ss.str(), nl);
 	return;
 }
 
