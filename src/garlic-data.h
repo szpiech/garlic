@@ -124,7 +124,8 @@ struct GenoFreqData
 
 struct WinData
 {
-  double **data;
+  //Row per INDIVIDUAL here, unlike HapData/GenoLikeData which are row per locus.
+  Matrix<double> data;
   int nind;
   int nloci;
   //int nmiss;
@@ -132,7 +133,7 @@ struct WinData
 
 struct GenoLikeData
 {
-  double **data;
+  Matrix<double> data;
   int nind;
   int nloci;
   //int nmiss;
@@ -146,7 +147,7 @@ struct DoubleData
 
 struct LDData
 {
-  double **LD;
+  Matrix<double> LD;
   int nloci;
   int winsize;
 };

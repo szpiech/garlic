@@ -422,14 +422,14 @@ GenoLikeData *initGLData(const vector< double * > &GL, int nloci, int nind){
     GenoLikeData *glData = new GenoLikeData;
     glData->nind = nind;
     glData->nloci = nloci;
-    glData->data = new double*[nloci];
-
-    double *block = new double[size_t(nloci) * size_t(nind)];
+    //reserveRows rather than resize: see garlic-matrix.h, the zero pass would
+    //commit every page before the copy overwrote it.
+    glData->data.reserveRows(nloci, nind);
     for(int i = 0; i < nloci; i++){
-        glData->data[i] = block + size_t(i) * size_t(nind);
-        memcpy(glData->data[i], GL[i], sizeof(double) * size_t(nind));
+        glData->data.appendRow(GL[i]);
         delete [] GL[i];
     }
+    glData->data.finishRows();
 
     return glData;
 }
@@ -986,19 +986,10 @@ LDData *initLDData(int nloci, int winsize){
     LDData *data = new LDData;
     data->nloci = nloci;
     data->winsize = winsize;
-    data->LD = new double*[nloci];
-    double *block = new double[size_t(nloci) * size_t(winsize)];
-    for(int i = 0; i < nloci; i++){
-        data->LD[i] = block + size_t(i) * size_t(winsize);
-        for(int j = 0; j < winsize; j++){
-            data->LD[i][j] = 0;
-        }
-    }
+    data->LD.assign(nloci, winsize, 0);
     return data;
 }
 void releaseLDData(LDData *data){
-    if(data->nloci > 0) delete [] data->LD[0];
-    delete [] data->LD;
     delete data;
 }
 void releaseLDData(vector< LDData * > *ldDataByChr){
@@ -1976,21 +1967,11 @@ WinData *initWinData(unsigned int nind, unsigned int nloci)
     data->nloci = nloci;
     //data->nmiss = 0;
 
-    data->data = new double*[nind];
-    double *block = new double[size_t(nind) * size_t(nloci)];
-    for (unsigned int i = 0; i < nind; i++)
-    {
-        data->data[i] = block + size_t(i) * size_t(nloci);
-        for (unsigned int j = 0; j < nloci; j++)
-        {
-            //MISSING, not GENO_UNSET: this array holds LOD scores, and the
-            //sentinel IS load-bearing here -- tail windows retain it,
-            //writeWinData prints NA for it, and the KDE input skips it with
-            //x != MISSING.  -9 would be a plausible LOD score and would be
-            //taken as real data.
-            data->data[i][j] = MISSING;
-        }
-    }
+    //MISSING, not GENO_UNSET: this array holds LOD scores, and the sentinel IS
+    //load-bearing here -- tail windows retain it, writeWinData prints NA for it,
+    //and the KDE input skips it with x != MISSING.  -9 would be a plausible LOD
+    //score and would be taken as real data.
+    data->data.assign(nind, nloci, MISSING);
 
     return data;
 }
@@ -1998,16 +1979,7 @@ WinData *initWinData(unsigned int nind, unsigned int nloci)
 void releaseWinData(WinData *data)
 {
     if (data == NULL) return;
-    if (data->nind > 0) delete [] data->data[0];
-
-    delete [] data->data;
-
-    data->data = NULL;
-    data->nind = -9;
-    data->nloci = -9;
-    //data->nmiss = -9;
     delete data;
-    data = NULL;
     return;
 }
 
@@ -2144,31 +2116,14 @@ GenoLikeData *initGLData(unsigned int nind, unsigned int nloci) {
     data->nind = nind;
     data->nloci = nloci;
 
-    data->data = new double*[nloci];
-    double *block = new double[size_t(nloci) * size_t(nind)];
-    for (unsigned int i = 0; i < nloci; i++)
-    {
-        data->data[i] = block + size_t(i) * size_t(nind);
-        for (unsigned int j = 0; j < nind; j++)
-        {
-            data->data[i][j] = 1;
-        }
-    }
+    data->data.assign(nloci, nind, 1);
 
     return data;
 }
 
 void releaseGLData(GenoLikeData *data) {
     if (data == NULL) return;
-    if (data->nloci > 0) delete [] data->data[0];
-
-    delete [] data->data;
-
-    data->data = NULL;
-    data->nind = -9;
-    data->nloci = -9;
     delete data;
-    data = NULL;
     return;
 }
 

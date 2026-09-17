@@ -60,7 +60,7 @@ static void *parallelLOD(void *order)
     const int nloci = p->hapData->nloci;
     const pos_t *physicalPos = p->mapData->physicalPos;
     const double *freq = p->freqData->freq;
-    double **win = p->winData->data;
+    Matrix<double> &win = p->winData->data;
     GenoLikeData *GLData = p->GLData;
     const double *lut = p->lut;
     const int winsize = p->winsize;
@@ -315,7 +315,7 @@ void parallelwLOD(void *order){
     pos_t *physicalPos = p->mapData->physicalPos;
     double *geneticPos = p->mapData->geneticPos;
     double *freq = p->freqData->freq;
-    double **win = p->winData->data;
+    Matrix<double> &win = p->winData->data;
 
     int cStart = p->cStart;
     int cEnd = p->cEnd;
