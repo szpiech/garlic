@@ -201,7 +201,7 @@ void calcLOD(MapData *mapData,
     }
     else
     {
-        pthread_t *peer = new pthread_t[nt];
+        vector<pthread_t> peer(nt);
         LOD_work_order_t *orders = new LOD_work_order_t[nt];
         int per = nind / nt;
         int extra = nind % nt;
@@ -215,7 +215,6 @@ void calcLOD(MapData *mapData,
             pthread_create(&(peer[i]), NULL, parallelLOD, (void *)&(orders[i]));
         }
         for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
-        delete [] peer;
         delete [] orders;
     }
 
@@ -242,13 +241,13 @@ void calcwLOD(MapData *mapData,
               WinData *winData, centromere *centro,
               int winsize, double error, int MAX_GAP, bool USE_GL, double mu, int M, int numThreads)
 {
-    unsigned int *NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
+    vector<unsigned int> NUM_PER_THREAD = make_thread_partition(numThreads, hapData->nloci);
 
     Bar bar;
     barInit(bar,hapData->nind,100);
 
     WLOD_work_order_t *order;
-    pthread_t *peer = new pthread_t[numThreads];
+    vector<pthread_t> peer(numThreads);
     vector< WLOD_work_order_t * > orders;
     unsigned int previous = 0;
     for (int i = 0; i < numThreads; i++)
@@ -289,8 +288,6 @@ void calcwLOD(MapData *mapData,
     finalize(bar);
 
     orders.clear();
-    delete [] NUM_PER_THREAD;
-    delete [] peer;
     return;
 }
 
@@ -716,11 +713,10 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
     }
     else
     {
-        pthread_t *peer = new pthread_t[nt];
+        vector<pthread_t> peer(nt);
         for (int i = 0; i < nt; i++)
             pthread_create(&(peer[i]), NULL, parallelAssembleROH, (void *)&(orders[i]));
         for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
-        delete [] peer;
     }
 
     vector<double> lengths;

@@ -258,7 +258,9 @@ void parallelR2(void *order);
 void parallelLDFromBand(void *order);
 void ldRowsFromBand(double *band, LDData *LD, int nloci, int winsize, int start, int stop, Bar *bar);
 
-unsigned int *make_thread_partition(int &num_threads, int nloci);
+//Returns by value: the previous version handed back a new[] array that every
+//caller had to remember to delete, and an early return skipped it.
+vector<unsigned int> make_thread_partition(int &num_threads, int nloci);
 
 void ldHR2(LDData *LD, HapData *hapData, GenoFreqData *genoFreqData, int site, int start, int end, int *indIndex, int ldSubsample);
 void ldR2(LDData *LD, HapData *hapData, FreqData *freqData, int site, int start, int end, int *indIndex, int ldSubsample);

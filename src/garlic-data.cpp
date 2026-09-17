@@ -593,20 +593,19 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
 
     //to hold the indicies of the randomly selected individuals
     int nind = hapDataByChr->at(0)->nind;
-    int *randInd;
+    vector<int> randInd;
     if (ldSubsample >= nind || ldSubsample <= 0)
     {
         ldSubsample = nind;
-        randInd = new int[nind];
+        randInd.resize(nind);
         for (int i = 0; i < nind; i++) randInd[i] = i;
     }
     else
     {
-        int* indIndex = new int[nind];
+        vector<int> indIndex(nind);
         for (int i = 0; i < nind; i++) indIndex[i] = i;
-        randInd = new int[ldSubsample];
-        r->choose(randInd, ldSubsample, indIndex, nind);
-        delete [] indIndex;
+        randInd.resize(ldSubsample);
+        r->choose(randInd.data(), ldSubsample, indIndex.data(), nind);
         nind = ldSubsample;
     }
 
@@ -614,10 +613,9 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
     vector< LDData * > *ldDataByChr = new vector< LDData * >;
     for(unsigned int chr = 0; chr < hapDataByChr->size(); chr++){
         cerr << mapDataByChr->at(chr)->chr << "    ";
-        if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), winsize, numThreads, randInd, ldSubsample));
-        else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), winsize, numThreads, randInd, ldSubsample));
+        if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), winsize, numThreads, randInd.data(), ldSubsample));
+        else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), winsize, numThreads, randInd.data(), ldSubsample));
     }
-    delete [] randInd;
     return ldDataByChr;
 }
 
@@ -634,9 +632,9 @@ static void runLDPhases(LDData *LD, int nloci, int winsize, int numThreads,
     if (nWindows <= 0) return;
 
     int nt = numThreads;
-    unsigned int *NUM_PER_THREAD = make_thread_partition(nt, nWindows);
-    pthread_t *peer = new pthread_t[nt];
-    BAND_work_order_t **orders = new BAND_work_order_t*[nt];
+    vector<unsigned int> NUM_PER_THREAD = make_thread_partition(nt, nWindows);
+    vector<pthread_t> peer(nt);
+    vector<BAND_work_order_t *> orders(nt);
     unsigned int previous = 0;
     for (int i = 0; i < nt; i++)
     {
@@ -656,9 +654,6 @@ static void runLDPhases(LDData *LD, int nloci, int winsize, int numThreads,
         pthread_join(peer[i], NULL);
         delete orders[i];
     }
-    delete [] orders;
-    delete [] NUM_PER_THREAD;
-    delete [] peer;
     (void)bandFn; (void)bandOrders;
 }
 
@@ -676,8 +671,8 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
 
     //--- phase 1: banded pairwise hr2 ---
     int nt = numThreads;
-    unsigned int *NUM_PER_THREAD = make_thread_partition(nt, nloci);
-    pthread_t *peer = new pthread_t[nt];
+    vector<unsigned int> NUM_PER_THREAD = make_thread_partition(nt, nloci);
+    vector<pthread_t> peer(nt);
     vector< HR2_work_order_t * > orders;
     unsigned int previous = 0;
     for (int i = 0; i < nt; i++)
@@ -703,8 +698,6 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
         delete orders[i];
     }
     orders.clear();
-    delete [] NUM_PER_THREAD;
-    delete [] peer;
 
     //--- phase 2: window sums from the band ---
     runLDPhases(LD, nloci, winsize, numThreads, NULL, NULL, band, &bar);
@@ -729,8 +722,8 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
 
     //--- phase 1: banded pairwise r2 ---
     int nt = numThreads;
-    unsigned int *NUM_PER_THREAD = make_thread_partition(nt, nloci);
-    pthread_t *peer = new pthread_t[nt];
+    vector<unsigned int> NUM_PER_THREAD = make_thread_partition(nt, nloci);
+    vector<pthread_t> peer(nt);
     vector< R2_work_order_t * > orders;
     unsigned int previous = 0;
     for (int i = 0; i < nt; i++)
@@ -756,8 +749,6 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
         delete orders[i];
     }
     orders.clear();
-    delete [] NUM_PER_THREAD;
-    delete [] peer;
 
     //--- phase 2: window sums from the band ---
     runLDPhases(LD, nloci, winsize, numThreads, NULL, NULL, band, &bar);
@@ -901,9 +892,9 @@ void ldR2(LDData *LD, HapData *hapData, FreqData *freqData, int site, int start,
 }
 
 
-unsigned int *make_thread_partition(int &numThreads, int ncols) {
+vector<unsigned int> make_thread_partition(int &numThreads, int ncols) {
     if (numThreads > ncols) numThreads = ncols;
-    unsigned int *NUM_PER_THREAD = new unsigned int[numThreads];
+    vector<unsigned int> NUM_PER_THREAD(numThreads);
     unsigned int div = ncols / numThreads;
 
     for (int i = 0; i < numThreads; i++)
@@ -2409,19 +2400,18 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
 
     //to hold the indicies of the randomly selected individuals
     int nind = winDataByChr->at(0)->nind;
-    int *randInd;
+    vector<int> randInd;
     if (subsample >= nind)
     {
-        randInd = new int[nind];
+        randInd.resize(nind);
         for (int i = 0; i < nind; i++) randInd[i] = i;
     }
     else
     {
-        int* indIndex = new int[nind];
+        vector<int> indIndex(nind);
         for (int i = 0; i < nind; i++) indIndex[i] = i;
-        randInd = new int[subsample];
-        r->choose(randInd, subsample, indIndex, nind);
-        delete [] indIndex;
+        randInd.resize(subsample);
+        r->choose(randInd.data(), subsample, indIndex.data(), nind);
         nind = subsample;
     }
 
@@ -2473,7 +2463,6 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
     }
 
 
-    delete [] randInd;
 
     return rawWinData;
 }
@@ -2507,19 +2496,18 @@ void subsetData(vector< HapData * > *hapDataByChr,
     GarlicRNG *r = getRNG();
 
     int nind = hapDataByChr->at(0)->nind;
-    int *randInd;
+    vector<int> randInd;
     if (subsample >= nind)
     {
-        randInd = new int[nind];
+        randInd.resize(nind);
         for (int i = 0; i < nind; i++) randInd[i] = i;
     }
     else
     {
-        int* indIndex = new int[nind];
+        vector<int> indIndex(nind);
         for (int i = 0; i < nind; i++) indIndex[i] = i;
-        randInd = new int[subsample];
-        r->choose(randInd, subsample, indIndex, nind);
-        delete [] indIndex;
+        randInd.resize(subsample);
+        r->choose(randInd.data(), subsample, indIndex.data(), nind);
         nind = subsample;
     }
 
@@ -2562,7 +2550,6 @@ void subsetData(vector< HapData * > *hapDataByChr,
         if (USE_GL) newGLDataByChr->push_back(GLData);
         GLData = NULL;
     }
-    delete [] randInd;
 
     *(subsetHapDataByChr) = newHapDataByChr;
     if(USE_GL) *(subsetGLDataByChr) = newGLDataByChr;

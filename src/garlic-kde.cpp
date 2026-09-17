@@ -212,7 +212,7 @@ void kdeGaussian(double *data, int n, double h, const double *targets, int M, do
         return;
     }
 
-    pthread_t *peer = new pthread_t[nt];
+    vector<pthread_t> peer(nt);
     KDE_work_order_t *orders = new KDE_work_order_t[nt];
     for (int i = 0; i < nt; i++)
     {
@@ -222,7 +222,6 @@ void kdeGaussian(double *data, int n, double h, const double *targets, int M, do
         pthread_create(&(peer[i]), NULL, parallelKDE, (void *)&(orders[i]));
     }
     for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
-    delete [] peer;
     delete [] orders;
 }
 
