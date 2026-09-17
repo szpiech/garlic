@@ -2075,6 +2075,61 @@ string lc(string str) {
     return str;
 }
 
+bool parseGT(const char *sample, const char *sampleEnd, int gtIndex, int altIndex,
+             int &dosage, bool &firstCopy, int &ploidy, bool &phased)
+{
+    //Walk to the gtIndex'th colon-separated sub-field.
+    const char *f = sample;
+    for (int k = 0; k < gtIndex; k++)
+    {
+        while (f < sampleEnd && *f != ':') f++;
+        if (f >= sampleEnd) return false;       //fewer sub-fields than FORMAT promised
+        f++;
+    }
+    const char *fEnd = f;
+    while (fEnd < sampleEnd && *fEnd != ':') fEnd++;
+    if (f == fEnd) return false;                //empty GT
+
+    dosage    = 0;
+    ploidy    = 0;
+    phased    = true;
+    firstCopy = false;
+
+    bool anyMissing = false;
+    const char *q = f;
+    while (q < fEnd)
+    {
+        //One allele: '.' or a run of digits.  The index may exceed one digit at
+        //a multiallelic site.
+        int idx;
+        if (*q == '.') { idx = -1; q++; }
+        else if (*q >= '0' && *q <= '9')
+        {
+            idx = 0;
+            while (q < fEnd && *q >= '0' && *q <= '9') { idx = idx * 10 + (*q - '0'); q++; }
+        }
+        else return false;
+
+        if (ploidy == 0 && idx >= 0) firstCopy = (idx == altIndex);
+        ploidy++;
+
+        if (idx < 0) anyMissing = true;
+        else if (idx == altIndex) dosage++;
+
+        if (q < fEnd)
+        {
+            if (*q == '|') q++;
+            else if (*q == '/') { phased = false; q++; }
+            else return false;
+        }
+        else break;
+    }
+
+    if (ploidy == 0) return false;
+    if (anyMissing) dosage = GENO_MISSING;
+    return true;
+}
+
 double glToError(double value, string glType)
 {
     double e;

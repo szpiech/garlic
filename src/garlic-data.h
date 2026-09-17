@@ -56,6 +56,12 @@ typedef signed char geno_t;
 //a sentinel that is not the value it claims to be is worth not having.
 const geno_t GENO_UNSET = -9;
 
+//The same value, named for the other thing it means: a genotype that WAS
+//parsed and found missing, as opposed to one not yet parsed.  The LOD lookup
+//table maps anything outside {0,1,2} to its default slot, so -9 needs no
+//special case downstream.
+const geno_t GENO_MISSING = -9;
+
 
 
 //All four of the bulk structures below are allocated as ONE contiguous block
@@ -401,6 +407,31 @@ void writeDoubleData(vector < DoubleData * > *rawWinDataByPop, vector< MapData *
 int countFields(const string &str);
 string lc(string str);
 string checkChrName(string chr);
+
+//Parses one sample's VCF genotype column.
+//
+//  sample..sampleEnd  the whole colon-separated sample field, e.g. "0|1:35:99"
+//  gtIndex            position of GT within FORMAT (0 when GT is first, which
+//                     the spec requires, but the reader does not assume)
+//  altIndex           which ALT allele to count; 1 for a biallelic site
+//
+//Outputs:
+//  dosage     number of copies of altIndex, or GENO_MISSING if ANY allele of
+//             the call is '.'.  A half call such as 0/. is therefore missing,
+//             which is what the TPED path does: loadTPEDData accumulates -9 per
+//             missing allele and then clamps anything negative to -9.
+//  firstCopy  whether the FIRST haplotype carries the counted allele, matching
+//             loadTPEDData's firstCopy[i] = (alleleStr1 == oneAllele).
+//  ploidy     number of alleles in the call.  parseGT does NOT reject ploidy
+//             other than 2; the caller does, so the message can name the site
+//             and the sample.
+//  phased     false if any separator was '/'.  Vacuously true for a haploid
+//             call, which has no separator.
+//
+//Returns false only for input that cannot be interpreted: no such sub-field,
+//an empty GT, a non-digit allele, or an unexpected separator.
+bool parseGT(const char *sample, const char *sampleEnd, int gtIndex, int altIndex,
+             int &dosage, bool &firstCopy, int &ploidy, bool &phased);
 
 //Convert one genotype-quality/likelihood value into the per-genotype error
 //rate the LOD calculation uses.  Extracted from readTGLSData so it can be

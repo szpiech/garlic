@@ -17,6 +17,7 @@
 #include "garlic-kde.h"
 #include "garlic-centromeres.h"
 #include <cstdio>
+#include <cstring>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -433,6 +434,84 @@ static void test_keepSites()
     releaseFreqData(fd);
 }
 
+// ---------------------------------------------------------- parseGT() -------
+// The whole correctness surface of VCF genotype reading.  Made a named
+// function so it can be tested directly rather than inferred from ROH counts
+// -- the same move as keepSites() and glToError().
+//
+// Two conventions are load-bearing and are asserted here rather than left to
+// the reader of the code:
+//   - a HALF call (0/. or ./1) is MISSING, not a partial dosage.  That is what
+//     loadTPEDData does: it accumulates -9 per missing allele and then clamps
+//     anything negative to -9.
+//   - dosage counts altIndex, and firstCopy says whether the FIRST haplotype
+//     carries that allele, matching loadTPEDData's
+//     firstCopy[i] = (alleleStr1 == oneAllele).
+static void test_parseGT()
+{
+    int d, pl; bool fc, ph;
+    const char *s;
+
+    #define GT(str) (s = (str), parseGT(s, s + strlen(s), 0, 1, d, fc, pl, ph))
+    #define GTI(str, gi, ai) (s = (str), parseGT(s, s + strlen(s), (gi), (ai), d, fc, pl, ph))
+
+    // --- unphased biallelic, the ordinary cases ---
+    ck(GT("0/0") && d == 0 && pl == 2 && !ph, "parseGT 0/0 -> dosage 0, unphased");
+    ck(GT("0/1") && d == 1 && pl == 2 && !ph, "parseGT 0/1 -> dosage 1");
+    ck(GT("1/0") && d == 1 && pl == 2,        "parseGT 1/0 -> dosage 1");
+    ck(GT("1/1") && d == 2 && pl == 2,        "parseGT 1/1 -> dosage 2");
+
+    // --- phased forms: same dosage, phased flag set, firstCopy meaningful ---
+    ck(GT("0|0") && d == 0 && ph, "parseGT 0|0 -> dosage 0, phased");
+    ck(GT("0|1") && d == 1 && ph, "parseGT 0|1 -> dosage 1, phased");
+    ck(GT("1|0") && d == 1 && ph, "parseGT 1|0 -> dosage 1, phased");
+    ck(GT("1|1") && d == 2 && ph, "parseGT 1|1 -> dosage 2, phased");
+
+    // firstCopy distinguishes the two heterozygotes; dosage does not.
+    ck(GT("1|0") && fc,  "parseGT 1|0 -> firstCopy true (hap 1 carries ALT)");
+    ck(GT("0|1") && !fc, "parseGT 0|1 -> firstCopy false");
+    ck(GT("1|1") && fc,  "parseGT 1|1 -> firstCopy true");
+    ck(GT("0|0") && !fc, "parseGT 0|0 -> firstCopy false");
+
+    // --- missing and half calls ---
+    ck(GT("./.") && d == GENO_MISSING && pl == 2, "parseGT ./. -> missing");
+    ck(GT(".|.") && d == GENO_MISSING,            "parseGT .|. -> missing");
+    ck(GT("0/.") && d == GENO_MISSING,            "parseGT 0/. -> MISSING, not dosage 0");
+    ck(GT("./1") && d == GENO_MISSING,            "parseGT ./1 -> MISSING, not dosage 1");
+    ck(GT("1/.") && d == GENO_MISSING,            "parseGT 1/. -> MISSING, not dosage 1");
+    ck(GT(".")   && d == GENO_MISSING && pl == 1, "parseGT . -> missing, ploidy 1");
+
+    // --- ploidy is reported, not rejected: the caller names site and sample ---
+    ck(GT("0")     && d == 0 && pl == 1, "parseGT haploid 0 -> dosage 0, ploidy 1");
+    ck(GT("1")     && d == 1 && pl == 1, "parseGT haploid 1 -> dosage 1, ploidy 1");
+    ck(GT("0/0/1") && pl == 3,           "parseGT polyploid 0/0/1 -> ploidy 3 for the caller to reject");
+    ck(GT("0|1|1") && pl == 3 && d == 2, "parseGT polyploid 0|1|1 -> ploidy 3, dosage 2");
+
+    // --- multiallelic: dosage counts altIndex and nothing else ---
+    ck(GTI("1/2", 0, 1) && d == 1, "parseGT 1/2 with altIndex 1 -> dosage 1");
+    ck(GTI("2/2", 0, 1) && d == 0, "parseGT 2/2 with altIndex 1 -> dosage 0");
+    ck(GTI("2/2", 0, 2) && d == 2, "parseGT 2/2 with altIndex 2 -> dosage 2");
+    ck(GTI("1/2", 0, 2) && d == 1, "parseGT 1/2 with altIndex 2 -> dosage 1");
+    // a two-digit allele index must not be read as two alleles
+    ck(GTI("10/10", 0, 10) && d == 2 && pl == 2, "parseGT 10/10 -> one two-digit index, ploidy 2");
+
+    // --- GT inside a colon-separated sample field ---
+    ck(GT("0/1:35:99")   && d == 1 && pl == 2, "parseGT GT:DP:GQ suffix ignored");
+    ck(GT("1|1:0,30,60") && d == 2 && ph,      "parseGT GT followed by a PL array");
+    ck(GTI("35:0/1:99", 1, 1) && d == 1,       "parseGT GT as the SECOND FORMAT field");
+    ck(GTI("35:99:1|1", 2, 1) && d == 2 && ph, "parseGT GT as the THIRD FORMAT field");
+
+    // --- input that cannot be interpreted ---
+    ck(!GTI("35:99", 2, 1), "parseGT fails when FORMAT promises more fields than exist");
+    ck(!GT(""),             "parseGT fails on an empty sample field");
+    ck(!GTI("0/1:", 1, 1),  "parseGT fails on an empty GT sub-field");
+    ck(!GT("A/T"),          "parseGT fails on a non-digit allele (a TPED-style genotype)");
+    ck(!GT("0-1"),          "parseGT fails on an unexpected separator");
+
+    #undef GT
+    #undef GTI
+}
+
 int main()
 {
     printf("garlic unit tests\n");
@@ -446,6 +525,7 @@ int main()
     test_kde_helpers();
     test_getMapInfo();
     test_keepSites();
+    test_parseGT();
     printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }
