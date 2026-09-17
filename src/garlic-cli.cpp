@@ -120,24 +120,31 @@ const string HELP_TGLS = "A tgls file containing one per-genotype likelihood val
 
 const string ARG_GL_TYPE = "--gl-type";
 const string DEFAULT_GL_TYPE = "none";
-const string HELP_GL_TYPE = "Form of the genotype likelihood data supplied per genotype with --tgls.\n\
-\tGQ\tPhred-scaled probability that the genotype call is WRONG, as defined\n\
-\t  \tby the VCF spec:  error = 10^(-GQ/10).  GQ 20/30/40 gives an error\n\
-\t  \trate of 0.01/0.001/0.0001.  This is the only form whose values can be\n\
-\t  \ttaken from a VCF and used directly, because it needs no normalisation.\n\
-\t\n\
-\tPL\tPhred-scaled probability that the genotype is CORRECT:\n\
-\t  \t  error = 1 - 10^(-PL/10).\n\
-\t  \t*** This is NOT the VCF PL field. *** VCF normalises PL so the CALLED\n\
-\t  \tgenotype is exactly 0, and VCF PL is an integer.  Under the definition\n\
-\t  \tabove, PL=0 means an error of 0, and the integers map to 0, 0.21, 0.37,\n\
-\t  \t0.50, ... -- none of which is a realistic genotype error rate (0.001\n\
-\t  \twould be PL=0.00435).  Feeding VCF PLs here is rejected with an error.\n\
-\t  \tUse GQ unless your values genuinely are P(genotype correct).\n\
-\t\n\
-\tGL\tLog10 probability that the genotype is CORRECT:  error = 1 - 10^GL.\n\
-\t  \tThe same caveat as PL: this is not the VCF GL field, which is\n\
-\t  \tnormalised to 0 for the called genotype.";
+const string HELP_GL_TYPE = "Which genotype-quality field to use.  With --vcf it is read from the\n\
+	FORMAT column; with --tgls it names the form of the single value per\n\
+	genotype in the .tgls file.  The two sources are NOT equivalent.\n\
+	\n\
+	With --vcf (recommended):\n\
+	GQ	error = 10^(-GQ/10), the VCF spec's definition directly.\n\
+	PL	The whole PL array is read and converted to a posterior:\n\
+	  	  P(g) proportional to 10^(-PL_g/10),  error = 1 - P(called)/sum.\n\
+	  	This is the only correct use of a VCF's PL.  A VCF normalises PL\n\
+	  	so the CALLED genotype is exactly 0, so that one value carries no\n\
+	  	information -- it is 0 for every call, confident or not.  The\n\
+	  	information is in how much worse the alternatives are.\n\
+	GL	The same, via PL = -10*GL.\n\
+	  	A missing field is an error naming whichever of GQ/PL/GL the file\n\
+	  	does carry, and a called genotype with '.' for the field is an\n\
+	  	error rather than a silent fall back to --error.\n\
+	\n\
+	With --tgls (legacy; the format holds ONE value per genotype):\n\
+	GQ	As above.  The only form a VCF's values can be dropped into.\n\
+	PL	error = 1 - 10^(-PL/10), i.e. P(genotype CORRECT).\n\
+	  	*** NOT the VCF PL field. *** Under this definition PL=0 means an\n\
+	  	error of 0, and the integers map to 0, 0.21, 0.37, 0.50, ... --\n\
+	  	none a realistic error rate (0.001 would be PL=0.00435).  Feeding\n\
+	  	VCF PLs here is rejected.  Use --vcf --gl-type PL instead.\n\
+	GL	error = 1 - 10^GL, with the same caveat.";
 
 const string ARG_MAP = "--map";
 const string DEFAULT_MAP = "none";
@@ -727,7 +734,7 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet)
 	return false;
 }
 
-bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile)
+bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile)
 {
 	bool haveTped = (tpedfile.compare(DEFAULT_TPED) != 0);
 	bool haveVcf  = (vcffile.compare(DEFAULT_VCF)   != 0);
@@ -755,6 +762,18 @@ bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile)
 		LOG.err("ERROR: Must provide both a tped and a tfam file.");
 		return true;
 	}
+	if (haveVcf && tglsfile.compare(DEFAULT_TGLS) != 0)
+	{
+		//Not merely redundant: reading PL or GL from a .tgls file cannot be
+		//correct, because that format holds ONE value per genotype and a VCF
+		//normalises the called genotype's value to exactly 0.  With --vcf the
+		//FORMAT column has the whole array, which is the point of --gl-type
+		//there.  Silently ignoring --tgls would leave the user believing the
+		//file was used.
+		LOG.err("ERROR: --tgls and --vcf are alternative sources of genotype qualities.");
+		LOG.err("\tWith --vcf, --gl-type reads GQ/PL/GL from the FORMAT column instead.");
+		return true;
+	}
 	return false;
 }
 
@@ -777,12 +796,15 @@ bool checkThreads(int numThreads)
 	return false;
 }
 
-bool checkError(double error, string tglsfile, bool wasSet)
+bool checkError(double error, string tglsfile, bool wasSet, bool haveVCFLikelihoods)
 {
 	if (!wasSet)
 	{
-		if (tglsfile.compare(DEFAULT_TGLS) == 0) {
-			LOG.err("ERROR: --error must be given, or a TGLS file must be provided.");
+		//--vcf with --gl-type reads per-genotype error rates from the FORMAT
+		//column, so it is a third source of them alongside --error and --tgls.
+		if (tglsfile.compare(DEFAULT_TGLS) == 0 && !haveVCFLikelihoods) {
+			LOG.err("ERROR: --error must be given, or per-genotype error rates must come");
+			LOG.err("ERROR: from a TGLS file (--tgls) or a VCF FORMAT field (--vcf --gl-type).");
 			return true;
 		}
 		return false;

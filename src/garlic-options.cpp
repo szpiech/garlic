@@ -70,7 +70,7 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     opt.popfile  = params->getStringFlag(ARG_POP);
     opt.vcffile  = params->getStringFlag(ARG_VCF);
     opt.VCF_PASS_ONLY = params->getBoolFlag(ARG_VCF_PASS_ONLY);
-    argerr = argerr || checkRequiredFiles(opt.tpedfile, opt.tfamfile, opt.vcffile);
+    argerr = argerr || checkRequiredFiles(opt.tpedfile, opt.tfamfile, opt.vcffile, opt.tglsfile);
     argerr = argerr || checkPopFile(opt.popfile, opt.tpedfile, opt.vcffile);
     if (argerr) return OPTIONS_USAGE_ERROR;
     if (opt.vcffile.compare(DEFAULT_VCF) != 0) {
@@ -173,7 +173,8 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     setLODThreads(opt.numThreads);
 
     opt.error = params->getDoubleFlag(ARG_ERROR);
-    argerr = argerr || checkError(opt.error, opt.tglsfile, params->isFlagSet(ARG_ERROR));
+    argerr = argerr || checkError(opt.error, opt.tglsfile, params->isFlagSet(ARG_ERROR),
+                                  opt.vcffile.compare(DEFAULT_VCF) != 0 && opt.GL_TYPE.compare(DEFAULT_GL_TYPE) != 0);
     if (argerr) return OPTIONS_USAGE_ERROR;
     LOG.log("Genotyping error:", opt.error);
 

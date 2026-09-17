@@ -2270,7 +2270,7 @@ string lc(string str) {
     return str;
 }
 
-int gtIndexOf(const string &fmt)
+int formatIndexOf(const string &fmt, const string &key)
 {
     int k = 0;
     size_t a = 0;
@@ -2278,12 +2278,14 @@ int gtIndexOf(const string &fmt)
     {
         size_t b = fmt.find(':', a);
         size_t len = (b == string::npos ? fmt.size() : b) - a;
-        if (len == 2 && fmt.compare(a, 2, "GT") == 0) return k;
+        if (len == key.size() && fmt.compare(a, len, key) == 0) return k;
         if (b == string::npos) break;
         a = b + 1; k++;
     }
     return -1;
 }
+
+int gtIndexOf(const string &fmt) { return formatIndexOf(fmt, "GT"); }
 
 bool isSNV(const string &s)
 {
@@ -2310,12 +2312,51 @@ bool isSNV(const string &s)
 //    column.  Both consumers of geneticPos require --map: --weighted through
 //    checkMapFile, and --cm through the mapfile check in main.  interpolate-
 //    Geneticmap then overwrites it, so the zeros are never read.
+//Free everything a reader has allocated but not yet handed off, on a throw.
+//
+//This replaces an inline
+//    delete [] data; if (PHASED) delete [] firstCopy; if (USE_GL) delete [] glrow;
+//that was repeated at seven throw sites.  A textual edit duplicated the last
+//clause on four of them, which is a double free -- caught by ASan on the
+//--gl-type PL --phased path.  One idempotent function instead: `delete [] NULL`
+//is well defined, and the pointers are nulled, so calling it twice is safe.
+//
+//It also frees the rows ALREADY accumulated, which the inline cleanup did not.
+//
+//That does NOT make the error paths leak-free, and measurement says so: the
+//residual is the partially built per-chromosome HapData/MapData/FreqData that
+//main never releases when the reader throws.  loadTPEDData has exactly the
+//same residual -- 409 allocations / 46,400 bytes on a malformed TPED against
+//405 / 46,176 on a malformed VCF -- so it is a pre-existing property of the
+//caller, not of this reader, and is left alone here.
+//The accumulated rows alone, for throw sites reached before the per-locus
+//pointers exist.
+static void freeAccumulatedRows(vector< geno_t * > &hap, vector< bool * > &fc,
+                                vector< double * > &gl)
+{
+    for (unsigned int i = 0; i < hap.size(); i++) delete [] hap[i];
+    for (unsigned int i = 0; i < fc.size();  i++) delete [] fc[i];
+    for (unsigned int i = 0; i < gl.size();  i++) delete [] gl[i];
+    hap.clear(); fc.clear(); gl.clear();
+}
+
+static void abortRowRead(vector< geno_t * > &hap, vector< bool * > &fc,
+                         vector< double * > &gl,
+                         geno_t *&data, bool *&firstCopy, double *&glrow)
+{
+    delete [] data;      data      = NULL;
+    delete [] firstCopy; firstCopy = NULL;
+    delete [] glrow;     glrow     = NULL;
+    freeAccumulatedRows(hap, fc, gl);
+}
+
 void loadVCFData(string vcffile, int &numLoci, int &numInd,
                  vector< HapData * > **hapDataByChr,
                  vector< MapData * > **mapDataByChr,
                  vector< FreqData * > **freqDataByChr,
+                 vector< GenoLikeData * > **GLDataByChr,
                  int nresample, bool PHASED, bool AUTO_FREQ, bool PASS_ONLY,
-                 vector<string> &sampleIDs)
+                 string GL_TYPE, vector<string> &sampleIDs)
 {
     igzstream fin;
     fin.open(vcffile.c_str());
@@ -2348,6 +2389,9 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
     vector<double> freq;
     vector< geno_t * > hap;
     vector< bool * >   fc;
+    vector< double * > gl;          //per-genotype error rates, when GL_TYPE is set
+
+    const bool USE_GL = (GL_TYPE.compare("none") != 0 && !GL_TYPE.empty());
 
     map<string, int> chrSeen;
 
@@ -2371,6 +2415,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
             {
                 LOG.err("ERROR: a second #CHROM header at line", lineno, false);
                 LOG.err(" of", vcffile);
+                freeAccumulatedRows(hap, fc, gl);
                 throw 0;
             }
             int ncols = countFields(line);
@@ -2401,6 +2446,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
         {
             LOG.err("ERROR: data before the #CHROM header at line", lineno, false);
             LOG.err(" of", vcffile);
+            freeAccumulatedRows(hap, fc, gl);
             throw 0;
         }
         if (line.empty()) continue;
@@ -2427,6 +2473,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
             {
                 LOG.err("ERROR: could not parse POS at line", lineno, false);
                 LOG.err(" of", vcffile);
+                freeAccumulatedRows(hap, fc, gl);
                 throw 0;
             }
             p = q;
@@ -2440,6 +2487,15 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
         p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd);                                p = tEnd; //QUAL
         p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); filt.assign(p, tEnd - p);      p = tEnd;
         p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd);                                p = tEnd; //INFO
+        //errlog's (string, value) overloads insert a space, so composing a site
+        //label from two calls rendered as "21: 13865210".  Build it once.
+        string site;
+        {
+            stringstream ss;
+            ss << chr << ":" << ppos;
+            site = ss.str();
+        }
+
         p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); fmt.assign(p, tEnd - p);       p = tEnd;
         if (fmt.empty())
         {
@@ -2447,6 +2503,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
             LOG.err(" of", vcffile, false);
             LOG.err(" has fewer than", VCF_FIXED, false);
             LOG.err(" fixed fields.");
+            freeAccumulatedRows(hap, fc, gl);
             throw 0;
         }
 
@@ -2464,6 +2521,54 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
         int gtIndex = gtIndexOf(fmt);
         if (gtIndex < 0) { nSkipNoGT++; continue; }
 
+        //The requested likelihood field.  Absent is an ERROR rather than a
+        //skip: the user asked for per-genotype error rates, and quietly
+        //dropping to --error for some sites would be exactly the silent
+        //substitution the tgls guards exist to prevent.  The message names
+        //whichever alternatives this site does carry.
+        int glIndex = -1;
+        if (USE_GL)
+        {
+            glIndex = formatIndexOf(fmt, GL_TYPE);
+            if (glIndex < 0)
+            {
+                //Composed in one string rather than a chain of LOG.err calls:
+                //the (string, value) overloads insert a space, and a trailing
+                //`false` meant as the newline flag binds to err(string, bool)
+                //and prints "FALSE".  Both bit this message before.
+                string alt;
+                const char *cand[3] = {"GQ", "PL", "GL"};
+                int nalt = 0;
+                for (int c = 0; c < 3; c++)
+                {
+                    if (GL_TYPE.compare(cand[c]) == 0) continue;
+                    if (formatIndexOf(fmt, cand[c]) >= 0)
+                    {
+                        if (!alt.empty()) alt += " and ";
+                        alt += cand[c];
+                        nalt++;
+                    }
+                }
+                stringstream ss;
+                ss << "ERROR: --gl-type " << GL_TYPE << " was given, but FORMAT at "
+                   << site << " is '" << fmt << "', which has no " << GL_TYPE << " field.";
+                LOG.err(ss.str());
+                stringstream s2;
+                if (nalt == 1)
+                    s2 << "\tThis site carries " << alt << "; use --gl-type " << alt
+                       << " instead, or drop --gl-type to use a flat error rate from --error.";
+                else if (nalt > 1)
+                    s2 << "\tThis site carries " << alt << "; use --gl-type with one of those,"
+                       << " or drop --gl-type to use a flat error rate from --error.";
+                else
+                    s2 << "\tNo genotype-quality field is present at all; drop --gl-type to use"
+                       << " a flat error rate from --error.";
+                LOG.err(s2.str());
+                freeAccumulatedRows(hap, fc, gl);
+                throw 0;
+            }
+        }
+
         //--- chromosome blocks.  Downstream code zips per-chromosome vectors
         //positionally and alignMapScaffold errors on a chromosome split into
         //non-contiguous blocks, so an interleaved VCF is rejected here with a
@@ -2480,6 +2585,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                 LOG.err(" after another chromosome.");
                 LOG.err("\tSites must be grouped by chromosome. Sort the VCF, e.g. with");
                 LOG.err("\tbcftools sort, and try again.");
+                freeAccumulatedRows(hap, fc, gl);
                 throw 0;
             }
             chrSeen[prevChr] = 1;
@@ -2494,6 +2600,12 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
             (*hapDataByChr)->push_back(initHapData(hap, fc, currChrLoci, numInd, PHASED));
             hap.clear(); fc.clear();
 
+            if (USE_GL)
+            {
+                (*GLDataByChr)->push_back(initGLData(gl, currChrLoci, numInd));
+                gl.clear();
+            }
+
             if (AUTO_FREQ)
             {
                 (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));
@@ -2506,15 +2618,6 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
 
         numLoci++;
         currChrLoci++;
-
-        //errlog's (string, value) overloads insert a space, so composing a site
-        //label from two calls rendered as "21: 13865210".  Build it once.
-        string site;
-        {
-            stringstream ss;
-            ss << chr << ":" << ppos;
-            site = ss.str();
-        }
 
         geneticPos.push_back(0.0);
         physicalPos.push_back(ppos);
@@ -2530,7 +2633,9 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
         //loadTPEDData: the locus count is not known until the file ends. ---
         geno_t *data = new geno_t[numInd];
         bool *firstCopy = NULL;
+        double *glrow = NULL;
         if (PHASED) firstCopy = new bool[numInd];
+        if (USE_GL)  glrow = new double[numInd];
 
         int nalleles = 0, total = 0;
 
@@ -2540,7 +2645,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
             tEnd = tokenEnd(p, pEnd);
             if (tEnd == p)
             {
-                delete [] data; if (PHASED) delete [] firstCopy;
+                abortRowRead(hap, fc, gl, data, firstCopy, glrow);
                 LOG.err("ERROR: line", lineno, false);
                 LOG.err(" of", vcffile, false);
                 LOG.err(" has genotypes for fewer than", numInd, false);
@@ -2552,7 +2657,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
             if (!parseGT(p, tEnd, gtIndex, 1, dosage, fcopy, ploidy, isPhased))
             {
                 string bad(p, tEnd - p);
-                delete [] data; if (PHASED) delete [] firstCopy;
+                abortRowRead(hap, fc, gl, data, firstCopy, glrow);
                 LOG.err("ERROR: could not parse the genotype of sample", sampleIDs[i], false);
                 LOG.err(" at", site, false);
                 LOG.err(" (field '", bad, false);
@@ -2562,7 +2667,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
             }
             if (ploidy != 2)
             {
-                delete [] data; if (PHASED) delete [] firstCopy;
+                abortRowRead(hap, fc, gl, data, firstCopy, glrow);
                 LOG.err("ERROR: sample", sampleIDs[i], false);
                 LOG.err(" at", site, false);
                 LOG.err(" has ploidy", ploidy, false);
@@ -2573,7 +2678,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
             }
             if (PHASED && !isPhased)
             {
-                delete [] data; if (PHASED) delete [] firstCopy;
+                abortRowRead(hap, fc, gl, data, firstCopy, glrow);
                 LOG.err("ERROR: --phased was given but sample", sampleIDs[i], false);
                 LOG.err(" at", site, false);
                 LOG.err(" is unphased ('/' rather than '|').");
@@ -2582,6 +2687,73 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
 
             data[i] = geno_t(dosage);
             if (PHASED) firstCopy[i] = fcopy;
+
+            if (USE_GL)
+            {
+                //The sub-field, located by index within this sample's column.
+                const char *f = p;
+                for (int k = 0; k < glIndex; k++)
+                {
+                    while (f < tEnd && *f != ':') f++;
+                    if (f >= tEnd) break;
+                    f++;
+                }
+                const char *fe = f;
+                while (fe < tEnd && *fe != ':') fe++;
+                string val(f, fe > f ? fe - f : 0);
+
+                if (dosage == GENO_MISSING || val.empty() || val.compare(".") == 0)
+                {
+                    //lod() takes its default branch for a missing genotype, so
+                    //the error value is never read there.  1.0 is the honest
+                    //placeholder: maximum uncertainty.
+                    if (dosage != GENO_MISSING)
+                    {
+                        abortRowRead(hap, fc, gl, data, firstCopy, glrow);
+                        LOG.err("ERROR: sample", sampleIDs[i], false);
+                        LOG.err(" at", site, false);
+                        LOG.err(" has a called genotype but no", GL_TYPE, false);
+                        LOG.err(" value. Drop --gl-type to use --error instead.");
+                        throw 0;
+                    }
+                    glrow[i] = 1.0;
+                }
+                else if (GL_TYPE.compare("GQ") == 0)
+                {
+                    glrow[i] = glToError(atof(val.c_str()), "GQ");
+                }
+                else
+                {
+                    //PL or GL: the whole comma-separated array, converted to a
+                    //posterior.  GL is log10 of a likelihood, so PL = -10*GL.
+                    vector<double> arr;
+                    size_t a = 0;
+                    while (a <= val.size())
+                    {
+                        size_t b = val.find(',', a);
+                        string tok = val.substr(a, (b == string::npos ? val.size() : b) - a);
+                        double v = atof(tok.c_str());
+                        arr.push_back(GL_TYPE.compare("GL") == 0 ? -10.0 * v : v);
+                        if (b == string::npos) break;
+                        a = b + 1;
+                    }
+                    //For a biallelic diploid site the VCF genotype ordering is
+                    //0/0, 0/1, 1/1, so the called genotype's index IS the ALT
+                    //dosage.  Only biallelic SNVs reach here.
+                    if (int(arr.size()) != 3)
+                    {
+                        abortRowRead(hap, fc, gl, data, firstCopy, glrow);
+                        LOG.err("ERROR: sample", sampleIDs[i], false);
+                        LOG.err(" at", site, false);
+                        LOG.err(" has", int(arr.size()), false);
+                        LOG.err(" values in", GL_TYPE, false);
+                        LOG.err("; a biallelic diploid site must have 3.");
+                        throw 0;
+                    }
+                    glrow[i] = plToError(arr, dosage);
+                }
+            }
+
             p = tEnd;
 
             //Frequency over NON-MISSING alleles only, matching loadTPEDData,
@@ -2592,7 +2764,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
         p = skipSpace(p, pEnd);
         if (p != pEnd)
         {
-            delete [] data; if (PHASED) delete [] firstCopy;
+            abortRowRead(hap, fc, gl, data, firstCopy, glrow);
             LOG.err("ERROR: line", lineno, false);
             LOG.err(" of", vcffile, false);
             LOG.err(" has more columns than the", numInd, false);
@@ -2603,6 +2775,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
         hap.push_back(data);
         data = NULL;
         if (PHASED) { fc.push_back(firstCopy); firstCopy = NULL; }
+        if (USE_GL) { gl.push_back(glrow); glrow = NULL; }
 
         if (AUTO_FREQ)
         {
@@ -2621,6 +2794,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
     {
         LOG.err("ERROR: no #CHROM header found in", vcffile, false);
         LOG.err(". Is it a VCF?");
+        freeAccumulatedRows(hap, fc, gl);
         throw 0;
     }
     if (numLoci == 0)
@@ -2637,6 +2811,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                << ", non-PASS " << nSkipNonPass << ".";
             LOG.err(ss.str());
         }
+        freeAccumulatedRows(hap, fc, gl);
         throw 0;
     }
 
@@ -2649,6 +2824,12 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
 
     (*hapDataByChr)->push_back(initHapData(hap, fc, currChrLoci, numInd, PHASED));
     hap.clear(); fc.clear();
+
+    if (USE_GL)
+    {
+        (*GLDataByChr)->push_back(initGLData(gl, currChrLoci, numInd));
+        gl.clear();
+    }
 
     if (AUTO_FREQ)
     {
@@ -2721,6 +2902,31 @@ bool parseGT(const char *sample, const char *sampleEnd, int gtIndex, int altInde
     if (ploidy == 0) return false;
     if (anyMissing) dosage = GENO_MISSING;
     return true;
+}
+
+double plToError(const vector<double> &pl, int calledIndex)
+{
+    if (pl.empty()) return 1.0;
+    if (calledIndex < 0 || calledIndex >= int(pl.size())) return 1.0;
+
+    double m = pl[0];
+    for (unsigned int i = 1; i < pl.size(); i++) if (pl[i] < m) m = pl[i];
+
+    double sum = 0, best = 0;
+    for (unsigned int i = 0; i < pl.size(); i++)
+    {
+        double p = pow(10.0, -(pl[i] - m) / 10.0);
+        sum += p;
+        if (int(i) == calledIndex) best = p;
+    }
+    if (sum <= 0) return 1.0;
+
+    double e = 1.0 - best / sum;
+    //Rounding can put e just outside [0,1].  The 1e-16 floor matches
+    //glToError, so both paths hand lod() the same kind of value.
+    if (e <= 0) e = 0.0000000000000001;
+    if (e > 1)  e = 1;
+    return e;
 }
 
 double glToError(double value, string glType)

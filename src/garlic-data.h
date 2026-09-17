@@ -263,8 +263,9 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                  vector< HapData * > **hapDataByChr,
                  vector< MapData * > **mapDataByChr,
                  vector< FreqData * > **freqDataByChr,
+                 vector< GenoLikeData * > **GLDataByChr,
                  int nresample, bool PHASED, bool AUTO_FREQ, bool PASS_ONLY,
-                 vector<string> &sampleIDs);
+                 string GL_TYPE, vector<string> &sampleIDs);
 
 void freqOnly(string tpedfile, string outfile, int nresample, char TPED_MISSING);
 
@@ -392,6 +393,14 @@ void releaseHapData(HapData *data);
 void releaseHapData(vector< HapData * > *hapDataByChr);
 
 GenoLikeData *initGLData(unsigned int nind, unsigned int nloci);
+
+//Row-consuming form, mirroring initHapData: a reader that allocates a row per
+//locus, because the locus count is not known in advance, hands them here to be
+//gathered into one contiguous block and freed.  It was already implemented in
+//garlic-data.cpp but never declared, so nothing outside that file could reach
+//it and nothing called it; loadVCFData is its first caller.  readTGLSData
+//knows nloci up front and keeps using the dimensioned form above.
+GenoLikeData *initGLData(const vector< double * > &GL, int nloci, int nind);
 void releaseGLData(GenoLikeData *data);
 void releaseGLData(vector< GenoLikeData * > *GLDataByChr);
 
@@ -460,10 +469,11 @@ void checkIndData(IndData *indData, const string &source);
 //('*', '.', '<NON_REF>').
 bool isSNV(const string &s);
 
-//Position of GT within a VCF FORMAT string, or -1 if absent.  Shared by
-//loadVCFData and freqOnlyVCF so the two readers cannot disagree about where
-//the genotype is -- the failure mode the filterMonomorphic* overloads had.
-int gtIndexOf(const string &fmt);
+//Position of a key within a VCF FORMAT string, or -1 if absent.  Shared by
+//loadVCFData and freqOnlyVCF so the two readers cannot disagree about where a
+//field is -- the failure mode the filterMonomorphic* overloads had.
+int formatIndexOf(const string &fmt, const string &key);
+int gtIndexOf(const string &fmt);   //formatIndexOf(fmt, "GT")
 
 //Parses one sample's VCF genotype column.
 //
@@ -489,6 +499,26 @@ int gtIndexOf(const string &fmt);
 //an empty GT, a non-digit allele, or an unexpected separator.
 bool parseGT(const char *sample, const char *sampleEnd, int gtIndex, int altIndex,
              int &dosage, bool &firstCopy, int &ploidy, bool &phased);
+
+//The per-genotype error rate from a whole PL array, which is the only correct
+//way to use a VCF's PL or GL field.
+//
+//A VCF normalises PL so the CALLED genotype is exactly 0, so the single value
+//at the called genotype carries no information at all -- it is 0 for every
+//call, confident or not.  The information is in the OTHER entries: how much
+//worse the alternatives are.  So
+//
+//    P(g) proportional to 10^(-PL_g/10),   error = 1 - P(called)/sum(P)
+//
+//which is exactly the definition of the VCF GQ field, and reproduces GQ to
+//the digit where both are present.  For GL, PL = -10*GL.
+//
+//calledIndex is the genotype's index in the VCF ordering; for a biallelic
+//diploid site that is the ALT dosage (0/0 -> 0, 0/1 -> 1, 1/1 -> 2).
+//
+//Computed by subtracting the minimum PL before exponentiating, so a large PL
+//cannot underflow the sum to zero.
+double plToError(const vector<double> &pl, int calledIndex);
 
 //Convert one genotype-quality/likelihood value into the per-genotype error
 //rate the LOD calculation uses.  Extracted from readTGLSData so it can be

@@ -124,9 +124,17 @@ int main(int argc, char *argv[])
         if (opt.vcffile.compare(DEFAULT_VCF) != 0)
         {
             vector<string> sampleIDs;
+            //--gl-type with --vcf reads the FORMAT field directly, so the VCF
+            //path fills GLDataByChr itself and readTGLSData is not involved.
+            //This is the only way PL and GL can be correct: a VCF normalises
+            //them so the CALLED genotype is exactly 0, which the one-value
+            //--tgls format cannot represent (see plToError).
+            USE_GL = (GL_TYPE.compare(DEFAULT_GL_TYPE) != 0);
+            if (USE_GL) GLDataByChr = new vector< GenoLikeData * >;
             loadVCFData(opt.vcffile, numLoci, numInd,
-                        &hapDataByChr, &mapDataByChr, &freqDataByChr,
-                        nresample, PHASED, AUTO_FREQ, opt.VCF_PASS_ONLY, sampleIDs);
+                        &hapDataByChr, &mapDataByChr, &freqDataByChr, &GLDataByChr,
+                        nresample, PHASED, AUTO_FREQ, opt.VCF_PASS_ONLY,
+                        USE_GL ? GL_TYPE : string("none"), sampleIDs);
 
             LOG.log("Total loci:", numLoci);
 
@@ -174,7 +182,7 @@ int main(int argc, char *argv[])
         //LOG.log("Population:", popName);
         LOG.log("Total diploid individuals:", numInd);
 
-        if (tglsfile.compare(DEFAULT_TGLS) != 0) {
+        if (opt.vcffile.compare(DEFAULT_VCF) == 0 && tglsfile.compare(DEFAULT_TGLS) != 0) {
             GLDataByChr = readTGLSData(tglsfile, numLoci, numInd, mapDataByChr, GL_TYPE, indData);
             USE_GL = true;
         }

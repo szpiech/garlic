@@ -684,6 +684,151 @@ vcf_input() {
 }
 
 # ---------------------------------------------------------------------------
+# 4e. Genotype qualities read from the VCF FORMAT column
+# ---------------------------------------------------------------------------
+# The reason --vcf --gl-type exists.  A VCF normalises PL and GL so the CALLED
+# genotype's value is exactly 0, so the single value the .tgls format holds is
+# 0 for every call, confident or not -- the information is in how much worse
+# the alternatives are, which needs the whole array (see plToError, and the
+# unit tests for the arithmetic).
+#
+# The fixtures put the called genotype at PL 0 and the two alternatives at 30
+# and 60.  That multiset is the same whichever genotype is called, so the
+# implied error rate is 1 - 1/(1 + 1e-3 + 1e-6) = 0.000999999 for EVERY
+# genotype -- GQ 30 to nine significant figures.  A fixture with {0,30,30}
+# would NOT be GQ 30: two comparable alternatives give 0.002, which is how I
+# found my first version of this test was asserting the wrong number.
+vcf_likelihoods() {
+    echo "== VCF genotype qualities =="
+
+    # PL, GL and GQ encodings of the same confidence, from the same genotypes.
+    awk -F'\t' -v OFS='\t' '
+    /^#/ { print; next }
+    {
+        $9 = "GT:PL"
+        for (i = 10; i <= NF; i++) {
+            gt = $i
+            if (index(gt, ".") > 0) { $i = gt ":."; continue }
+            d = gsub(/1/, "1", gt); gt = $i
+            # 0 at the called genotype, 30 and 60 on the alternatives
+            s = ""
+            for (g = 0; g <= 2; g++) {
+                v = (g == d ? 0 : (v30 ? 60 : 30)); if (g != d) v30 = 1
+                s = s (g ? "," : "") v
+            }
+            v30 = 0
+            $i = gt ":" s
+        }
+        print
+    }' "$WORK/chr21.vcf" > "$WORK/pl.vcf"
+    awk -F'\t' -v OFS='\t' '
+    /^#/ { print; next }
+    { $9 = "GT:GQ"
+      for (i = 10; i <= NF; i++) $i = $i (index($i, ".") > 0 ? ":." : ":30")
+      print }' "$WORK/chr21.vcf" > "$WORK/gq.vcf"
+    # GL is log10 of a likelihood, so GL = -PL/10 exactly.
+    awk -F'\t' -v OFS='\t' '
+    /^#/ { print; next }
+    { $9 = "GT:GL"
+      for (i = 10; i <= NF; i++) {
+          n = split($i, f, ":")
+          if (f[2] == ".") { $i = f[1] ":."; continue }
+          split(f[2], q, ",")
+          $i = f[1] ":" (-q[1]/10) "," (-q[2]/10) "," (-q[3]/10)
+      }
+      print }' "$WORK/pl.vcf" > "$WORK/gl.vcf"
+
+    LB="--build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000"
+    for t in GQ PL GL; do
+        f=$(echo "$t" | tr 'A-Z' 'a-z')
+        # shellcheck disable=SC2086
+        $GARLIC --vcf "$WORK/$f.vcf" --pop "$WORK/vcf.pop" $LB --gl-type "$t" --raw-lod \
+                --out "$WORK/q$t" --quiet --force >/dev/null 2>&1
+        n=$(grep -vc '^track' "$WORK/q$t.roh.bed" 2>/dev/null || echo 0)
+        if [ "$n" -gt 0 ]; then ok; else bad "--gl-type $t from a VCF called no ROH"; fi
+    done
+
+    # GL = -PL/10, so those two must be bit-identical.  This is the check that
+    # would catch a sign or factor-of-10 error in the GL branch.
+    gz "$WORK/qPL.chr21.raw.lod.windows.gz" > "$WORK/qPL.raw" 2>/dev/null
+    gz "$WORK/qGL.chr21.raw.lod.windows.gz" > "$WORK/qGL.raw" 2>/dev/null
+    if cmp -s "$WORK/qPL.raw" "$WORK/qGL.raw"; then ok
+    else bad "--gl-type PL and --gl-type GL disagreed on equivalent input"; fi
+
+    # And the PL array must reproduce the GQ that encodes the same confidence,
+    # to the calls.  (The raw LOD differs in the last printed digit, because
+    # the error rates differ by 1e-6 relative -- 0.000999999 against 0.001.)
+    grep -v '^track' "$WORK/qGQ.roh.bed" > "$WORK/qGQ.nt" 2>/dev/null
+    grep -v '^track' "$WORK/qPL.roh.bed" > "$WORK/qPL.nt" 2>/dev/null
+    if cmp -s "$WORK/qGQ.nt" "$WORK/qPL.nt"; then ok
+    else bad "the PL array and the equivalent GQ called different ROH"; fi
+
+    # GQ 30 IS an error rate of 0.001, so that path must equal --error 0.001.
+    # shellcheck disable=SC2086
+    $GARLIC --vcf "$WORK/chr21.vcf.gz" --pop "$WORK/vcf.pop" $LB --error 0.001 \
+            --out "$WORK/qflat" --quiet --force >/dev/null 2>&1
+    grep -v '^track' "$WORK/qflat.roh.bed" > "$WORK/qflat.nt" 2>/dev/null
+    if cmp -s "$WORK/qGQ.nt" "$WORK/qflat.nt"; then ok
+    else bad "--gl-type GQ with GQ 30 did not match --error 0.001"; fi
+
+    # ---- the field-presence contract ----
+    glerr() {  # $1 = pattern, $2 = label, rest = args after --vcf
+        pat=$1; lbl=$2; shift 2
+        # shellcheck disable=SC2086
+        if "$GARLIC" "$@" --pop "$WORK/vcf.pop" $LB --out "$WORK/qe" --force 2>&1 \
+                | grep -q "$pat"; then ok
+        else bad "$lbl"; fi
+    }
+    # no quality field at all
+    glerr "No genotype-quality field is present at all" "missing-field message wrong when none present" \
+        --vcf "$WORK/chr21.vcf.gz" --gl-type PL
+    # exactly one alternative: name it
+    awk -F'\t' -v OFS='\t' '/^#/{print;next} {$9="GT:PL:DP"; for(i=10;i<=NF;i++) $i=$i":20"; print}' \
+        "$WORK/pl.vcf" > "$WORK/onealt.vcf"
+    glerr "use --gl-type PL instead" "missing-field message did not name the single alternative" \
+        --vcf "$WORK/onealt.vcf" --gl-type GQ
+    # two alternatives: list both
+    awk -F'\t' -v OFS='\t' '/^#/{print;next} {
+        $9="GT:PL:GL"
+        for(i=10;i<=NF;i++){ n=split($i,f,":")
+            if(f[2]=="."){ $i=f[1]":.:."; continue }
+            split(f[2],q,","); $i=f[1]":"f[2]":"(-q[1]/10)","(-q[2]/10)","(-q[3]/10) }
+        print}' "$WORK/pl.vcf" > "$WORK/twoalt.vcf"
+    glerr "carries PL and GL" "missing-field message did not list both alternatives" \
+        --vcf "$WORK/twoalt.vcf" --gl-type GQ
+    expect_exit 2 "a missing FORMAT field exits 2" "$GARLIC" --vcf "$WORK/chr21.vcf.gz" \
+        --pop "$WORK/vcf.pop" --gl-type PL --build hg18 --winsize 60 --lod-cutoff 2.5 \
+        --size-bounds 500000 1000000 --out "$WORK/qe" --force
+
+    # A called genotype with '.' for the field is an error, not a silent fall
+    # back to --error: the user asked for per-genotype rates.
+    awk -F'\t' -v OFS='\t' 'BEGIN{n=0} /^#/{print;next} {n++
+        if(n==6) for(i=10;i<=NF;i++){ split($i,f,":"); if(index(f[1],".")==0) $i=f[1]":." }
+        print}' "$WORK/pl.vcf" > "$WORK/dotpl.vcf"
+    glerr "has a called genotype but no PL value" "a '.' PL on a called genotype was not an error" \
+        --vcf "$WORK/dotpl.vcf" --gl-type PL
+
+    # A PL array of the wrong length is an error naming the count.
+    awk -F'\t' -v OFS='\t' 'BEGIN{n=0} /^#/{print;next} {n++
+        if(n==6) for(i=10;i<=NF;i++){ split($i,f,":"); $i=f[1]":0,30" }
+        print}' "$WORK/pl.vcf" > "$WORK/shortpl.vcf"
+    glerr "a biallelic diploid site must have 3" "a 2-value PL was not rejected" \
+        --vcf "$WORK/shortpl.vcf" --gl-type PL
+
+    # --tgls and --vcf are alternative sources; silently ignoring --tgls would
+    # leave the user believing the file was used.
+    glerr "alternative sources of genotype qualities" "--tgls with --vcf was not rejected" \
+        --vcf "$WORK/chr21.vcf.gz" --tgls "$EX/chr21.tgls.gz" --gl-type GQ
+
+    # --gl-type with --vcf is a third source of error rates, so --error is no
+    # longer required.  This used to exit 1 on "--error must be given".
+    # shellcheck disable=SC2086
+    if $GARLIC --vcf "$WORK/gq.vcf" --pop "$WORK/vcf.pop" $LB --gl-type GQ \
+            --out "$WORK/qne" --quiet --force >/dev/null 2>&1; then ok
+    else bad "--vcf --gl-type without --error was rejected"; fi
+}
+
+# ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
 params_roundtrip() {
@@ -735,6 +880,7 @@ determinism
 likelihood_guards
 ind_metadata
 vcf_input
+vcf_likelihoods
 exit_codes
 params_roundtrip
 bed_format

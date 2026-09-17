@@ -512,6 +512,51 @@ static void test_parseGT()
     #undef GTI
 }
 
+// -------------------------------------------------------- plToError() ------
+// The correct conversion from a VCF PL/GL array, and the reason Commit 4
+// exists.  A VCF normalises PL so the CALLED genotype is exactly 0, so the
+// single value at the called genotype is 0 for every call, confident or not --
+// the information is in how much worse the alternatives are.
+//
+// The reference values are the GQ the same confidence would be written as:
+// error = 10^(-GQ/10).  plToError reproducing them is what establishes that
+// the array form is right and the single-value --tgls PL path was not.
+static void test_plToError()
+{
+    vector<double> pl;
+    #define PL3(a,b,c) pl.clear(); pl.push_back(a); pl.push_back(b); pl.push_back(c)
+
+    PL3(0,30,60);  ckd(plToError(pl,0), 0.001,     1e-6, "plToError (0,30,60) -> 0.001  == GQ 30");
+    PL3(0,10,20);  ckd(plToError(pl,0), 0.0990991, 1e-6, "plToError (0,10,20) -> 0.0991 == GQ 10");
+    PL3(0,3,6);    ckd(plToError(pl,0), 0.429346,  1e-5, "plToError (0,3,6)   -> 0.429  == GQ 3.7");
+    PL3(0,99,99);  ck(plToError(pl,0) > 2.5e-10 && plToError(pl,0) < 2.6e-10, "plToError (0,99,99) -> 2.5e-10");
+
+    // Which genotype was called changes the answer: the called index selects
+    // the numerator.  A single value could not express this.
+    PL3(30,0,30);  ckd(plToError(pl,1), 0.00199601,1e-7, "plToError (30,0,30) called=het -> 0.002");
+    PL3(60,30,0);  ckd(plToError(pl,2), 0.001,     1e-6, "plToError (60,30,0) called=hom-alt -> 0.001");
+    PL3(0,30,60);  ck(plToError(pl,2) > 0.999,                    "plToError (0,30,60) called=hom-alt -> nearly 1");
+
+    // A flat array is no information: 2 of 3 genotypes are wrong.
+    PL3(0,0,0);    ckd(plToError(pl,0), 2.0/3.0,   1e-9, "plToError (0,0,0) -> 2/3, no information");
+
+    // A large PL must not underflow the SUM to zero.  Subtracting the minimum
+    // before exponentiating is what prevents it; the result hits the 1e-16
+    // floor glToError also uses.
+    PL3(0,2000,2000); ck(plToError(pl,0) > 0 && plToError(pl,0) <= 1e-16,   "plToError (0,2000,2000) does not underflow to 0");
+
+    // Degenerate inputs return maximum uncertainty rather than garbage.
+    pl.clear();      ckd(plToError(pl,0), 1.0, 1e-12, "plToError on an empty array -> 1");
+    PL3(0,30,60);    ckd(plToError(pl,-1), 1.0, 1e-12, "plToError with calledIndex -1 -> 1");
+    PL3(0,30,60);    ckd(plToError(pl,7), 1.0, 1e-12, "plToError with calledIndex past the end -> 1");
+
+    // Every result is a usable error rate.
+    PL3(0,30,60);
+    ck(plToError(pl,0) > 0 && plToError(pl,0) <= 1, "plToError stays in (0,1]");
+
+    #undef PL3
+}
+
 int main()
 {
     printf("garlic unit tests\n");
@@ -522,6 +567,7 @@ int main()
     test_class_labels();
     test_chr_names();
     test_glToError();
+    test_plToError();
     test_kde_helpers();
     test_getMapInfo();
     test_keepSites();
