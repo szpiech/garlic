@@ -3320,7 +3320,14 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
             {
                 double x = winDataByChr->at(chr)->data[ind][locus];
                 //if (winDataByChr->at(chr)->data[ind][locus] == MISSING) nmiss++;
-                if (x != MISSING && !(isnan(x)) ) size++;
+                //std::isnan, not isnan: isnan is a C99 MACRO in <math.h>, and
+                //libstdc++'s <cmath> undefines it and provides only the
+                //std:: form.  The unqualified spelling compiled here only
+                //because devel's garlic-data.h included gsl/gsl_rng.h, which
+                //pulled in the C <math.h>; dropping GSL in 0bdc179 removed
+                //that transitive include and broke every GCC build.  libc++
+                //keeps the global name, which is why macOS never noticed.
+                if (x != MISSING && !(std::isnan(x)) ) size++;
             }
         }
 
@@ -3338,7 +3345,7 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
                 double x = winDataByChr->at(chr)->data[ind][locus];
-                if (x != MISSING && !(isnan(x)) )
+                if (x != MISSING && !(std::isnan(x)) )
                 {
                     rawWinData->data[i] = x;
                     i++;
@@ -3391,7 +3398,7 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
             {
                 //if (winDataByChr->at(chr)->data[randInd[ind]][locus] == MISSING) nmiss++;
                 double x = winDataByChr->at(chr)->data[randInd[ind]][locus];
-                if (x != MISSING && !(isnan(x))) size++;
+                if (x != MISSING && !(std::isnan(x))) size++;
             }
         }
 
@@ -3409,7 +3416,7 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
             {
                 double x = winDataByChr->at(chr)->data[randInd[ind]][locus];
-                if (x != MISSING && !(isnan(x)))
+                if (x != MISSING && !(std::isnan(x)))
                 {
                     rawWinData->data[i] = x;
                     i++;

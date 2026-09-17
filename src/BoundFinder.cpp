@@ -1,5 +1,6 @@
 #include "BoundFinder.h"
 #include <iostream>
+#include <cmath>   //sqrt: devel got this via gsl/gsl_roots.h in BoundFinder.h
 #include "garlic-math.h"
 
 using namespace std;

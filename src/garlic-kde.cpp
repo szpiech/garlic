@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <thread>
+#include <cstdio>   //sprintf: devel got this via gsl/gsl_math.h in garlic-kde.h
 #include "garlic-kde.h"
 
 static int KDE_POINTS = 512;

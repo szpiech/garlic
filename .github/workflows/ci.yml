@@ -30,7 +30,7 @@ jobs:
           - {os: macos-latest,  label: macos-arm64,  static: ''}
           - {os: macos-13,      label: macos-x86_64, static: ''}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install zlib
         run: |
@@ -61,7 +61,7 @@ jobs:
     name: asan + ubsan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install zlib
         run: |
           sudo apt-get update
@@ -140,7 +140,7 @@ jobs:
     name: docs are in sync
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install zlib
         run: |
           sudo apt-get update
@@ -164,7 +164,7 @@ jobs:
     name: example walkthrough
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install zlib
         run: |
           sudo apt-get update
@@ -205,7 +205,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -215,6 +215,7 @@ jobs:
           # the suite needs all of them and none is in the base install.
           install: >-
             mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-zlib
             make
             coreutils
             diffutils
@@ -260,10 +261,10 @@ jobs:
           plat=$(make -p 2>/dev/null | sed -n 's/^PLATFORM = //p' | head -1)
           echo "PLATFORM=$plat"
           [ "$plat" = "win32" ] || { echo "autodetect picked '$plat', not win32"; exit 1; }
-          # zlib on this platform is the vendored 2017 archive rather than a
-          # system library, so this is also the first test that it still links
-          # against a current MinGW GCC.
-          echo "linked zlib: lib/win32/libz.a (vendored)"
+          # zlib comes from mingw-w64-x86_64-zlib, not from lib/win32: that
+          # archive is 32-bit i386 and a 64-bit MinGW skips it as incompatible,
+          # which is how the first run of this job failed.
+          echo "linked zlib: mingw-w64-x86_64-zlib (toolchain)"
 
       - name: Test suite
         run: |
