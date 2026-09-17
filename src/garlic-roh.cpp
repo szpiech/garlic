@@ -53,9 +53,8 @@ struct LOD_work_order_t
 //Per-individual LOD windows.  Each individual writes only win[ind][*], so
 //there is nothing shared between workers except the (mutex-guarded) progress
 //bar; `error` is taken by value so the USE_GL path can overwrite it locally.
-static void *parallelLOD(void *order)
+static void parallelLOD(LOD_work_order_t *p)
 {
-    LOD_work_order_t *p = (LOD_work_order_t *)order;
     Matrix<geno_t> &data = p->hapData->data;
     const int nloci = p->hapData->nloci;
     const pos_t *physicalPos = p->mapData->physicalPos.data();
@@ -150,7 +149,7 @@ static void *parallelLOD(void *order)
         }
     }
     #undef LODV
-    return NULL;
+    return;
 }
 
 void calcLOD(MapData *mapData,
@@ -203,7 +202,8 @@ void calcLOD(MapData *mapData,
     }
     else
     {
-        vector<pthread_t> peer(nt);
+        //orders is sized and filled before any thread starts; a thread holds
+        //&orders[i], so it must not be grown afterwards.
         vector<LOD_work_order_t> orders(nt);
         int per = nind / nt;
         int extra = nind % nt;
@@ -214,9 +214,11 @@ void calcLOD(MapData *mapData,
             orders[i].indStart = at;
             at += per + (i < extra ? 1 : 0);
             orders[i].indStop = at;
-            pthread_create(&(peer[i]), NULL, parallelLOD, (void *)&(orders[i]));
         }
-        for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
+        vector<std::thread> peer;
+        peer.reserve(nt);
+        for (int i = 0; i < nt; i++) peer.emplace_back(parallelLOD, &(orders[i]));
+        for (int i = 0; i < nt; i++) peer[i].join();
     }
 
     finalize(bar);
@@ -247,7 +249,8 @@ void calcwLOD(MapData *mapData,
     barInit(bar,hapData->nind,100);
 
     WLOD_work_order_t *order;
-    vector<pthread_t> peer(numThreads);
+    vector<std::thread> peer;
+    peer.reserve(numThreads);
     vector< WLOD_work_order_t * > orders;
     unsigned int previous = 0;
     for (int i = 0; i < numThreads; i++)
@@ -273,15 +276,12 @@ void calcwLOD(MapData *mapData,
         order->stop = previous;
         order->numThreads = numThreads;
 
-        pthread_create(&(peer[i]),
-                       NULL,
-                       (void *(*)(void *))parallelwLOD,
-                       (void *)order);
+        peer.emplace_back(parallelwLOD, order);
         orders.push_back(order);
     }
 
     for (int i = 0; i < numThreads; i++){
-        pthread_join(peer[i], NULL);
+        peer[i].join();
         delete orders[i];
     }
 
@@ -291,8 +291,10 @@ void calcwLOD(MapData *mapData,
     return;
 }
 
-void parallelwLOD(void *order){
-    WLOD_work_order_t *p = (WLOD_work_order_t *)order;
+//Was launched as (void *(*)(void *))parallelwLOD, a cast between incompatible
+//function pointer types -- it returns void, not void *.  Calling through such
+//a cast is undefined behaviour; std::thread calls it with its real signature.
+void parallelwLOD(WLOD_work_order_t *p){
     GenoLikeData *GLData = p->GLData;
     LDData *LD = p->LD;
     int winsize = p->winsize;
@@ -517,9 +519,8 @@ struct ROH_work_order_t
     int indStop;
 };
 
-static void *parallelAssembleROH(void *order)
+static void parallelAssembleROH(ROH_work_order_t *p)
 {
-    ROH_work_order_t *p = (ROH_work_order_t *)order;
     vector< WinData * > *winDataByChr = p->winDataByChr;
     vector< MapData * > *mapDataByChr = p->mapDataByChr;
     IndData *indData = p->indData;
@@ -661,7 +662,7 @@ static void *parallelAssembleROH(void *order)
 
         }
     }
-    return NULL;
+    return;
 }
 
 vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
@@ -712,10 +713,10 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
     }
     else
     {
-        vector<pthread_t> peer(nt);
-        for (int i = 0; i < nt; i++)
-            pthread_create(&(peer[i]), NULL, parallelAssembleROH, (void *)&(orders[i]));
-        for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
+        vector<std::thread> peer;
+        peer.reserve(nt);
+        for (int i = 0; i < nt; i++) peer.emplace_back(parallelAssembleROH, &(orders[i]));
+        for (int i = 0; i < nt; i++) peer[i].join();
     }
 
     vector<double> lengths;

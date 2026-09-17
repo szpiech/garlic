@@ -4,7 +4,7 @@
 #include "garlic-data.h"
 #include "garlic-centromeres.h"
 #include "param_t.h"
-//#include <pthread.h>
+#include <thread>
 #include <cmath>
 #include <iostream>
 #include "garlic-errlog.h"
@@ -62,7 +62,7 @@ struct ROHLength
 
 int selectWinsizeWeighted(double density);
 
-void parallelwLOD(void *order);
+void parallelwLOD(WLOD_work_order_t *p);
 
 void setLODThreads(int n);
 //Both were hardcoded: the smoothness threshold at which the --auto-winsize
@@ -202,9 +202,7 @@ vector<double> selectSizeClasses(ROHLength *rohLength, int NCLUST);
 
 
 
-void compute(void *order);
 
-//extern pthread_mutex_t io_mutex;
 
 /*
 vector< vector< WinData * >* > *calcLODWindowsSinglePop(vector< vector< HapData * >* > *hapDataByPopByChr,

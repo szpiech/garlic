@@ -14,7 +14,7 @@
 #include "garlic-pos.h"
 #include "garlic-matrix.h"
 #include "garlic-math.h"
-#include <pthread.h>
+#include <thread>
 #include "gzstream.h"
 #include "garlic-errlog.h"
 #include "garlic-centromeres.h"
@@ -278,9 +278,9 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY);
 
 double calcDensity(int numLoci, vector< MapData * > *mapDataByChr, centromere *centro);
 
-void parallelHR2(void *order);
-void parallelR2(void *order);
-void parallelLDFromBand(void *order);
+void parallelHR2(HR2_work_order_t *p);
+void parallelR2(R2_work_order_t *p);
+void parallelLDFromBand(BAND_work_order_t *p);
 void ldRowsFromBand(double *band, LDData *LD, int nloci, int winsize, int start, int stop, Bar *bar);
 
 //Returns by value: the previous version handed back a new[] array that every

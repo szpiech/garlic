@@ -7,7 +7,6 @@
 #include <string>
 #include <cstring>
 #include <limits>
-//#include <pthread.h>
 #include "garlic-math.h"
 #include "garlic-data.h"
 #include "garlic-errlog.h"
@@ -46,6 +45,5 @@ double calculateWiggle(KDEResult *kdeResult, int size = 20);
 KDEWinsizeReport *initKDEWinsizeReport();
 void releaseKDEWinsizeReport(KDEWinsizeReport *winsizeReport);
 */
-//extern pthread_mutex_t io_mutex;
 
 #endif

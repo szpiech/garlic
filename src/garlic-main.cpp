@@ -7,7 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <cmath>
-#include <pthread.h>
+
 #include "garlic-data.h"
 #include "garlic-roh.h"
 #include "garlic-kde.h"
@@ -21,9 +21,6 @@ using namespace std;
 
 int main(int argc, char *argv[])
 {
-    #ifdef PTW32_STATIC_LIB
-        pthread_win32_process_attach_np();
-    #endif
 //++++++++++CLI handling++++++++++
     int cliStatus = PARAM_OK;
     param_t *params = getCLI(argc, argv, cliStatus);
@@ -477,10 +474,10 @@ int main(int argc, char *argv[])
     delete params;
     freeRNG();
     cout << "Finished.\n";
-    
-    #ifdef PTW32_STATIC_LIB
-        pthread_win32_process_detach_np();
-    #endif
-    
+
+    //The PTW32_STATIC_LIB process attach/detach calls that used to bracket
+    //main are gone: they are pthreads-win32 specific, and std::thread needs no
+    //per-process initialisation on any platform.
+
     return 0;
 }

@@ -850,6 +850,80 @@ vcf_likelihoods() {
 }
 
 # ---------------------------------------------------------------------------
+# 4f. Thread-count independence
+# ---------------------------------------------------------------------------
+# Nothing else in this suite passes --threads, and DEFAULT_THREADS is 1, so
+# before this stage the threaded code paths -- calcLOD, assembleROH, the LD
+# band and the KDE -- were exercised only in their nt==1 short-circuits.  The
+# guarantee being pinned is that thread count is an implementation detail:
+# every stage partitions its work into contiguous blocks and concatenates them
+# in thread order, so the output must be byte-identical at any --threads.
+#
+# It also gives the static linux CI job real thread creation to exercise.  That
+# matters because libstdc++ decides at RUNTIME whether threading is available
+# by testing a weak symbol, and a static link can leave that symbol unresolved
+# -- the link succeeds and the first std::thread constructor throws.  Without a
+# case that actually spawns a thread, a static build would pass this suite
+# while being unable to run threaded at all.
+threads() {
+    echo "== thread-count independence"
+
+    for spec in \
+        "unweighted|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz" \
+        "weighted|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --map $EX/chr21.map.gz --weighted" \
+        "phased|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --phased"
+    do
+        lbl=${spec%%|*}
+        args=${spec#*|}
+        for t in 1 4; do
+            # shellcheck disable=SC2086
+            $GARLIC $args --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 \
+                    --size-bounds 500000 1000000 --raw-lod --threads $t \
+                    --out "$WORK/th_${lbl}_$t" --quiet --force >/dev/null 2>&1
+        done
+        if [ ! -f "$WORK/th_${lbl}_1.roh.bed" ] || [ ! -f "$WORK/th_${lbl}_4.roh.bed" ]; then
+            bad "$lbl: a --threads run produced no output"
+            continue
+        fi
+        n=$(grep -v '^track' "$WORK/th_${lbl}_1.roh.bed" | wc -l | tr -d ' ')
+        if [ "$n" -eq 0 ]; then
+            bad "$lbl: called 0 ROH -- the thread comparison would be vacuous"
+            continue
+        fi
+        if cmp -s "$WORK/th_${lbl}_1.roh.bed" "$WORK/th_${lbl}_4.roh.bed"; then ok
+        else bad "$lbl: --threads 1 and --threads 4 gave different calls"; fi
+
+        # the raw LOD matrix is the stronger comparison: it comes straight out
+        # of the threaded stage, before windows are assembled into tracts.
+        gz "$WORK/th_${lbl}_1.chr21.raw.lod.windows.gz" > "$WORK/th_${lbl}_1.raw"
+        gz "$WORK/th_${lbl}_4.chr21.raw.lod.windows.gz" > "$WORK/th_${lbl}_4.raw"
+        if cmp -s "$WORK/th_${lbl}_1.raw" "$WORK/th_${lbl}_4.raw"; then ok
+        else bad "$lbl: raw LOD scores differ between --threads 1 and 4"; fi
+    done
+
+    # The KDE is threaded too, and only the automatic-cutoff path reaches it.
+    for t in 1 4; do
+        # shellcheck disable=SC2086
+        $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 \
+                --winsize 60 --error 0.001 --threads $t \
+                --out "$WORK/thk_$t" --quiet --force >/dev/null 2>&1
+    done
+    a=$(grep -oE 'Selected LOD score cutoff: [-0-9.e+]+' "$WORK/thk_1.log" 2>/dev/null | awk '{print $5}')
+    b=$(grep -oE 'Selected LOD score cutoff: [-0-9.e+]+' "$WORK/thk_4.log" 2>/dev/null | awk '{print $5}')
+    if [ -n "$a" ] && [ "$a" = "$b" ]; then ok
+    else bad "KDE cutoff depends on --threads ($a vs $b)"; fi
+
+    # The size-class GMM is fed the per-individual ROH lengths concatenated in
+    # THREAD ORDER, so its boundaries are the check on that concatenation.  The
+    # three cases above pass --size-bounds and therefore skip the GMM entirely;
+    # this run does not, which is the only place the ordering is covered.
+    a=$(grep -oE 'Selected ROH size boundaries.*' "$WORK/thk_1.log" 2>/dev/null)
+    b=$(grep -oE 'Selected ROH size boundaries.*' "$WORK/thk_4.log" 2>/dev/null)
+    if [ -n "$a" ] && [ "$a" = "$b" ]; then ok
+    else bad "GMM size boundaries depend on --threads ($a vs $b)"; fi
+}
+
+# ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
 params_roundtrip() {
@@ -906,6 +980,7 @@ likelihood_guards
 ind_metadata
 vcf_input
 vcf_likelihoods
+threads
 exit_codes
 params_roundtrip
 bed_format

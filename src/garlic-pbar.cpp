@@ -1,7 +1,10 @@
 #include "garlic-pbar.h"
-#include <pthread.h>
+#include <mutex>
 
-pthread_mutex_t mutex_progress = PTHREAD_MUTEX_INITIALIZER;
+//std::mutex rather than a pthread_mutex_t with a static initialiser: the
+//initialiser macro is the only thing this file needed pthreads for, and a
+//std::mutex is default-constructed with no macro and no platform variant.
+static std::mutex mutex_progress;
 
 static bool BAR_ON = true;
 
@@ -10,8 +13,8 @@ bool progressEnabled() { return BAR_ON; }
 
 void advanceBar(Bar &bar, double inc)
 {
-    if (!BAR_ON) { pthread_mutex_lock(&mutex_progress); bar.current += inc; pthread_mutex_unlock(&mutex_progress); return; }
-    pthread_mutex_lock(&mutex_progress);
+    if (!BAR_ON) { std::lock_guard<std::mutex> lock(mutex_progress); bar.current += inc; return; }
+    std::unique_lock<std::mutex> lock(mutex_progress);
     bar.current += inc;
     if (bar.current / bar.total >= double(bar.currentTick) / double(bar.totalTicks))
     {
@@ -21,7 +24,7 @@ void advanceBar(Bar &bar, double inc)
         cerr /*<< setprecision(4)*/ << int((bar.current / bar.total) * 100) << '%';
         cerr.flush();
     }
-    pthread_mutex_unlock(&mutex_progress);
+    lock.unlock();
     return;
 }
 

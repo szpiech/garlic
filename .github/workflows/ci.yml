@@ -18,6 +18,15 @@ jobs:
       matrix:
         include:
           - {os: ubuntu-latest, label: linux-x86_64, static: ''}
+          # The DEFAULT linux link is -static, and until this entry existed no job
+          # built it: every one passed STATIC=.  That matters specifically for
+          # std::thread, which decides at runtime whether threading is available by
+          # testing a weak symbol -- in a static link that can come out unresolved
+          # and the first thread constructor throws, at runtime, from a link that
+          # succeeded.  The Makefile wraps -lpthread in --whole-archive to prevent
+          # it; this entry is what checks that the wrapping works.  It also needs
+          # the static zlib, which zlib1g-dev provides.
+          - {os: ubuntu-latest, label: linux-x86_64-static, static: '-static'}
           - {os: macos-latest,  label: macos-arm64,  static: ''}
           - {os: macos-13,      label: macos-x86_64, static: ''}
     steps:

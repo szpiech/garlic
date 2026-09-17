@@ -1,5 +1,5 @@
 #include <algorithm>
-#include <pthread.h>
+#include <thread>
 #include "garlic-kde.h"
 
 static int KDE_POINTS = 512;
@@ -152,9 +152,12 @@ struct KDE_work_order_t
     double R;
 };
 
-static void *parallelKDE(void *order)
+//Takes its order type directly.  Under pthread_create every worker had to be
+//void *(void *) and cast the argument back, and pthread_join's return value
+//was discarded at all seven call sites -- so the void * round trip carried no
+//information and only cost the compiler its type checking.
+static void parallelKDE(KDE_work_order_t *p)
 {
-    KDE_work_order_t *p = (KDE_work_order_t *)order;
     const double *data = p->data;
     const double *targets = p->targets;
     const int n = p->n;
@@ -179,7 +182,6 @@ static void *parallelKDE(void *order)
         }
         p->out[i] = sum * invn;
     }
-    return NULL;
 }
 
 //out[i] = (1/n) * sum_j exp(-(targets[i]-data[j])^2 / h^2), the same quantity
@@ -212,16 +214,20 @@ void kdeGaussian(double *data, int n, double h, const double *targets, int M, do
         return;
     }
 
-    vector<pthread_t> peer(nt);
+    //orders is filled completely BEFORE any thread is launched: it is a vector,
+    //so emplacing into it while a thread holds &orders[i] would dangle on
+    //reallocation.
     vector<KDE_work_order_t> orders(nt);
     for (int i = 0; i < nt; i++)
     {
         orders[i] = proto;
         orders[i].start = i;
         orders[i].stride = nt;
-        pthread_create(&(peer[i]), NULL, parallelKDE, (void *)&(orders[i]));
     }
-    for (int i = 0; i < nt; i++) pthread_join(peer[i], NULL);
+    vector<std::thread> peer;
+    peer.reserve(nt);
+    for (int i = 0; i < nt; i++) peer.emplace_back(parallelKDE, &(orders[i]));
+    for (int i = 0; i < nt; i++) peer[i].join();
 }
 
 

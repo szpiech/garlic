@@ -826,8 +826,11 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
 //(2) assemble the per-window sums from the band with a sliding update.
 //Previously both were fused, so each pair was re-evaluated once per window
 //containing it -- O(nloci * winsize^2 * nind) instead of O(nloci * winsize * nind).
+//bandFn/bandOrders were a void *(*)(void *) pair that this function never
+//used -- they existed so a caller could pass the cast worker pointer through,
+//and were silenced with (void) casts at the bottom.  With std::thread the
+//worker is named directly, so both parameters are gone.
 static void runLDPhases(LDData *LD, int nloci, int winsize, int numThreads,
-                        void *(*bandFn)(void *), void **bandOrders,
                         double *band, Bar *bar)
 {
     //phase 2 only; phase 1 is type-specific and done by the caller
@@ -836,7 +839,8 @@ static void runLDPhases(LDData *LD, int nloci, int winsize, int numThreads,
 
     int nt = numThreads;
     vector<unsigned int> NUM_PER_THREAD = make_thread_partition(nt, nWindows);
-    vector<pthread_t> peer(nt);
+    vector<std::thread> peer;
+    peer.reserve(nt);
     vector<BAND_work_order_t *> orders(nt);
     unsigned int previous = 0;
     for (int i = 0; i < nt; i++)
@@ -851,13 +855,12 @@ static void runLDPhases(LDData *LD, int nloci, int winsize, int numThreads,
         previous += NUM_PER_THREAD[i];
         o->stop = previous;
         orders[i] = o;
-        pthread_create(&(peer[i]), NULL, (void *(*)(void *))parallelLDFromBand, (void *)o);
+        peer.emplace_back(parallelLDFromBand, o);
     }
     for (int i = 0; i < nt; i++){
-        pthread_join(peer[i], NULL);
+        peer[i].join();
         delete orders[i];
     }
-    (void)bandFn; (void)bandOrders;
 }
 
 LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int numThreads, int *indIndex, int ldSubsample){
@@ -876,7 +879,8 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
     //--- phase 1: banded pairwise hr2 ---
     int nt = numThreads;
     vector<unsigned int> NUM_PER_THREAD = make_thread_partition(nt, nloci);
-    vector<pthread_t> peer(nt);
+    vector<std::thread> peer;
+    peer.reserve(nt);
     vector< HR2_work_order_t * > orders;
     unsigned int previous = 0;
     for (int i = 0; i < nt; i++)
@@ -894,17 +898,17 @@ LDData *calcHR2LD(HapData *hapData, GenoFreqData *genoFreqData, int winsize, int
         order->ldSubsample = ldSubsample;
         order->band = band;
 
-        pthread_create(&(peer[i]), NULL, (void *(*)(void *))parallelHR2, (void *)order);
+        peer.emplace_back(parallelHR2, order);
         orders.push_back(order);
     }
     for (int i = 0; i < nt; i++){
-        pthread_join(peer[i], NULL);
+        peer[i].join();
         delete orders[i];
     }
     orders.clear();
 
     //--- phase 2: window sums from the band ---
-    runLDPhases(LD, nloci, winsize, numThreads, NULL, NULL, band, &bar);
+    runLDPhases(LD, nloci, winsize, numThreads, band, &bar);
 
     finalize(bar);
 
@@ -927,7 +931,8 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
     //--- phase 1: banded pairwise r2 ---
     int nt = numThreads;
     vector<unsigned int> NUM_PER_THREAD = make_thread_partition(nt, nloci);
-    vector<pthread_t> peer(nt);
+    vector<std::thread> peer;
+    peer.reserve(nt);
     vector< R2_work_order_t * > orders;
     unsigned int previous = 0;
     for (int i = 0; i < nt; i++)
@@ -945,28 +950,30 @@ LDData *calcR2LD(HapData *hapData, FreqData *freqData, int winsize, int numThrea
         order->ldSubsample = ldSubsample;
         order->band = band;
 
-        pthread_create(&(peer[i]), NULL, (void *(*)(void *))parallelR2, (void *)order);
+        peer.emplace_back(parallelR2, order);
         orders.push_back(order);
     }
     for (int i = 0; i < nt; i++){
-        pthread_join(peer[i], NULL);
+        peer[i].join();
         delete orders[i];
     }
     orders.clear();
 
     //--- phase 2: window sums from the band ---
-    runLDPhases(LD, nloci, winsize, numThreads, NULL, NULL, band, &bar);
+    runLDPhases(LD, nloci, winsize, numThreads, band, &bar);
 
     finalize(bar);
 
     return LD;
 }
 
-void parallelHR2(void *order){
+//Was launched through (void *(*)(void *))parallelHR2 -- a cast between
+//incompatible function pointer types, since this returns void.  std::thread
+//calls it with its real signature, so the cast and the void * are both gone.
+void parallelHR2(HR2_work_order_t *p){
     //advanceBar takes a global mutex and writes to cerr on every call; at one
     //call per locus that is ~577k lock/unlock pairs genome-wide.  Batch them.
     int barPending = 0;
-    HR2_work_order_t *p = (HR2_work_order_t *)order;
     HapData *hapData = p->hapData;
     GenoFreqData *genoFreqData = p->genoFreqData;
     int winsize = p->winsize;
@@ -993,11 +1000,10 @@ void parallelHR2(void *order){
 
 }
 
-void parallelR2(void *order){
+void parallelR2(R2_work_order_t *p){
     //advanceBar takes a global mutex and writes to cerr on every call; at one
     //call per locus that is ~577k lock/unlock pairs genome-wide.  Batch them.
     int barPending = 0;
-    R2_work_order_t *p = (R2_work_order_t *)order;
     HapData *hapData = p->hapData;
     FreqData *freqData = p->freqData;
     int winsize = p->winsize;
@@ -1072,8 +1078,7 @@ void ldRowsFromBand(double *band, LDData *LD, int nloci, int winsize, int start,
     }
 }
 
-void parallelLDFromBand(void *order){
-    BAND_work_order_t *p = (BAND_work_order_t *)order;
+void parallelLDFromBand(BAND_work_order_t *p){
     ldRowsFromBand(p->band, p->LD, p->nloci, p->winsize, p->start, p->stop, p->bar);
 }
 

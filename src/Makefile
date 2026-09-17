@@ -53,19 +53,39 @@ L_PATH = ../lib/$(PLATFORM)
 # GSL is no longer used.  garlic-math.cpp provides the ten routines it was
 # linked for, reproducing each bit for bit (see that file's header), so the
 # per-platform libgsl.a/libgslcblas.a archives are not needed and neither is
-# a system GSL.  The only remaining external dependency is zlib, plus
-# libpthreadGC2 and libz on win32.
+# a system GSL.  The only remaining external dependency is zlib -- from the
+# system on Linux and macOS, from lib/win32/libz.a on win32.  Threading is
+# std::thread, so no pthreads library is linked by name on any platform
+# (-pthread on linux is a toolchain flag, not a vendored archive).
 # figtree/ANN are no longer linked: the KDE evaluates its Gaussian sum directly
 # (see kdeGaussian in garlic-kde.cpp).  The archives remain under lib/ for the
 # moment; nothing references them.
 
 ifeq ($(PLATFORM),linux)
-  ARCHFLAGS = -m64
+  ARCHFLAGS = -m64 -pthread
   # -static is right for the bundled archives (the point of vendoring them is a
-  # binary that runs on a cluster without matching libraries), but it cannot
-  # work against a shared system GSL.  Build with STATIC= to turn it off:
+  # binary that runs on a cluster without matching libraries).  Build with
+  # STATIC= to turn it off.
   STATIC ?= -static
-  LINK_OPTS = $(STATIC) -pthread
+  #
+  # std::thread needs more care under -static than pthread_create did.
+  # libstdc++ decides at RUNTIME whether threading is available by testing a
+  # WEAK reference (__gthread_active_p, historically via pthread_key_create).
+  # In a static link the linker only pulls in the archive members something
+  # references strongly, so that symbol can come out unresolved-but-weak, the
+  # test reports single-threaded, and the first std::thread constructor throws
+  #   std::system_error: Enable multithreading to use std::thread
+  # at runtime even though the link succeeded.  Direct pthread_create calls
+  # did not have this problem, because calling it IS a strong reference.
+  # --whole-archive forces all of libpthread in and restores the check.
+  #
+  # On glibc 2.34+ libpthread is merged into libc and this is moot, but -static
+  # exists here for old cluster systems, which is exactly where it is not.
+  ifeq ($(STATIC),-static)
+    LINK_OPTS = -static -Wl,--whole-archive -lpthread -Wl,--no-whole-archive
+  else
+    LINK_OPTS = $(STATIC) -pthread
+  endif
 else ifeq ($(PLATFORM),osx)
   # x86_64 macOS: SSE2 is baseline on x86_64, kept explicit for older toolchains
   ARCHFLAGS = -m64 -msse2
@@ -76,9 +96,22 @@ else ifeq ($(PLATFORM),macos-arm)
   LINK_OPTS =
 else ifeq ($(PLATFORM),win32)
   I_PATH2 = -I ../include/win32
-  ARCHFLAGS = -DPTW32_STATIC_LIB
-  LINK_OPTS = $(L_PATH)/libpthreadGC2.a \
-              $(L_PATH)/libz.a -static-libgcc -static-libstdc++
+  # -DPTW32_STATIC_LIB is gone: it guarded the pthread_win32_process_attach_np
+  # /detach_np pair in main, which pthreads-win32 requires and std::thread does
+  # not.  Nothing tests the macro now.
+  #
+  # lib/win32/libpthreadGC2.a is also gone from the link.  That archive is
+  # pthreads-win32, a separate project from the winpthreads that MinGW-w64's
+  # libstdc++ builds std::thread on, so it is not what a std::thread binary
+  # needs: a MinGW build now requires a GCC configured with the POSIX threading
+  # model, which supplies threading itself.  With a win32-threads GCC,
+  # libstdc++ does not define std::thread at all and the build fails at compile
+  # time rather than producing a subtly single-threaded binary.
+  #
+  # UNTESTED: no Windows toolchain is available to me, and CI has no Windows
+  # runner.  zlib is still linked from lib/win32.
+  ARCHFLAGS =
+  LINK_OPTS = $(L_PATH)/libz.a -static-libgcc -static-libstdc++
 else
   $(error Unknown PLATFORM '$(PLATFORM)'; expected linux, osx, macos-arm or win32)
 endif
