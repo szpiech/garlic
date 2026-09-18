@@ -18,6 +18,289 @@ using namespace std;
 
 
 
+//----------------------------------------------------------------------------
+// One population's analysis.
+//
+// Everything from the window size through the written calls, for one set of
+// individuals.  Extracted from main unchanged so it can be run once per
+// population: the four values a population SELECTS FOR ITSELF -- window size,
+// overlap fraction, LOD cutoff and size-class boundaries -- are locals here,
+// initialised from the command line.  When the user gave them explicitly the
+// local simply keeps that value, which is how an explicit --winsize,
+// --overlap-frac, --lod-cutoff or --size-bounds applies to every population.
+//
+// Ownership: this function releases the PER-POPULATION data it is handed
+// (genotypes, frequencies, likelihoods, genotype frequencies) and everything
+// it derives from them.  The caller keeps what is SHARED across populations:
+// the map, the centromere table, the full individual metadata and the
+// command line.
+//----------------------------------------------------------------------------
+static const int POP_OK    = 0;   //analysed and written
+static const int POP_ERROR = 2;   //stop the run, exit 2
+static const int POP_DONE  = 3;   //the run finished inside (--winsize-multi)
+
+struct PopResult
+{
+    int            status;
+    int            winsize;
+    double         overlapFrac;
+    double         lodCutoff;
+    vector<double> boundSizes;
+};
+
+static PopResult analyzePopulation(const GarlicOptions &opt,
+                                   param_t *params,
+                                   vector< HapData * > *hapDataByChr,
+                                   vector< FreqData * > *freqDataByChr,
+                                   vector< MapData * > *mapDataByChr,
+                                   vector< GenoLikeData * > *GLDataByChr,
+                                   vector< GenoFreqData * > *genoFreqDataByChr,
+                                   IndData *indData,
+                                   centromere *centro,
+                                   bool USE_GL,
+                                   double variantDensity)
+{
+    PopResult res;
+    res.status = POP_OK;
+
+    //Read-only for this population.
+    const string &outfile          = opt.outfile;
+    const bool   &WEIGHTED         = opt.WEIGHTED;
+    const bool   &CM               = opt.CM;
+    //Not const: selectWinsizeFromList and exploreWinsizes take it by
+    //non-const pointer/reference.  A copy, so one population cannot disturb
+    //the next.
+    vector<int> multiWinsizes = opt.multiWinsizes;
+    const bool   &WINSIZE_EXPLORE  = opt.WINSIZE_EXPLORE;
+    const bool   &AUTO_WINSIZE     = opt.AUTO_WINSIZE;
+    const int    &AUTO_WINSIZE_STEP = opt.AUTO_WINSIZE_STEP;
+    const bool   &AUTO_CUTOFF      = opt.AUTO_CUTOFF;
+    const bool   &AUTO_BOUNDS      = opt.AUTO_BOUNDS;
+    const int    &numThreads       = opt.numThreads;
+    const double &error            = opt.error;
+    const int    &MAX_GAP          = opt.MAX_GAP;
+    const bool   &AUTO_OVERLAP_FRAC = opt.AUTO_OVERLAP_FRAC;
+    const double &mu               = opt.mu;
+    const int    &M                = opt.M;
+    const int    &NCLUST           = opt.NCLUST;
+    const int    &KDE_SUBSAMPLE    = opt.KDE_SUBSAMPLE;
+    const int    &LD_SUBSAMPLE     = opt.LD_SUBSAMPLE;
+    const bool   &RAW_LOD          = opt.RAW_LOD;
+    const bool   &PHASED           = opt.PHASED;
+    const int    &KDE_THIN_STEP    = opt.KDE_THIN_STEP;
+    const int    &MAX_WINSIZE      = opt.MAX_WINSIZE;
+
+    //Chosen per population; the command-line value is the starting point, and
+    //stays untouched when it was given explicitly.
+    int            winsize      = opt.winsize;
+    double         OVERLAP_FRAC = opt.OVERLAP_FRAC;
+    double         LOD_CUTOFF   = opt.LOD_CUTOFF;
+    vector<double> boundSizes   = opt.boundSizes;
+
+    vector< WinData * > *winDataByChr = NULL;
+    vector< LDData * >  *ldDataByChr  = NULL;
+    KDEResult           *kdeResult    = NULL;
+
+//++++++++++Pipeline begins++++++++++
+    if (WINSIZE_EXPLORE && AUTO_WINSIZE && !WEIGHTED)
+    {
+        kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
+                                          indData, centro, &multiWinsizes, winsize, error,
+                                          GLDataByChr, USE_GL,
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, KDE_THIN_STEP);
+    }
+    else if (WINSIZE_EXPLORE)
+    {
+        /*
+        KDEWinsizeReport *winsizeReport =  calculateLODOverWinsizeRange(hapDataByChr, freqDataByChr,
+                                           mapDataByChr, indData, centro, &multiWinsizes, error, MAX_GAP,
+                                           KDE_SUBSAMPLE, numThreads, WINSIZE_EXPLORE, outfile);
+        releaseKDEWinsizeReport(winsizeReport);
+        */
+
+        exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
+                        indData, centro, multiWinsizes, error,
+                        GLDataByChr, genoFreqDataByChr, USE_GL,
+                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, KDE_THIN_STEP, LD_SUBSAMPLE);
+
+        freeRNG();
+
+        //This return used to skip main's entire cleanup block, so
+        //--winsize-multi leaked every structure it had loaded: measured at 420
+        //blocks / 1,074,816 bytes on chr21 with leaks(1), and LeakSanitizer in
+        //CI reported 441 allocations / 968,474 bytes on the same path.  It is
+        //the only early return that reaches here with a full dataset loaded.
+        //
+        //rohLength, rohDataByInd and kdeResult do not exist yet on this path,
+        //so the list is main's normal exit minus those three.  genoFreqDataByChr
+        //is NULL unless (!PHASED && WEIGHTED), and releaseGenoFreq dereferences
+        //its argument, so it needs the guard.
+        //Only this population's data: the map, the metadata, the centromere
+        //table and the command line belong to the caller.
+        releaseHapData(hapDataByChr);
+        releaseFreqData(freqDataByChr);
+        if (USE_GL) releaseGLData(GLDataByChr);
+        if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
+        res.status = POP_DONE;
+        return res;
+    }
+    else if (AUTO_WINSIZE)
+    {
+        if(!WEIGHTED){
+            try{
+                kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
+                                          indData, centro, winsize, AUTO_WINSIZE_STEP, error,
+                                          GLDataByChr, USE_GL,
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, KDE_THIN_STEP,
+                                          MAX_WINSIZE);
+            }
+            catch (...){
+                logCurrentException("automatic window size selection");
+                res.status = POP_ERROR; return res;
+            }
+        }
+        else{
+            winsize = selectWinsizeWeighted(variantDensity);
+        }
+        
+        LOG.log("Selected window size:", winsize);
+    }
+
+    cout << "Window size: " << winsize << endl;
+
+    if(AUTO_OVERLAP_FRAC){
+        OVERLAP_FRAC = selectOverlapFrac(variantDensity, winsize);
+        LOG.log("Selected overlap fraction:", OVERLAP_FRAC);
+    }
+
+
+    if(WEIGHTED){
+        cerr << "Calculating LD matrix.\n";
+        ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads, LD_SUBSAMPLE);
+        if(!PHASED) releaseGenoFreq(genoFreqDataByChr);
+        winDataByChr = calcwLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
+                                       GLDataByChr, ldDataByChr,
+                                       centro, winsize, error,
+                                       MAX_GAP, USE_GL, M, mu, numThreads);
+        releaseLDData(ldDataByChr);
+    }
+    else{
+        winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
+                                      GLDataByChr,
+                                      centro, winsize, error,
+                                      MAX_GAP, USE_GL);
+    }
+    releaseHapData(hapDataByChr);
+    releaseFreqData(freqDataByChr);
+    if (USE_GL) releaseGLData(GLDataByChr);
+
+    if (RAW_LOD){
+        //Output raw windows
+        try { writeWinData(winDataByChr, indData, mapDataByChr, outfile); }
+        catch (...) { logCurrentException("writing the raw LOD windows"); res.status = POP_ERROR; return res; }
+    }
+
+    if (AUTO_CUTOFF){
+        //if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
+        bool cutoffOK = true;
+        if(kdeResult == NULL)
+        {
+            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK);
+        }
+        else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize, cutoffOK);
+
+        //A failed KDE used to return -1, which main then used as the cutoff and
+        //happily wrote a complete, plausible-looking .roh.bed from it.
+        if (!cutoffOK)
+        {
+            LOG.err("ERROR: Could not select a LOD score cutoff automatically. Stopping.");
+            res.status = POP_ERROR; return res;
+        }
+
+        LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
+    }
+    else cout << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
+
+    cout << "Assembling ROH windows\n";
+    //Assemble ROH for each individual in each pop
+    ROHLength *rohLength;
+    vector< ROHData * > *rohDataByInd = assembleROHWindows(winDataByChr, mapDataByChr, indData,
+                                        centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC, CM);
+
+    releaseWinData(winDataByChr);
+    
+    if (AUTO_BOUNDS){
+        cout << "Fitting " << NCLUST << "-component GMM for size classification\n";
+        //A GMM with more components than observations has no solution; the GMM
+        //used to throw an int that nothing caught, so the process died with
+        //SIGABRT after having already done all the work.  Report it instead.
+        if (rohLength == NULL || rohLength->size < NCLUST)
+        {
+            LOG.err("ERROR: Cannot fit a", NCLUST, false);
+            LOG.err("-component GMM to", int(rohLength == NULL ? 0 : rohLength->size), false);
+            LOG.err(" ROH.");
+            LOG.err("\tNo (or too few) ROH were called, so size classes cannot be chosen automatically.");
+            LOG.err("\tCheck --lod-cutoff, or pass --size-bounds to set the class boundaries yourself.");
+            //rohDataByInd and rohLength already exist here; with a loop over
+            //populations an error return that skipped them would leak one
+            //population's tracts per failure.
+            releaseROHLength(rohLength); releaseROHData(rohDataByInd);
+            res.status = POP_ERROR; return res;
+        }
+        try {
+            boundSizes = selectSizeClasses(rohLength, NCLUST);
+        }
+        catch (...) {
+            logCurrentException("GMM size-class fitting");
+            LOG.err("\tPass --size-bounds to set the ROH size class boundaries explicitly.");
+            //rohDataByInd and rohLength already exist here; with a loop over
+            //populations an error return that skipped them would leak one
+            //population's tracts per failure.
+            releaseROHLength(rohLength); releaseROHData(rohDataByInd);
+            res.status = POP_ERROR; return res;
+        }
+        LOG.logv("Selected ROH size boundaries = (", boundSizes, false);
+        LOG.log(" )");
+    }
+    else{
+        LOG.logv("User provided ROH size boundaries = (", boundSizes, false);
+        LOG.log(" )");
+    }
+    //Output ROH calls to file, one for each individual
+    //includes A/B/C/etc size classifications
+    cout << "Writing ROH tracts.\n";
+    //The writers throw 0 when they cannot open their output, and nothing
+    //caught it: the calls run after every other stage, so an output path that
+    //became unwritable turned a complete analysis into SIGABRT with the
+    //results discarded.  Reported and carried to the exit status instead, so
+    //the cleanup below still runs.
+    int writeStatus = 0;
+    try
+    {
+        writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, boundSizes, indData->pop, VERSION, CM);
+
+        if (params->getBoolFlag(ARG_FROH))
+        {
+            writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
+                      indData->pop, centro, CM);
+        }
+    }
+    catch (...) { logCurrentException("writing the ROH calls"); writeStatus = 2; }
+    //Per-population state, released here rather than by the caller: with more
+    //than one population these would otherwise accumulate across the run.
+    releaseROHLength(rohLength);
+    releaseROHData(rohDataByInd);
+    if (kdeResult != NULL) releaseKDEResult(kdeResult);
+
+    res.winsize     = winsize;
+    res.overlapFrac = OVERLAP_FRAC;
+    res.lodCutoff   = LOD_CUTOFF;
+    res.boundSizes  = boundSizes;
+    if (writeStatus != 0) res.status = POP_ERROR;
+    return res;
+}
+
+
 int main(int argc, char *argv[])
 {
 //++++++++++CLI handling++++++++++
@@ -41,6 +324,9 @@ int main(int argc, char *argv[])
     //References rather than copies, so the pipeline below reads and writes the
     //same objects it always did (winsize, LOD_CUTOFF and boundSizes are all
     //reassigned further down when their automatic modes are in use).
+    //The options the ANALYSIS uses are read inside analyzePopulation, from
+    //its own GarlicOptions reference; main keeps only what it needs to load
+    //the data and write the run record.
     string &outfile = opt.outfile;
     string &tpedfile = opt.tpedfile;
     string &tfamfile = opt.tfamfile;
@@ -56,29 +342,12 @@ int main(int argc, char *argv[])
     int &nresample = opt.nresample;
     string &freqfile = opt.freqfile;
     bool &AUTO_FREQ = opt.AUTO_FREQ;
-    vector<int> &multiWinsizes = opt.multiWinsizes;
-    bool &WINSIZE_EXPLORE = opt.WINSIZE_EXPLORE;
     bool &AUTO_WINSIZE = opt.AUTO_WINSIZE;
-    int &AUTO_WINSIZE_STEP = opt.AUTO_WINSIZE_STEP;
-    int &winsize = opt.winsize;
-    double &LOD_CUTOFF = opt.LOD_CUTOFF;
     bool &AUTO_CUTOFF = opt.AUTO_CUTOFF;
-    vector<double> &boundSizes = opt.boundSizes;
     bool &AUTO_BOUNDS = opt.AUTO_BOUNDS;
-    int &numThreads = opt.numThreads;
-    double &error = opt.error;
-    int &MAX_GAP = opt.MAX_GAP;
-    double &OVERLAP_FRAC = opt.OVERLAP_FRAC;
     bool &AUTO_OVERLAP_FRAC = opt.AUTO_OVERLAP_FRAC;
-    double &mu = opt.mu;
-    int &M = opt.M;
-    int &NCLUST = opt.NCLUST;
-    int &KDE_SUBSAMPLE = opt.KDE_SUBSAMPLE;
-    int &LD_SUBSAMPLE = opt.LD_SUBSAMPLE;
-    bool &RAW_LOD = opt.RAW_LOD;
     bool &PHASED = opt.PHASED;
     int &KDE_THIN_STEP = opt.KDE_THIN_STEP;
-    int &MAX_WINSIZE = opt.MAX_WINSIZE;
     unsigned long int &SEED = opt.SEED;
 
 //++++++++++Datafile reading++++++++++
@@ -107,11 +376,8 @@ int main(int argc, char *argv[])
     vector< HapData * > *hapDataByChr = NULL;
     vector< FreqData * > *freqDataByChr = NULL;
     vector< GenoFreqData * > *genoFreqDataByChr = NULL;
-    vector< WinData * > *winDataByChr = NULL;
     vector< GenoLikeData * > *GLDataByChr = NULL;
     vector< GenMapScaffold *> *scaffoldMapByChr = NULL;
-    vector< LDData * > *ldDataByChr = NULL;
-    KDEResult *kdeResult = NULL;
     bool USE_GL = false;
     try
     {
@@ -324,184 +590,34 @@ int main(int argc, char *argv[])
         }
     }
 
-//++++++++++Pipeline begins++++++++++
-    if (WINSIZE_EXPLORE && AUTO_WINSIZE && !WEIGHTED)
+    //++++++++++Pipeline begins++++++++++
+    //One population for now: enumeratePopulations reported what is present,
+    //and this loop will run over it.  Running it once must reproduce the
+    //previous behaviour exactly, which is what the golden outputs check.
+    PopResult pop = analyzePopulation(opt, params,
+                                      hapDataByChr, freqDataByChr, mapDataByChr,
+                                      GLDataByChr, genoFreqDataByChr,
+                                      indData, centro, USE_GL, variantDensity);
+    if (pop.status == POP_DONE)
     {
-        kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
-                                          indData, centro, &multiWinsizes, winsize, error,
-                                          GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, KDE_THIN_STEP);
-    }
-    else if (WINSIZE_EXPLORE)
-    {
-        /*
-        KDEWinsizeReport *winsizeReport =  calculateLODOverWinsizeRange(hapDataByChr, freqDataByChr,
-                                           mapDataByChr, indData, centro, &multiWinsizes, error, MAX_GAP,
-                                           KDE_SUBSAMPLE, numThreads, WINSIZE_EXPLORE, outfile);
-        releaseKDEWinsizeReport(winsizeReport);
-        */
-
-        exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
-                        indData, centro, multiWinsizes, error,
-                        GLDataByChr, genoFreqDataByChr, USE_GL,
-                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, KDE_THIN_STEP, LD_SUBSAMPLE);
-
-        freeRNG();
-
-        //This return used to skip main's entire cleanup block, so
-        //--winsize-multi leaked every structure it had loaded: measured at 420
-        //blocks / 1,074,816 bytes on chr21 with leaks(1), and LeakSanitizer in
-        //CI reported 441 allocations / 968,474 bytes on the same path.  It is
-        //the only early return that reaches here with a full dataset loaded.
-        //
-        //rohLength, rohDataByInd and kdeResult do not exist yet on this path,
-        //so the list is main's normal exit minus those three.  genoFreqDataByChr
-        //is NULL unless (!PHASED && WEIGHTED), and releaseGenoFreq dereferences
-        //its argument, so it needs the guard.
-        releaseHapData(hapDataByChr);
-        releaseFreqData(freqDataByChr);
-        if (USE_GL) releaseGLData(GLDataByChr);
-        if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
+        //--winsize-multi finished the run inside.  Release what the caller owns.
         releaseMapData(mapDataByChr);
         releaseIndData(indData);
         delete centro;
         delete params;
+        freeRNG();
         return 0;
     }
-    else if (AUTO_WINSIZE)
+    int writeStatus = (pop.status == POP_ERROR) ? 2 : 0;
+    if (pop.status == POP_ERROR)
     {
-        if(!WEIGHTED){
-            try{
-                kdeResult = selectWinsize(hapDataByChr, freqDataByChr, mapDataByChr,
-                                          indData, centro, winsize, AUTO_WINSIZE_STEP, error,
-                                          GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, KDE_THIN_STEP,
-                                          MAX_WINSIZE);
-            }
-            catch (...){
-                logCurrentException("automatic window size selection");
-                return 2;
-            }
-        }
-        else{
-            winsize = selectWinsizeWeighted(variantDensity);
-        }
-        
-        LOG.log("Selected window size:", winsize);
+        releaseMapData(mapDataByChr);
+        releaseIndData(indData);
+        delete centro;
+        delete params;
+        freeRNG();
+        return 2;
     }
-
-    cout << "Window size: " << winsize << endl;
-
-    if(AUTO_OVERLAP_FRAC){
-        OVERLAP_FRAC = selectOverlapFrac(variantDensity, winsize);
-        LOG.log("Selected overlap fraction:", OVERLAP_FRAC);
-    }
-
-
-    if(WEIGHTED){
-        cerr << "Calculating LD matrix.\n";
-        ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads, LD_SUBSAMPLE);
-        if(!PHASED) releaseGenoFreq(genoFreqDataByChr);
-        winDataByChr = calcwLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
-                                       GLDataByChr, ldDataByChr,
-                                       centro, winsize, error,
-                                       MAX_GAP, USE_GL, M, mu, numThreads);
-        releaseLDData(ldDataByChr);
-    }
-    else{
-        winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
-                                      GLDataByChr,
-                                      centro, winsize, error,
-                                      MAX_GAP, USE_GL);
-    }
-    releaseHapData(hapDataByChr);
-    releaseFreqData(freqDataByChr);
-    if (USE_GL) releaseGLData(GLDataByChr);
-
-    if (RAW_LOD){
-        //Output raw windows
-        try { writeWinData(winDataByChr, indData, mapDataByChr, outfile); }
-        catch (...) { logCurrentException("writing the raw LOD windows"); return 2; }
-    }
-
-    if (AUTO_CUTOFF){
-        //if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
-        bool cutoffOK = true;
-        if(kdeResult == NULL)
-        {
-            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK);
-        }
-        else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize, cutoffOK);
-
-        //A failed KDE used to return -1, which main then used as the cutoff and
-        //happily wrote a complete, plausible-looking .roh.bed from it.
-        if (!cutoffOK)
-        {
-            LOG.err("ERROR: Could not select a LOD score cutoff automatically. Stopping.");
-            return 2;
-        }
-
-        LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
-    }
-    else cout << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
-
-    cout << "Assembling ROH windows\n";
-    //Assemble ROH for each individual in each pop
-    ROHLength *rohLength;
-    vector< ROHData * > *rohDataByInd = assembleROHWindows(winDataByChr, mapDataByChr, indData,
-                                        centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC, CM);
-
-    releaseWinData(winDataByChr);
-    
-    if (AUTO_BOUNDS){
-        cout << "Fitting " << NCLUST << "-component GMM for size classification\n";
-        //A GMM with more components than observations has no solution; the GMM
-        //used to throw an int that nothing caught, so the process died with
-        //SIGABRT after having already done all the work.  Report it instead.
-        if (rohLength == NULL || rohLength->size < NCLUST)
-        {
-            LOG.err("ERROR: Cannot fit a", NCLUST, false);
-            LOG.err("-component GMM to", int(rohLength == NULL ? 0 : rohLength->size), false);
-            LOG.err(" ROH.");
-            LOG.err("\tNo (or too few) ROH were called, so size classes cannot be chosen automatically.");
-            LOG.err("\tCheck --lod-cutoff, or pass --size-bounds to set the class boundaries yourself.");
-            return 2;
-        }
-        try {
-            boundSizes = selectSizeClasses(rohLength, NCLUST);
-        }
-        catch (...) {
-            logCurrentException("GMM size-class fitting");
-            LOG.err("\tPass --size-bounds to set the ROH size class boundaries explicitly.");
-            return 2;
-        }
-        LOG.logv("Selected ROH size boundaries = (", boundSizes, false);
-        LOG.log(" )");
-    }
-    else{
-        LOG.logv("User provided ROH size boundaries = (", boundSizes, false);
-        LOG.log(" )");
-    }
-    //Output ROH calls to file, one for each individual
-    //includes A/B/C/etc size classifications
-    cout << "Writing ROH tracts.\n";
-    //The writers throw 0 when they cannot open their output, and nothing
-    //caught it: the calls run after every other stage, so an output path that
-    //became unwritable turned a complete analysis into SIGABRT with the
-    //results discarded.  Reported and carried to the exit status instead, so
-    //the cleanup below still runs.
-    int writeStatus = 0;
-    try
-    {
-        writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, boundSizes, indData->pop, VERSION, CM);
-
-        if (params->getBoolFlag(ARG_FROH))
-        {
-            writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
-                      indData->pop, centro, CM);
-        }
-    }
-    catch (...) { logCurrentException("writing the ROH calls"); writeStatus = 2; }
 
     //Machine-readable record of what this run actually did.  The auto-selected
     //values were previously only prose lines in the .log, which is what the
@@ -510,9 +626,13 @@ int main(int argc, char *argv[])
         vector< pair<string,string> > resolved;
         ostringstream v;
         v << SEED;                        resolved.push_back(make_pair("seed", v.str()));
-        v.str(""); v << winsize;          resolved.push_back(make_pair("winsize", v.str()));
-        v.str(""); v << OVERLAP_FRAC;     resolved.push_back(make_pair("overlap_frac", v.str()));
-        v.str(""); v << LOD_CUTOFF;       resolved.push_back(make_pair("lod_cutoff", v.str()));
+        //From the RESULT, not from opt: these four are selected per population
+        //and the option struct still holds whatever the command line said.
+        //Reading opt here would have recorded the starting window size under
+        //--auto-winsize, and the sentinel cutoff under the automatic one.
+        v.str(""); v << pop.winsize;      resolved.push_back(make_pair("winsize", v.str()));
+        v.str(""); v << pop.overlapFrac;  resolved.push_back(make_pair("overlap_frac", v.str()));
+        v.str(""); v << pop.lodCutoff;    resolved.push_back(make_pair("lod_cutoff", v.str()));
         v.str(""); v << KDE_THIN_STEP;    resolved.push_back(make_pair("kde_thin_step", v.str()));
         v.str(""); v << mapDataByChr->size(); resolved.push_back(make_pair("chromosomes_analysed", v.str()));
         v.str(""); v << "[";
@@ -523,7 +643,7 @@ int main(int argc, char *argv[])
         }
         v << "]";                         resolved.push_back(make_pair("populations", v.str()));
         v.str(""); v << "[";
-        for (unsigned int i = 0; i < boundSizes.size(); i++) { if (i) v << ", "; v << boundSizes[i]; }
+        for (unsigned int i = 0; i < pop.boundSizes.size(); i++) { if (i) v << ", "; v << pop.boundSizes[i]; }
         v << "]";                         resolved.push_back(make_pair("size_bounds", v.str()));
         v.str(""); v << (AUTO_CUTOFF ? "true" : "false");  resolved.push_back(make_pair("cutoff_was_automatic", v.str()));
         v.str(""); v << (AUTO_BOUNDS ? "true" : "false");  resolved.push_back(make_pair("bounds_were_automatic", v.str()));
@@ -535,9 +655,9 @@ int main(int argc, char *argv[])
     delete centro;
 
     releaseIndData(indData);
-    releaseROHLength(rohLength);
-    releaseROHData(rohDataByInd);
-    if(kdeResult != NULL) releaseKDEResult(kdeResult);
+    //rohLength, rohDataByInd and kdeResult are per-population and released by
+    //analyzePopulation, which is what keeps them from accumulating once the
+    //loop runs more than once.
     releaseMapData(mapDataByChr);
     delete params;
     freeRNG();
