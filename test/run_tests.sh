@@ -1291,6 +1291,72 @@ multi_population() {
     if [ "$fa" = '"lod_cutoff": 2.5' ] && [ "$fb" = '"lod_cutoff": 2.5' ]; then ok
     else bad "--lod-cutoff did not apply to both populations: POPA $fa, POPB $fb"; fi
 
+    # THE acceptance property: a population analysed alongside another must get
+    # exactly what it gets alone.  That holds only because filtering is now per
+    # population -- a site monomorphic in POPA but polymorphic in POPB used to
+    # be retained for POPA, giving it windows it would never have had alone.
+    # 22 individuals in POPA, 23 in POPB; TPED has 4 metadata columns then 2 per
+    # individual, so POPA is fields 5..48 and POPB is 49..94.
+    awk 'BEGIN{OFS="\t"} {printf "%s\t%s\t%s\t%s", $1,$2,$3,$4; for(i=5;i<=48;i++) printf "\t%s", $i; printf "\n"}' \
+        "$MP/two.tped" > "$MP/onlyA.tped"
+    awk 'BEGIN{OFS="\t"} {printf "%s\t%s\t%s\t%s", $1,$2,$3,$4; for(i=49;i<=94;i++) printf "\t%s", $i; printf "\n"}' \
+        "$MP/two.tped" > "$MP/onlyB.tped"
+    head -22 "$MP/two.tfam" > "$MP/onlyA.tfam"
+    tail -23 "$MP/two.tfam" > "$MP/onlyB.tfam"
+    for POP in A B; do
+        # shellcheck disable=SC2086
+        "$GARLIC" --tped "$MP/only$POP.tped" --tfam "$MP/only$POP.tfam" $A --froh \
+            --out "$MP/alone$POP" --quiet --force >/dev/null 2>&1
+        if cmp -s "$MP/alone$POP.roh.bed" "$MP/both.POP$POP.roh.bed"; then ok
+        else bad "POP$POP analysed alongside another differs from POP$POP analysed alone"; fi
+        if cmp -s "$MP/alone$POP.froh.tsv" "$MP/both.POP$POP.froh.tsv"; then ok
+        else bad "POP$POP --froh differs between the joint and the solo run"; fi
+    done
+
+    # --freq-file carries one column per population, matched BY NAME, so the
+    # column order does not have to match the order populations appear in the
+    # TFAM.  The file here is written POPB first for exactly that reason.
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" --build hg18 --error 0.001 \
+        --freq-only --out "$MP/ff" --quiet --force >/dev/null 2>&1
+    gz "$MP/ff.freq.gz" | awk 'BEGIN{OFS="\t"}
+        NR==1{print $1,$2,$3,$4,"POPB","POPA"; next}
+        {print $1,$2,$3,$4,1-$5,$5}' > "$MP/wide.freq"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --freq-file "$MP/wide.freq" \
+        --out "$MP/wf" --quiet --force >/dev/null 2>&1
+    # POPA's column is the pooled frequency, so POPA alone with just that column
+    # must reproduce POPA inside the joint run
+    gz "$MP/ff.freq.gz" | awk 'BEGIN{OFS="\t"}
+        NR==1{print $1,$2,$3,$4,"POPA"; next} {print $1,$2,$3,$4,$5}' > "$MP/justA.freq"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/onlyA.tped" --tfam "$MP/onlyA.tfam" $A --freq-file "$MP/justA.freq" \
+        --out "$MP/sA" --quiet --force >/dev/null 2>&1
+    if cmp -s "$MP/sA.roh.bed" "$MP/wf.POPA.roh.bed"; then ok
+    else bad "a population did not use its own column of a multi-population frequency file"; fi
+
+    # a column missing for one of the populations names it
+    gz "$MP/ff.freq.gz" | awk 'BEGIN{OFS="\t"}
+        NR==1{print $1,$2,$3,$4,"POPZ","POPA"; next}
+        {print $1,$2,$3,$4,1-$5,$5}' > "$MP/miss.freq"
+    # shellcheck disable=SC2086
+    if "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --freq-file "$MP/miss.freq" \
+            --out "$MP/msf" --quiet --force 2>&1 | grep -q "no frequency column for population POPB"; then ok
+    else bad "a frequency file missing one population's column did not name it"; fi
+    # shellcheck disable=SC2086
+    expect_exit 2 "a frequency file missing a population's column exits 2" \
+        "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A \
+        --freq-file "$MP/miss.freq" --out "$MP/msf2" --force
+
+    # a ONE-column file is the legacy format and still applies to everything,
+    # so an existing .freq.gz keeps working when the run gains populations
+    gz "$MP/ff.freq.gz" > "$MP/legacy.freq"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --freq-file "$MP/legacy.freq" \
+        --out "$MP/lg" --quiet --force >/dev/null 2>&1
+    if [ -f "$MP/lg.POPA.roh.bed" ] && [ -f "$MP/lg.POPB.roh.bed" ]; then ok
+    else bad "a one-column frequency file was refused for a multi-population run"; fi
+
     # one population keeps the unlabelled names, so nothing existing changes
     gz "$EX/chr21.tfam.gz" > "$MP/one.tfam"
     # shellcheck disable=SC2086

@@ -138,7 +138,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         //Only this population's data: the map, the metadata, the centromere
         //table and the command line belong to the caller.
         releaseHapData(hapDataByChr);
-        releaseFreqData(freqDataByChr);
+        if (freqDataByChr != NULL) releaseFreqData(freqDataByChr);
         if (USE_GL) releaseGLData(GLDataByChr);
         if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
         res.status = POP_DONE;
@@ -191,7 +191,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
                                       MAX_GAP, USE_GL);
     }
     releaseHapData(hapDataByChr);
-    releaseFreqData(freqDataByChr);
+    if (freqDataByChr != NULL) releaseFreqData(freqDataByChr);
     if (USE_GL) releaseGLData(GLDataByChr);
 
     if (RAW_LOD){
@@ -377,6 +377,8 @@ int main(int argc, char *argv[])
     vector< GenoFreqData * > *genoFreqDataByChr = NULL;
     vector< GenoLikeData * > *GLDataByChr = NULL;
     vector< GenMapScaffold *> *scaffoldMapByChr = NULL;
+    //One frequency set per population, when --freq-file supplied them.
+    vector< vector< FreqData * >* > *fileFreq = NULL;
     bool USE_GL = false;
     try
     {
@@ -498,50 +500,46 @@ int main(int argc, char *argv[])
     else //(!AUTO_FREQ)
     {
         cout << "Loading user provided allele frequencies from " << freqfile << "\n";
-        //An empty population list asks for ONE pooled set, which is what this
-        //pipeline still computes.  Per-population requests arrive with the
-        //per-population loop; until then a wide file is refused rather than
-        //having one of its columns picked arbitrarily.
+        //One request, naming the populations this run will analyse.  With a
+        //single population that is an empty list, which asks for one pooled
+        //set and accepts the one-column file every earlier version wrote.
+        //With several it asks for a column each, by name, so the file's column
+        //ORDER does not have to match the order they appear in the TFAM.
         try {
-            vector<string> pooledRequest;
+            vector<string> want;
+            if (populations.size() > 1)
+                for (unsigned int k = 0; k < populations.size(); k++)
+                    want.push_back(populations[k].first);
             vector< vector< FreqData * >* > *sets =
-                readFreqData(freqfile, mapDataByChr, pooledRequest);
-            freqDataByChr = sets->at(0);
-            sets->clear();
-            delete sets;
+                readFreqData(freqfile, mapDataByChr, want);
+            if (populations.size() > 1) fileFreq = sets;
+            else { freqDataByChr = sets->at(0); sets->clear(); delete sets; }
         }
-        catch (...) { logCurrentException("reading the allele frequency file"); return 2; }
+        catch (...)
+        {
+            //Not new, but newly reachable: a wide file adds ways to fail here
+            //(a missing column, a population named in the TFAM and not in the
+            //file), and the genotypes are already loaded by this point.
+            logCurrentException("reading the allele frequency file");
+            releaseHapData(hapDataByChr);
+            if (freqDataByChr != NULL) releaseFreqData(freqDataByChr);
+            if (USE_GL) releaseGLData(GLDataByChr);
+            if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
+            if (scaffoldMapByChr != NULL) releaseGenMapScaffold(scaffoldMapByChr);
+            releaseMapData(mapDataByChr);
+            releaseIndData(indData);
+            delete centro; delete params; freeRNG();
+            return 2;
+        }
     }
 
-//Filter data based on frequency data.
-//Remove all monomorphic sites.
-//If a frequency file is provided that reports
-//a frequency in (0,1) the site will be retained
-//even if it appears monomorphic in the sample.
-
-    int newLoci;
-
-    if (WEIGHTED || CM) {
-        newLoci = filterMonomorphicAndOOBSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, scaffoldMapByChr, USE_GL, PHASED);
-        LOG.log("Monomorphic or out of bounds loci filtered:", numLoci - newLoci);
-        int numInterpolated = interpolateGeneticmap(&mapDataByChr, scaffoldMapByChr);
-
-        LOG.log("Number of genetic map locations interpolated:", numInterpolated);
-        releaseGenMapScaffold(scaffoldMapByChr);
-        if(!PHASED && WEIGHTED) genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
-    }
-    else {
-        newLoci = filterMonomorphicSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr, USE_GL, PHASED);
-        LOG.log("Monomorphic loci filtered:", numLoci - newLoci);
-    }
-
-    LOG.log("Total loci used for analysis:", newLoci);
-
-    numLoci = newLoci;
-
-    if((AUTO_WINSIZE && WEIGHTED) || AUTO_OVERLAP_FRAC){
-        variantDensity = calcDensity(numLoci, mapDataByChr, centro);
-    }
+    //Site filtering happens PER POPULATION, inside the loop below, because
+    //each population filters on its own allele frequencies.  A site
+    //monomorphic in one population can be polymorphic in another, and a
+    //population analysed alongside others has to see the same locus set it
+    //would see alone -- which is the difference between "its frequencies are
+    //its own" and "its analysis is its own".  The scaffold map therefore has
+    //to stay alive until the loop is done.
 
     //chrCoordList->clear();
     //delete chrCoordList;
@@ -641,20 +639,6 @@ int main(int argc, char *argv[])
             if (indData->pop[i].compare(populations[k].first) == 0)
             { popIndex[k].push_back(i); break; }
 
-    if (!singlePop && !AUTO_FREQ)
-    {
-        LOG.err("ERROR: --freq-file with more than one population is not supported yet.");
-        LOG.err("\tThe file format carries one column per population, but the site");
-        LOG.err("\tfiltering that consumes it is still shared across populations.");
-        LOG.err("\tAnalyse one population at a time, or drop --freq-file.");
-        releaseHapData(hapDataByChr);
-        releaseFreqData(freqDataByChr);
-        if (USE_GL) releaseGLData(GLDataByChr);
-        if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
-        releaseMapData(mapDataByChr); releaseIndData(indData);
-        delete centro; delete params; freeRNG();
-        return 1;
-    }
 
     int writeStatus = 0;
     for (unsigned int k = 0; k < populations.size() && writeStatus == 0; k++)
@@ -684,6 +668,7 @@ int main(int argc, char *argv[])
         vector< FreqData * >     *pFreq = freqDataByChr;
         vector< GenoLikeData * > *pGL = GLDataByChr;
         vector< GenoFreqData * > *pGF = genoFreqDataByChr;
+        vector< MapData * >      *pMap = mapDataByChr;
         IndData                  *pInd = indData;
 
         if (!singlePop)
@@ -693,17 +678,75 @@ int main(int argc, char *argv[])
             //two cannot disagree about who is in the population.
             subsetDataByIndex(hapDataByChr, GLDataByChr, indData, popIndex[k],
                               &pHap, &pGL, &pInd, USE_GL, PHASED);
-            pFreq = calcFreqDataForIndices(hapDataByChr, popIndex[k], nresample);
-            pGF = (!PHASED && WEIGHTED) ? calculateGenoFreq(pHap) : NULL;
+            if (fileFreq != NULL)
+            {
+                //Handed over, not copied: analyzePopulation releases pFreq, so
+                //the slot is detached to keep the two from freeing it twice.
+                pFreq = fileFreq->at(k);
+                fileFreq->at(k) = NULL;
+            }
+            else pFreq = calcFreqDataForIndices(hapDataByChr, popIndex[k], nresample);
+            pMap = cloneMapData(mapDataByChr);
+        }
+
+        //Filter on THIS population's frequencies.  A site monomorphic here is
+        //uninformative here, whatever it looks like in another population, and
+        //dropping it is what makes a population's windows the ones it would
+        //have on its own.  With one population this is the filtering that used
+        //to run once before the loop, on the same data, in the same order.
+        {
+            int before = 0;
+            for (unsigned int c = 0; c < pMap->size(); c++) before += pMap->at(c)->nloci;
+            int after;
+            if (WEIGHTED || CM)
+            {
+                after = filterMonomorphicAndOOBSites(&pMap, &pHap, &pFreq, &pGL,
+                                                     scaffoldMapByChr, USE_GL, PHASED);
+                LOG.log("Monomorphic or out of bounds loci filtered:", before - after);
+                int numInterpolated = interpolateGeneticmap(&pMap, scaffoldMapByChr);
+                LOG.log("Number of genetic map locations interpolated:", numInterpolated);
+            }
+            else
+            {
+                after = filterMonomorphicSites(&pMap, &pHap, &pFreq, &pGL, USE_GL, PHASED);
+                LOG.log("Monomorphic loci filtered:", before - after);
+            }
+            LOG.log("Total loci used for analysis:", after);
+            numLoci = after;
+
+            //After filtering, and from this population's own map: the density
+            //that drives --auto-winsize and --auto-overlap-frac is a property
+            //of the sites this population actually uses.
+            if ((AUTO_WINSIZE && WEIGHTED) || AUTO_OVERLAP_FRAC)
+                variantDensity = calcDensity(numLoci, pMap, centro);
+
+            //Genotype frequencies are derived from the filtered genotypes, so
+            //they follow the filtering rather than precede it.
+            if (!PHASED && WEIGHTED)
+            {
+                if (pGF != NULL && pGF != genoFreqDataByChr) releaseGenoFreq(pGF);
+                pGF = calculateGenoFreq(pHap);
+            }
+
+            //filterSites does not prune in place: it builds new vectors and
+            //releases the ones it was given.  With one population those ARE
+            //main's, so main's pointers have to follow, or the release at the
+            //end of the run would free memory that is already gone.
+            if (singlePop)
+            {
+                mapDataByChr = pMap; hapDataByChr = pHap;
+                freqDataByChr = pFreq; GLDataByChr = pGL;
+                genoFreqDataByChr = pGF;
+            }
         }
 
         PopResult pop = analyzePopulation(popOpt, params,
-                                          pHap, pFreq, mapDataByChr,
+                                          pHap, pFreq, pMap,
                                           pGL, pGF,
                                           pInd, centro, USE_GL, variantDensity);
-        //analyzePopulation has released pHap/pFreq/pGL/pGF by now; the
-        //per-population IndData is the caller's.
-        if (!singlePop) releaseIndData(pInd);
+        //analyzePopulation has released pHap/pFreq/pGL/pGF by now; the map and
+        //the per-population IndData are the caller's.
+        if (!singlePop) { releaseIndData(pInd); releaseMapData(pMap); }
 
         if (pop.status == POP_DONE)
         {
@@ -712,7 +755,7 @@ int main(int argc, char *argv[])
             //population.
             if (!singlePop)
             {
-                releaseHapData(hapDataByChr); releaseFreqData(freqDataByChr);
+                releaseHapData(hapDataByChr); if (freqDataByChr != NULL) releaseFreqData(freqDataByChr);
                 if (USE_GL) releaseGLData(GLDataByChr);
                 if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
             }
@@ -767,12 +810,23 @@ int main(int argc, char *argv[])
         }
     }
 
+    //The scaffold is read by every population's filtering and interpolation,
+    //so it is released here rather than after the first one.
+    if (scaffoldMapByChr != NULL) releaseGenMapScaffold(scaffoldMapByChr);
+    if (fileFreq != NULL)
+    {
+        //Whatever the loop did not consume -- everything, if it stopped early.
+        for (unsigned int i = 0; i < fileFreq->size(); i++)
+            if (fileFreq->at(i) != NULL) releaseFreqData(fileFreq->at(i));
+        fileFreq->clear(); delete fileFreq;
+    }
+
     //The global data outlives the loop only when populations were copied out
     //of it; with one population analyzePopulation was handed the originals.
     if (!singlePop)
     {
         releaseHapData(hapDataByChr);
-        releaseFreqData(freqDataByChr);
+        if (freqDataByChr != NULL) releaseFreqData(freqDataByChr);
         if (USE_GL) releaseGLData(GLDataByChr);
         if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
     }

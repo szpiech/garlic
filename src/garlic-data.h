@@ -439,6 +439,14 @@ vector< GenoLikeData * > *readTGLSData(string filename,
                                        IndData *indData);
 
 MapData *initMapData(int nloci);
+
+//A deep copy of the per-chromosome map.
+//
+//Site filtering prunes the map alongside the genotypes, and each population
+//filters on its OWN allele frequencies, so each needs a map it can prune
+//without disturbing the next population's.  MapData is all vectors, so the
+//copy is the vectors copying themselves.
+vector< MapData * > *cloneMapData(const vector< MapData * > *mapDataByChr);
 void releaseMapData(MapData *data);
 void releaseMapData(vector< MapData * > *mapDataByChr);
 

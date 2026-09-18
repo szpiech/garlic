@@ -1945,6 +1945,24 @@ vector< vector< FreqData * >* > *readFreqData(string freqfile,
 }
 
 //allocates the arrays and populates them with MISSING or "--" depending on type
+vector< MapData * > *cloneMapData(const vector< MapData * > *mapDataByChr)
+{
+    vector< MapData * > *copy = new vector< MapData * >;
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+    {
+        const MapData *src = mapDataByChr->at(chr);
+        MapData *dst = new MapData;
+        dst->physicalPos = src->physicalPos;
+        dst->geneticPos  = src->geneticPos;
+        dst->locusName   = src->locusName;
+        dst->allele      = src->allele;
+        dst->nloci       = src->nloci;
+        dst->chr         = src->chr;
+        copy->push_back(dst);
+    }
+    return copy;
+}
+
 MapData *initMapData(int nloci)
 {
     if (nloci < 1)
