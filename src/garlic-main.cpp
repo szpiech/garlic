@@ -348,7 +348,6 @@ int main(int argc, char *argv[])
     bool &AUTO_OVERLAP_FRAC = opt.AUTO_OVERLAP_FRAC;
     bool &PHASED = opt.PHASED;
     int &KDE_THIN_STEP = opt.KDE_THIN_STEP;
-    unsigned long int &SEED = opt.SEED;
 
 //++++++++++Datafile reading++++++++++
     centromere *centro;
@@ -591,64 +590,191 @@ int main(int argc, char *argv[])
     }
 
     //++++++++++Pipeline begins++++++++++
-    //One population for now: enumeratePopulations reported what is present,
-    //and this loop will run over it.  Running it once must reproduce the
-    //previous behaviour exactly, which is what the golden outputs check.
-    PopResult pop = analyzePopulation(opt, params,
-                                      hapDataByChr, freqDataByChr, mapDataByChr,
-                                      GLDataByChr, genoFreqDataByChr,
-                                      indData, centro, USE_GL, variantDensity);
-    if (pop.status == POP_DONE)
+    //Each population is analysed on its own: its own allele frequencies, its
+    //own window size, its own LOD cutoff and its own size classes.  Anything
+    //the user gave explicitly is not re-derived, so --winsize, --lod-cutoff,
+    //--overlap-frac and --size-bounds apply to every population -- that falls
+    //out of analyzePopulation initialising its locals from the option struct.
+    //
+    //Sequentially, not together: the per-population genotype matrix is the
+    //largest structure in the run, and holding one at a time bounds peak
+    //memory by the largest population rather than by their sum.  The inner
+    //stages are already threaded, so nothing is left idle.
+    bool singlePop = (populations.size() <= 1);
+
+    //A population's allele frequencies are estimated from that population
+    //alone, so a small one estimates them coarsely: with n individuals the
+    //only attainable values are multiples of 1/(2n).  Worth saying, because
+    //the split is silent otherwise.
+    if (!singlePop)
     {
-        //--winsize-multi finished the run inside.  Release what the caller owns.
-        releaseMapData(mapDataByChr);
-        releaseIndData(indData);
-        delete centro;
-        delete params;
-        freeRNG();
-        return 0;
-    }
-    int writeStatus = (pop.status == POP_ERROR) ? 2 : 0;
-    if (pop.status == POP_ERROR)
-    {
-        releaseMapData(mapDataByChr);
-        releaseIndData(indData);
-        delete centro;
-        delete params;
-        freeRNG();
-        return 2;
+        int smallest = indData->nind;
+        for (unsigned int k = 0; k < populations.size(); k++)
+            if (populations[k].second < smallest) smallest = populations[k].second;
+        if (smallest < 5)
+        {
+            LOG.err("WARNING: the smallest population has", smallest, false);
+            LOG.err(" individuals.");
+            LOG.err("\tAllele frequencies are estimated within each population, so they");
+            LOG.err("\tresolve only to multiples of 1/(2n) there.");
+        }
+        //Column 1 of a TFAM is garlic's population label, but PLINK calls it
+        //the FAMILY ID and it is often one family -- sometimes one individual
+        //-- per value.  Averaging under two individuals per population is a
+        //much better sign of that than of real populations.
+        if (populations.size() * 2 > (unsigned int)indData->nind)
+        {
+            LOG.err("WARNING:", int(populations.size()), false);
+            LOG.err(" populations for", indData->nind, false);
+            LOG.err(" individuals.");
+            LOG.err("\tgarlic takes the population label from column 1 of the TFAM, which");
+            LOG.err("\tPLINK calls the family ID; if those are family or sample identifiers");
+            LOG.err("\trather than populations, this run is analysing each one separately.");
+            LOG.err("\tUse --pop to supply the population labels.");
+        }
     }
 
-    //Machine-readable record of what this run actually did.  The auto-selected
-    //values were previously only prose lines in the .log, which is what the
-    //documented workflow for reusing a cutoff asks users to parse by hand.
+    //Which individuals belong to each population, in file order.
+    vector< vector<int> > popIndex(populations.size());
+    for (int i = 0; i < indData->nind; i++)
+        for (unsigned int k = 0; k < populations.size(); k++)
+            if (indData->pop[i].compare(populations[k].first) == 0)
+            { popIndex[k].push_back(i); break; }
+
+    if (!singlePop && !AUTO_FREQ)
     {
-        vector< pair<string,string> > resolved;
-        ostringstream v;
-        v << SEED;                        resolved.push_back(make_pair("seed", v.str()));
-        //From the RESULT, not from opt: these four are selected per population
-        //and the option struct still holds whatever the command line said.
-        //Reading opt here would have recorded the starting window size under
-        //--auto-winsize, and the sentinel cutoff under the automatic one.
-        v.str(""); v << pop.winsize;      resolved.push_back(make_pair("winsize", v.str()));
-        v.str(""); v << pop.overlapFrac;  resolved.push_back(make_pair("overlap_frac", v.str()));
-        v.str(""); v << pop.lodCutoff;    resolved.push_back(make_pair("lod_cutoff", v.str()));
-        v.str(""); v << KDE_THIN_STEP;    resolved.push_back(make_pair("kde_thin_step", v.str()));
-        v.str(""); v << mapDataByChr->size(); resolved.push_back(make_pair("chromosomes_analysed", v.str()));
-        v.str(""); v << "[";
-        for (unsigned int i = 0; i < populations.size(); i++)
+        LOG.err("ERROR: --freq-file with more than one population is not supported yet.");
+        LOG.err("\tThe file format carries one column per population, but the site");
+        LOG.err("\tfiltering that consumes it is still shared across populations.");
+        LOG.err("\tAnalyse one population at a time, or drop --freq-file.");
+        releaseHapData(hapDataByChr);
+        releaseFreqData(freqDataByChr);
+        if (USE_GL) releaseGLData(GLDataByChr);
+        if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
+        releaseMapData(mapDataByChr); releaseIndData(indData);
+        delete centro; delete params; freeRNG();
+        return 1;
+    }
+
+    int writeStatus = 0;
+    for (unsigned int k = 0; k < populations.size() && writeStatus == 0; k++)
+    {
+        const string &popName = populations[k].first;
+
+        GarlicOptions popOpt = opt;
+        //Naming: unchanged for one population, so every existing invocation
+        //writes exactly the files it always did.  With more than one, the
+        //label goes in the middle -- <out>.<POP>.roh.bed -- because appending
+        //it after the extension would break every tool that dispatches on it.
+        if (!singlePop)
         {
-            if (i) v << ", ";
-            v << "\"" << populations[i].first << "\"";
+            popOpt.outfile = opt.outfile + "." + popName;
+            LOG.log("");
+            LOG.log("Population:", popName, false);
+            LOG.log(" (", int(popIndex[k].size()), false);
+            LOG.log(" individuals)");
+
+            //A fresh stream per population, derived from the run's seed, so a
+            //population's result does not depend on how many populations
+            //preceded it in the file.  --seed still reproduces the whole run.
+            initRNG(opt.SEED + (unsigned long int)(k));
         }
-        v << "]";                         resolved.push_back(make_pair("populations", v.str()));
-        v.str(""); v << "[";
-        for (unsigned int i = 0; i < pop.boundSizes.size(); i++) { if (i) v << ", "; v << pop.boundSizes[i]; }
-        v << "]";                         resolved.push_back(make_pair("size_bounds", v.str()));
-        v.str(""); v << (AUTO_CUTOFF ? "true" : "false");  resolved.push_back(make_pair("cutoff_was_automatic", v.str()));
-        v.str(""); v << (AUTO_BOUNDS ? "true" : "false");  resolved.push_back(make_pair("bounds_were_automatic", v.str()));
-        try { writeParamsJSON(outfile + ".params.json", params, resolved); }
-        catch (...) { logCurrentException("writing the parameter record"); writeStatus = 2; }
+
+        vector< HapData * >      *pHap = hapDataByChr;
+        vector< FreqData * >     *pFreq = freqDataByChr;
+        vector< GenoLikeData * > *pGL = GLDataByChr;
+        vector< GenoFreqData * > *pGF = genoFreqDataByChr;
+        IndData                  *pInd = indData;
+
+        if (!singlePop)
+        {
+            //Gathered from the global matrix, and the frequencies computed
+            //from the same indices -- not from the gathered copy -- so the
+            //two cannot disagree about who is in the population.
+            subsetDataByIndex(hapDataByChr, GLDataByChr, indData, popIndex[k],
+                              &pHap, &pGL, &pInd, USE_GL, PHASED);
+            pFreq = calcFreqDataForIndices(hapDataByChr, popIndex[k], nresample);
+            pGF = (!PHASED && WEIGHTED) ? calculateGenoFreq(pHap) : NULL;
+        }
+
+        PopResult pop = analyzePopulation(popOpt, params,
+                                          pHap, pFreq, mapDataByChr,
+                                          pGL, pGF,
+                                          pInd, centro, USE_GL, variantDensity);
+        //analyzePopulation has released pHap/pFreq/pGL/pGF by now; the
+        //per-population IndData is the caller's.
+        if (!singlePop) releaseIndData(pInd);
+
+        if (pop.status == POP_DONE)
+        {
+            //--winsize-multi finished inside.  It is a diagnostic over window
+            //sizes, so it ends the run rather than continuing to the next
+            //population.
+            if (!singlePop)
+            {
+                releaseHapData(hapDataByChr); releaseFreqData(freqDataByChr);
+                if (USE_GL) releaseGLData(GLDataByChr);
+                if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
+            }
+            releaseMapData(mapDataByChr); releaseIndData(indData);
+            delete centro; delete params; freeRNG();
+            return 0;
+        }
+        if (pop.status == POP_ERROR) { writeStatus = 2; break; }
+
+        //Machine-readable record of what this run actually did.  The
+        //auto-selected values were previously only prose lines in the .log,
+        //which is what the documented workflow for reusing a cutoff asks users
+        //to parse by hand.  One per population, named like its other outputs.
+        {
+            vector< pair<string,string> > resolved;
+            ostringstream v;
+            v << opt.SEED;                    resolved.push_back(make_pair("seed", v.str()));
+            if (!singlePop)
+            {
+                //Quoted here: writeParamsJSON emits a resolved value verbatim,
+                //so a bare label produced invalid JSON -- caught by --load-params
+                //failing to parse its own output.
+                v.str(""); v << "\"" << popName << "\"";
+                resolved.push_back(make_pair("population", v.str()));
+                v.str(""); v << (opt.SEED + (unsigned long int)(k));
+                resolved.push_back(make_pair("population_seed", v.str()));
+            }
+            //From the RESULT, not from opt: these four are selected per
+            //population and the option struct still holds whatever the command
+            //line said.  Reading opt here would have recorded the starting
+            //window size under --auto-winsize, and the sentinel cutoff under
+            //the automatic one.
+            v.str(""); v << pop.winsize;      resolved.push_back(make_pair("winsize", v.str()));
+            v.str(""); v << pop.overlapFrac;  resolved.push_back(make_pair("overlap_frac", v.str()));
+            v.str(""); v << pop.lodCutoff;    resolved.push_back(make_pair("lod_cutoff", v.str()));
+            v.str(""); v << KDE_THIN_STEP;    resolved.push_back(make_pair("kde_thin_step", v.str()));
+            v.str(""); v << mapDataByChr->size(); resolved.push_back(make_pair("chromosomes_analysed", v.str()));
+            v.str(""); v << "[";
+            for (unsigned int i = 0; i < populations.size(); i++)
+            {
+                if (i) v << ", ";
+                v << "\"" << populations[i].first << "\"";
+            }
+            v << "]";                         resolved.push_back(make_pair("populations", v.str()));
+            v.str(""); v << "[";
+            for (unsigned int i = 0; i < pop.boundSizes.size(); i++) { if (i) v << ", "; v << pop.boundSizes[i]; }
+            v << "]";                         resolved.push_back(make_pair("size_bounds", v.str()));
+            v.str(""); v << (AUTO_CUTOFF ? "true" : "false");  resolved.push_back(make_pair("cutoff_was_automatic", v.str()));
+            v.str(""); v << (AUTO_BOUNDS ? "true" : "false");  resolved.push_back(make_pair("bounds_were_automatic", v.str()));
+            try { writeParamsJSON(popOpt.outfile + ".params.json", params, resolved); }
+            catch (...) { logCurrentException("writing the parameter record"); writeStatus = 2; }
+        }
+    }
+
+    //The global data outlives the loop only when populations were copied out
+    //of it; with one population analyzePopulation was handed the originals.
+    if (!singlePop)
+    {
+        releaseHapData(hapDataByChr);
+        releaseFreqData(freqDataByChr);
+        if (USE_GL) releaseGLData(GLDataByChr);
+        if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
     }
 
     //centro is read by writeFROH; it used to be deleted before the writers ran.

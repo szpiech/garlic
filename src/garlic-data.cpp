@@ -3354,25 +3354,11 @@ void checkIndData(IndData *indData, const string &source)
         else indList[ind] = 1;
     }
 
-    //Allele frequencies are computed by pooling every individual in the file,
-    //and the LOD ratio is parameterised by population allele frequency.
-    //Pooling distinct populations inflates heterozygosity relative to any one
-    //of them and biases the autozygous/non-autozygous ratio, so this is worth
-    //saying out loud even though it is allowed.
-    for (int i = 1; i < indData->nind; i++)
-    {
-        if (indData->pop[i].compare(indData->pop[0]) != 0)
-        {
-            LOG.err("WARNING: Found multiple population IDs in", source, false);
-            LOG.err(" (e.g.", indData->pop[0], false);
-            LOG.err(",", indData->pop[i], false);
-            LOG.err(").");
-            LOG.err("\tAllele frequencies are computed by pooling ALL individuals in the file,");
-            LOG.err("\twhich biases the LOD scores for every population present.");
-            LOG.err("\tRun each population separately, or supply --freq-file.");
-            break;
-        }
-    }
+    //Nothing to warn about any more: several populations in one file are
+    //analysed separately, each with its own allele frequencies, and
+    //enumeratePopulations logs which ones were found.  The warning that used
+    //to live here told the user to "run each population separately", which is
+    //now what garlic does by itself.
 
     return;
 }

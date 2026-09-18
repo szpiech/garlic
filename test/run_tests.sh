@@ -441,10 +441,15 @@ ind_metadata() {
     expect_exit 0 "two populations in one TFAM still runs" "$GARLIC" --tped "$EX/chr21.tped.gz" \
         --tfam "$WORK/twopop.tfam" --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 \
         --size-bounds 500000 1000000 --out "$WORK/i2" --force
+    # This used to warn that frequencies were pooled and tell the user to run
+    # each population separately.  garlic now does exactly that by itself, so
+    # the run REPORTS the split instead of warning about it.
     if "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$WORK/twopop.tfam" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/i2" --force \
-            2>&1 | grep -q "Found multiple population IDs"; then ok
-    else bad "the pooled-population warning is missing"; fi
+            2>&1 | grep -q "Populations found: 2"; then ok
+    else bad "a two-population TFAM did not report the populations it found"; fi
+    if [ -f "$WORK/i2.OTHERPOP.roh.bed" ] && [ ! -f "$WORK/i2.roh.bed" ]; then ok
+    else bad "a two-population TFAM did not produce per-population output files"; fi
 
     # A single-population TFAM must NOT warn.
     if "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --winsize 60 \
@@ -528,13 +533,13 @@ ind_metadata() {
     if cmp -s "$WORK/pg.notrack" "$WORK/pn.notrack"; then ok
     else bad "--pop changed the calls, not just the labels"; fi
 
-    # checkIndData must see the OVERRIDDEN labels, which is why applyPopFile
-    # runs before it: a single-population TFAM relabelled into two populations
-    # by --pop must warn.
+    # enumeratePopulations must see the OVERRIDDEN labels, which is why
+    # applyPopFile runs before it: a single-population TFAM relabelled into two
+    # populations by --pop must be ANALYSED as two.
     # shellcheck disable=SC2086
     if "$GARLIC" $POPBASE --pop "$WORK/twopop.pop" --out "$WORK/p3" --force 2>&1 \
-            | grep -q "Found multiple population IDs"; then ok
-    else bad "--pop introducing two populations did not warn"; fi
+            | grep -q "Populations found: 2"; then ok
+    else bad "--pop introducing two populations was not split"; fi
 
     # --pop's sex column must feed the sex-chromosome warning, which is the
     # reason the column exists.
@@ -1149,7 +1154,10 @@ half_calls() {
     echo "== half calls =="
     HC=$WORK/hc; mkdir -p "$HC"
 
-    printf 'f1\ti1\t0\t0\t0\t0\nf2\ti2\t0\t0\t0\t0\nf3\ti3\t0\t0\t0\t0\nf4\ti4\t0\t0\t0\t0\n' > "$HC/h.tfam"
+    # ONE population: column 1 of a TFAM is garlic's population label, so four
+    # distinct values here would be four one-individual populations, and the
+    # outputs would be named <out>.<POP>.roh.bed rather than <out>.roh.bed.
+    printf 'P\ti1\t0\t0\t0\t0\nP\ti2\t0\t0\t0\t0\nP\ti3\t0\t0\t0\t0\nP\ti4\t0\t0\t0\t0\n' > "$HC/h.tfam"
     # rsHALF carries the half call; the rest exist only so a window can form
     # (--winsize must be > 1).
     {
@@ -1218,6 +1226,81 @@ half_calls() {
 }
 
 # ---------------------------------------------------------------------------
+# 4j. Multiple populations
+# ---------------------------------------------------------------------------
+# Several populations in one run are analysed SEPARATELY: each gets allele
+# frequencies, a LOD cutoff and size classes from its own individuals, and its
+# own output files.  Anything given explicitly on the command line is not
+# re-derived, so it applies to every population.
+#
+# The fixture relabels the tracked chr21 TFAM into two halves, so no new data
+# is needed and the genotypes are the ones every other stage uses.
+multi_population() {
+    echo "== multiple populations =="
+    MP=$WORK/mp; mkdir -p "$MP"
+    gz "$EX/chr21.tped.gz" > "$MP/two.tped"
+    gz "$EX/chr21.tfam.gz" | awk 'BEGIN{OFS="\t"} {$1 = (NR<=22 ? "POPA" : "POPB"); print}' > "$MP/two.tfam"
+    A="--build hg18 --winsize 60 --error 0.001"
+
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --froh \
+        --out "$MP/both" --quiet --force >/dev/null 2>&1
+
+    # named per population, and NOT under the bare basename
+    if [ -f "$MP/both.POPA.roh.bed" ] && [ -f "$MP/both.POPB.roh.bed" ]; then ok
+    else bad "a two-population run did not write <out>.<POP>.roh.bed for both"; fi
+    if [ ! -f "$MP/both.roh.bed" ]; then ok
+    else bad "a two-population run also wrote the unlabelled <out>.roh.bed"; fi
+    if [ -f "$MP/both.POPA.froh.tsv" ] && [ -f "$MP/both.POPB.froh.tsv" ]; then ok
+    else bad "--froh did not follow the per-population naming"; fi
+
+    # each population contains only its own individuals
+    na=$(grep -c '^track' "$MP/both.POPA.roh.bed" 2>/dev/null || echo 0)
+    nb=$(grep -c '^track' "$MP/both.POPB.roh.bed" 2>/dev/null || echo 0)
+    if [ "$na" -eq 22 ] && [ "$nb" -eq 23 ]; then ok
+    else bad "per-population tracks: POPA $na (expected 22), POPB $nb (expected 23)"; fi
+
+    # the analysis really was separate: two populations of the same data at the
+    # same window size must not land on the same automatically chosen cutoff
+    ca=$(grep -o '"lod_cutoff": [^,}]*' "$MP/both.POPA.params.json" 2>/dev/null | head -1)
+    cb=$(grep -o '"lod_cutoff": [^,}]*' "$MP/both.POPB.params.json" 2>/dev/null | head -1)
+    if [ -n "$ca" ] && [ "$ca" != "$cb" ]; then ok
+    else bad "both populations selected the same LOD cutoff ($ca); the analysis may not be separate"; fi
+
+    # each run record names its population and carries its own derived seed
+    sa=$(grep -o '"population_seed": [0-9]*' "$MP/both.POPA.params.json" 2>/dev/null)
+    sb=$(grep -o '"population_seed": [0-9]*' "$MP/both.POPB.params.json" 2>/dev/null)
+    if [ -n "$sa" ] && [ "$sa" != "$sb" ]; then ok
+    else bad "the two populations share a derived seed ($sa)"; fi
+
+    # the record must be valid JSON.  --load-params parses it, which is a
+    # stronger check than grep: an unquoted population label passed grep and
+    # broke every JSON reader.
+    # shellcheck disable=SC2086
+    "$GARLIC" --load-params "$MP/both.POPA.params.json" --tped "$MP/two.tped" \
+        --tfam "$MP/two.tfam" --out "$MP/rt" --quiet --force >/dev/null 2>&1
+    if [ -f "$MP/rt.POPA.roh.bed" ]; then ok
+    else bad "a per-population params.json could not be read back with --load-params"; fi
+
+    # an explicit value is NOT re-derived per population: both must use it
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --lod-cutoff 2.5 \
+        --size-bounds 500000 1000000 --out "$MP/fixed" --quiet --force >/dev/null 2>&1
+    fa=$(grep -o '"lod_cutoff": [^,}]*' "$MP/fixed.POPA.params.json" 2>/dev/null | head -1)
+    fb=$(grep -o '"lod_cutoff": [^,}]*' "$MP/fixed.POPB.params.json" 2>/dev/null | head -1)
+    if [ "$fa" = '"lod_cutoff": 2.5' ] && [ "$fb" = '"lod_cutoff": 2.5' ]; then ok
+    else bad "--lod-cutoff did not apply to both populations: POPA $fa, POPB $fb"; fi
+
+    # one population keeps the unlabelled names, so nothing existing changes
+    gz "$EX/chr21.tfam.gz" > "$MP/one.tfam"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" $A --lod-cutoff 2.5 \
+        --size-bounds 500000 1000000 --out "$MP/one" --quiet --force >/dev/null 2>&1
+    if [ -f "$MP/one.roh.bed" ] && [ ! -f "$MP/one.POPA.roh.bed" ]; then ok
+    else bad "a single-population run did not use the unlabelled output names"; fi
+}
+
+# ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
 params_roundtrip() {
@@ -1277,6 +1360,7 @@ vcf_likelihoods
 threads
 freq_file_format
 half_calls
+multi_population
 outdir_paths
 exit_codes
 params_roundtrip
