@@ -87,8 +87,10 @@ directly; on Linux libstdc++ implements it over pthreads, so the Makefile still 
 -pthread there, but no pthreads library is named or vendored on any platform.  A static
 Linux build additionally wraps -lpthread in --whole-archive, because libstdc++ decides at
 run time whether threading is available by testing a weak symbol that a static link can
-otherwise leave out.  win32 builds link libz.a from lib/win32, and require a MinGW GCC
-configured with the POSIX threading model, which is what supplies std::thread there.
+otherwise leave out.  win32 builds take zlib from the MinGW toolchain as well
+(mingw-w64-x86_64-zlib under MINGW64, mingw-w64-i686-zlib under MINGW32), and require a
+MinGW GCC configured with the POSIX threading model, which is what supplies std::thread
+there.
 
 GNU GSL and FIGTree were previously required and are no longer used.  FIGTree was replaced
 by a direct Gaussian sum, which made the KDE reproducible; GSL was replaced by

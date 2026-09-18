@@ -70,8 +70,8 @@ GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 # GSL is no longer used.  garlic-math.cpp provides the ten routines it was
 # linked for, reproducing each bit for bit (see that file's header), so the
 # per-platform libgsl.a/libgslcblas.a archives are not needed and neither is
-# a system GSL.  The only remaining external dependency is zlib -- from the
-# system on Linux and macOS, from lib/win32/libz.a on win32.  Threading is
+# a system GSL.  The only remaining external dependency is zlib, and it now
+# comes from the toolchain on EVERY platform, MinGW included.  Threading is
 # std::thread, so no pthreads library is linked by name on any platform
 # (-pthread on linux is a toolchain flag, not a vendored archive).
 # figtree/ANN are no longer linked: the KDE evaluates its Gaussian sum directly
@@ -129,8 +129,13 @@ else ifeq ($(PLATFORM),win32)
   # libstdc++ does not define std::thread at all and the build fails at compile
   # time rather than producing a subtly single-threaded binary.
   #
-  # UNTESTED: no Windows toolchain is available to me, and CI has no Windows
-  # runner.  zlib is still linked from lib/win32.
+  # CI does build this branch now (the `windows` job, msys2 MINGW64), so it is
+  # no longer untested -- though it is still the one platform that cannot be
+  # built or run locally by whoever is editing this file.
+  #
+  # zlib comes from mingw-w64-x86_64-zlib via -lz, NOT from lib/win32: that
+  # archive is 32-bit i386 (COFF machine 0x014c) and a 64-bit MinGW skips it as
+  # incompatible, which is how the first run of the windows job failed.
   ARCHFLAGS =
   # zlib comes from -lz on the link line like every other platform now.
   LINK_OPTS = -static-libgcc -static-libstdc++

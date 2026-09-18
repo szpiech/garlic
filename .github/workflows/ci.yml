@@ -244,9 +244,12 @@ jobs:
       - name: Build
         working-directory: src
         run: |
-          # No PLATFORM= here on purpose: uname -s reports MINGW64_NT-* and the
-          # autodetect must map that to win32 by itself.  If it ever regresses
-          # to linux this build looks for ../lib/linux and fails loudly.
+          # No PLATFORM= here on purpose: uname -s reports MINGW64_NT-* and
+          # the autodetect must map that to win32 by itself.  A regression to
+          # linux would no longer fail at the link -- there is no -L on the
+          # link line any more and zlib is -lz everywhere -- so it could pass
+          # here while building with the wrong flags, which is why the check
+          # below reads the platform back out of the Makefile.
           make
           # garlic.exe by name, not ./garlic: the target is garlic$(EXE) and
           # MinGW's ld produces the .exe.  The MSYS2 runtime would resolve the

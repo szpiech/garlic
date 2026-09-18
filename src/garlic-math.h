@@ -50,6 +50,19 @@ double garlicFitSumsq(const double *x, const double *y, size_t n);
 //cause.  Throws int 1, which is what the GMM's callers already catch.
 double garlicLogChecked(double x, const char *what);
 
+//M_PI is NOT standard C++.  It is an X/Open extension: glibc and Apple's libc
+//define it from <cmath> unconditionally, but MinGW follows MSVC and defines it
+//only under _USE_MATH_DEFINES, so a MinGW build fails with "'M_PI' was not
+//declared in this scope".  devel got it from gsl/gsl_math.h, which defines it;
+//dropping GSL in 0bdc179 removed that, the same way it removed the transitive
+//<math.h> behind the unqualified isnan (9724178).
+//
+//Defining it here rather than setting _USE_MATH_DEFINES: that macro only works
+//if it precedes the FIRST <cmath> anywhere in the translation unit, which is a
+//property of include order that nothing enforces.  garlic-math.h is the
+//replacement for gsl_math.h, so the constant belongs with it.
+const double GARLIC_PI = 3.14159265358979323846;
+
 //----------------------------------------------------------------- root finding
 //Brent's method on a bracketing interval, reproducing gsl_root_fsolver_brent
 //driven by gsl_root_test_interval(lo, hi, 0, epsrel).  Reproduced rather than

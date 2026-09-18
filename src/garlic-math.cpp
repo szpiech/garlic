@@ -79,7 +79,7 @@ void garlicSortIndex(size_t *p, const double *data, size_t n)
 double garlicGaussianPDF(double x, double sigma)
 {
     const double u = x / fabs(sigma);
-    return (1.0 / (sqrt(2.0 * M_PI) * fabs(sigma))) * exp(-u * u / 2.0);
+    return (1.0 / (sqrt(2.0 * GARLIC_PI) * fabs(sigma))) * exp(-u * u / 2.0);
 }
 
 double garlicFitSumsq(const double *x, const double *y, size_t n)

@@ -62,8 +62,6 @@
 #include <iomanip>
 #include <cmath>
 #include "garlic-math.h"
-#include <cmath>
-#include "garlic-math.h"
 #include <limits>
 #include <ctime>
 #include "gmm.h"
@@ -221,7 +219,7 @@ GMM::~GMM()
 
 double GMM::normalLog(double x, double mean, double var)
 {
-  const static double C = (-0.5 * log(2 * M_PI));
+  const static double C = (-0.5 * log(2 * GARLIC_PI));
   return C - (0.5 * garlicLogChecked(var, "GMM component variance")) - (x - mean) * (x - mean) / (2.0 * var);
 }
 

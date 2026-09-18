@@ -3,7 +3,6 @@
 #include "garlic-options.h"
 #include <iostream>
 #include <cstdio>
-#include <unistd.h>
 #include <fstream>
 #include <sstream>
 #include <cmath>
