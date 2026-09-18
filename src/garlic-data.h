@@ -301,14 +301,23 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                  int nresample, bool PHASED, bool AUTO_FREQ, bool PASS_ONLY,
                  string GL_TYPE, vector<string> &sampleIDs);
 
-void freqOnly(string tpedfile, string outfile, int nresample, char TPED_MISSING);
+//popOfInd carries one population label per individual, in file order.  Empty,
+//or all one label, gives the single FREQ column every earlier version wrote.
+//With several labels the output is the wide format -- one column per
+//population -- which is what --freq-file reads back.
+void freqOnly(string tpedfile, string outfile, int nresample, char TPED_MISSING,
+              const vector<string> &popOfInd);
 
 //The --freq-only pass for VCF input.  Streams like freqOnly rather than going
 //through loadVCFData, which is the point of --freq-only: the genotypes are
 //never held.  Writes the same five columns, with the ALT allele in the ALLELE
 //column, so readFreqData's orientation check makes the file interchangeable
 //with one written from a TPED.
-void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY);
+//A VCF carries no population labels, so they can only come from --pop.  The
+//file is applied to the sample IDs on the #CHROM line; pass DEFAULT_POP (or
+//an empty string) for the pooled single-column output.
+void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
+                 const string &popfile);
 
 double calcDensity(int numLoci, vector< MapData * > *mapDataByChr, centromere *centro);
 

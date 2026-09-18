@@ -1449,6 +1449,53 @@ multi_population() {
             | grep -q 'ERROR: Cannot fit a'; then ok
     else bad "the single-population failure message changed"; fi
 
+    # --freq-only streams the input rather than loading it, so it is a SECOND
+    # implementation of the allele-frequency rule.  With several populations it
+    # writes the same wide file, and the two must agree exactly -- if they ever
+    # drift, one of them is wrong.
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" --build hg18 --error 0.001 \
+        --freq-only --out "$MP/fo" --quiet --force >/dev/null 2>&1
+    if gz "$MP/fo.freq.gz" | head -1 | grep -q 'ALLELE.*POPA.*POPB'; then ok
+    else bad "--freq-only did not write a per-population frequency file"; fi
+    if cmp -s "$(gz "$MP/fo.freq.gz" > "$MP/fo.txt"; echo "$MP/fo.txt")" \
+              "$(gz "$MP/both.freq.gz" > "$MP/bo.txt"; echo "$MP/bo.txt")"; then ok
+    else bad "--freq-only and the full pipeline disagree about the frequencies"; fi
+
+    # and it feeds straight back
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --freq-file "$MP/fo.freq.gz" \
+        --out "$MP/fort" --quiet --force >/dev/null 2>&1
+    if cmp -s "$MP/fort.POPA.roh.bed" "$MP/both.POPA.roh.bed"; then ok
+    else bad "a --freq-only file did not reproduce the run"; fi
+
+    # --pool-populations asks for the single pooled column, whatever the labels
+    # say -- the same escape hatch as for the analysis itself.
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" --build hg18 --error 0.001 \
+        --freq-only --pool-populations --out "$MP/fop" --quiet --force >/dev/null 2>&1
+    if gz "$MP/fop.freq.gz" | head -1 | grep -q 'ALLELE.FREQ$'; then ok
+    else bad "--freq-only --pool-populations did not write a single pooled column"; fi
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" --build hg18 --error 0.001 \
+        --freq-only --out "$MP/fo1" --quiet --force >/dev/null 2>&1
+    if cmp -s "$(gz "$MP/fop.freq.gz" > "$MP/fop.txt"; echo "$MP/fop.txt")" \
+              "$(gz "$MP/fo1.freq.gz" > "$MP/fo1.txt"; echo "$MP/fo1.txt")"; then ok
+    else bad "--freq-only --pool-populations differs from the single-population run"; fi
+
+    # --pop supplies the labels, and --pool-populations still overrides them
+    cut -f2 "$MP/two.tfam" | awk '{print $1"\t"(NR<=22?"PX":"PY")}' > "$MP/lab.pop"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" --pop "$MP/lab.pop" --build hg18 \
+        --error 0.001 --freq-only --out "$MP/fpop" --quiet --force >/dev/null 2>&1
+    if gz "$MP/fpop.freq.gz" | head -1 | grep -q 'ALLELE.*PX.*PY'; then ok
+    else bad "--pop did not reach --freq-only"; fi
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" --pop "$MP/lab.pop" --build hg18 \
+        --error 0.001 --freq-only --pool-populations --out "$MP/fpopp" --quiet --force >/dev/null 2>&1
+    if gz "$MP/fpopp.freq.gz" | head -1 | grep -q 'ALLELE.FREQ$'; then ok
+    else bad "--pool-populations did not override --pop under --freq-only"; fi
+
     # one population keeps the unlabelled names, so nothing existing changes
     gz "$EX/chr21.tfam.gz" > "$MP/one.tfam"
     # shellcheck disable=SC2086

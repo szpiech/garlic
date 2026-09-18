@@ -566,7 +566,28 @@ MapData *initMapData(const vector<double> &geneticPos, const vector<pos_t> &phys
     return mapData;
 }
 
-void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
+//Distinct labels in order of first appearance -- the same rule
+//enumeratePopulations uses -- plus, for each individual, which one it is.
+//Returns an empty name list when there is nothing to split on, which is the
+//signal to write the single-column format.
+static vector<int> groupPopulations(const vector<string> &popOfInd,
+                                    vector<string> &names)
+{
+    names.clear();
+    vector<int> idx(popOfInd.size(), 0);
+    for (unsigned int i = 0; i < popOfInd.size(); i++)
+    {
+        unsigned int k = 0;
+        for (; k < names.size(); k++) if (names[k] == popOfInd[i]) break;
+        if (k == names.size()) names.push_back(popOfInd[i]);
+        idx[i] = int(k);
+    }
+    if (names.size() <= 1) names.clear();
+    return idx;
+}
+
+void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
+                 const string &popfile)
 {
     GarlicRNG *r = getRNG();
 
@@ -578,7 +599,12 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
         LOG.err("ERROR: Failed to open", freqoutfile);
         throw 0;
     }
-    fout << "CHR\tSNP\tPOS\tALLELE\tFREQ\n";
+    //Filled from the #CHROM line and --pop, below: a VCF carries no
+    //population labels of its own.
+    vector<string> popNames;
+    vector<int> popOf;
+    int npop = 1;
+
 
     igzstream fin;
     fin.open(vcffile.c_str());
@@ -615,6 +641,36 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
             numInd = ncols - VCF_FIXED;
             haveHeader = true;
             LOG.log("Samples in the VCF:", numInd);
+
+            if (!popfile.empty() && popfile.compare("none") != 0)
+            {
+                //The sample IDs, so --pop can be applied to them.  Reusing
+                //applyPopFile rather than re-parsing here keeps one reader
+                //for the file and one set of error messages.
+                vector<string> sampleIDs;
+                {
+                    stringstream hs(line);
+                    string tok;
+                    for (int c = 0; c < VCF_FIXED && hs >> tok; c++) ;
+                    while (hs >> tok) sampleIDs.push_back(tok);
+                }
+                IndData *tmp = initIndData(int(sampleIDs.size()));
+                for (unsigned int c = 0; c < sampleIDs.size(); c++)
+                {
+                    tmp->indID[c] = sampleIDs[c];
+                    tmp->pop[c]   = "unknown";
+                    tmp->sex[c]   = 0;
+                }
+                applyPopFile(popfile, tmp);
+                popOf = groupPopulations(tmp->pop, popNames);
+                releaseIndData(tmp);
+                if (!popNames.empty()) npop = int(popNames.size());
+            }
+
+            fout << "CHR\tSNP\tPOS\tALLELE";
+            if (popNames.empty()) fout << "\tFREQ";
+            else for (int p = 0; p < npop; p++) fout << "\t" << popNames[p];
+            fout << "\n";
             continue;
         }
         if (!haveHeader)
@@ -657,7 +713,7 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
         int gtIndex = gtIndexOf(fmt);
         if (gtIndex < 0) continue;
 
-        double nalleles = 0, total = 0;
+        vector<double> nallelesBy(npop, 0.0), totalBy(npop, 0.0);
         for (int i = 0; i < numInd; i++)
         {
             p = skipSpace(p, pEnd);
@@ -686,10 +742,19 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
                 throw 0;
             }
             p = tEnd;
-            addAlleleCounts(geno_t(dosage), nalleles, total);
+            //Two allele columns per sample in a TPED; here one genotype per
+            //sample, so the sample index is the column index directly.
+            {
+                //One genotype per sample here, so the loop index IS the
+                //sample index -- unlike a TPED, which has two columns each.
+                int pp = (popNames.empty() || i >= int(popOf.size())) ? 0 : popOf[i];
+                addAlleleCounts(geno_t(dosage), nallelesBy[pp], totalBy[pp]);
+            }
         }
 
-        double freq = alleleFrequency(nalleles, total, nresample, r);
+        vector<double> freqBy(npop);
+        for (int pp = 0; pp < npop; pp++)
+            freqBy[pp] = alleleFrequency(nallelesBy[pp], totalBy[pp], nresample, r);
 
         //ALT in the ALLELE column.  readFreqData compares it against
         //mapData->allele and flips to 1-f on a mismatch, so this file is
@@ -705,7 +770,9 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
             nm = ns.str();
         }
         fout << checkChrName(chr) << "\t" << nm
-             << "\t" << ppos << "\t" << alt[0] << "\t" << freq << endl;
+             << "\t" << ppos << "\t" << alt[0];
+        for (int pp = 0; pp < npop; pp++) fout << "\t" << freqBy[pp];
+        fout << "\n";
         nwritten++;
     }
 
@@ -721,7 +788,8 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
     fout.close();
 }
 
-void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING){
+void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING,
+              const vector<string> &popOfInd){
     
     GarlicRNG *r = getRNG();
 
@@ -734,7 +802,15 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
         throw 0;
     }
 
-    fout << "CHR\tSNP\tPOS\tALLELE\tFREQ\n";
+    vector<string> popNames;
+    vector<int> popOf = groupPopulations(popOfInd, popNames);
+    const int npop = popNames.empty() ? 1 : int(popNames.size());
+
+    //One column when there is one population, headed FREQ, exactly as before.
+    fout << "CHR\tSNP\tPOS\tALLELE";
+    if (popNames.empty()) fout << "\tFREQ";
+    else for (int p = 0; p < npop; p++) fout << "\t" << popNames[p];
+    fout << "\n";
 
     igzstream fin;
     fin.open(filename.c_str());
@@ -752,8 +828,6 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
     int ncols;
     string chr, locusName;
     double gpos, ppos;
-    double nalleles = 0;
-    double total = 0;
     stringstream ss;
     while(getline(fin,line)){
         nloci++;
@@ -766,23 +840,32 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
         ss >> ppos;
 
         oneAllele = TPED_MISSING;
-        total = 0;
-        nalleles = 0;
+        //Counted per population, but against ONE reference allele for the
+        //locus -- the first non-missing one seen, as before -- so the columns
+        //describe the same allele and the ALLELE field still means something.
+        vector<double> nallelesBy(npop, 0.0), totalBy(npop, 0.0);
         for(count = 0; count < ncols-4; count++){
             ss >> junk;
             if(junk[0] != TPED_MISSING){
-                total++;
+                //Two allele columns per individual.
+                int who = count / 2;
+                int p = (popNames.empty() || who >= int(popOf.size())) ? 0 : popOf[who];
+                totalBy[p]++;
                 if(oneAllele == TPED_MISSING) oneAllele = junk.c_str()[0]; 
-                if(junk[0] == oneAllele) nalleles++;
+                if(junk[0] == oneAllele) nallelesBy[p]++;
             }
         }
 
-        double freq = alleleFrequency(nalleles, total, nresample, r);
+        vector<double> freqBy(npop);
+        for (int p = 0; p < npop; p++)
+            freqBy[p] = alleleFrequency(nallelesBy[p], totalBy[p], nresample, r);
         ss.clear();
         
         //pos_t, not int: this was the last 32-bit truncation of a physical
         //position left after 7899f42, and it silently wrapped past 2.147 Gb.
-        fout << checkChrName(chr) << "\t" << locusName << "\t" << pos_t(ppos) << "\t" << oneAllele << "\t" << freq << endl;
+        fout << checkChrName(chr) << "\t" << locusName << "\t" << pos_t(ppos) << "\t" << oneAllele;
+        for (int p = 0; p < npop; p++) fout << "\t" << freqBy[p];
+        fout << "\n";
     }
 
     fin.close();

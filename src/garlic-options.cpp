@@ -318,10 +318,31 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     }
 
     if (FREQ_ONLY){//calculated on the fly, as the file is read, to save RAM
+        //One frequency column per population, so the file --freq-only writes
+        //is the file --freq-file reads.  --pool-populations asks for the
+        //single pooled column instead, and so does a cohort with one label.
+        bool POOL = params->getBoolFlag(ARG_POOL);
         if (opt.vcffile.compare(DEFAULT_VCF) != 0)
-            freqOnlyVCF(opt.vcffile, opt.outfile, opt.nresample, opt.VCF_PASS_ONLY);
+        {
+            //A VCF has no labels of its own; only --pop can supply them.
+            freqOnlyVCF(opt.vcffile, opt.outfile, opt.nresample, opt.VCF_PASS_ONLY,
+                        POOL ? string("") : opt.popfile);
+        }
         else
-            freqOnly(opt.tpedfile,opt.outfile,opt.nresample,opt.TPED_MISSING);
+        {
+            vector<string> popOfInd;
+            if (!POOL)
+            {
+                //The TFAM is required alongside --tped, so this always reads.
+                int nind = 0;
+                scanIndData3(opt.tfamfile, nind);
+                IndData *ind = readIndData3(opt.tfamfile, nind);
+                if (opt.popfile.compare(DEFAULT_POP) != 0) applyPopFile(opt.popfile, ind);
+                popOfInd = ind->pop;
+                releaseIndData(ind);
+            }
+            freqOnly(opt.tpedfile,opt.outfile,opt.nresample,opt.TPED_MISSING, popOfInd);
+        }
         freeRNG();
         return OPTIONS_DONE;
     }
