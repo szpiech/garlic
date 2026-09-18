@@ -7,7 +7,7 @@
 #include "garlic-centromeres.h"
 #include <iostream>
 #include <streambuf>
-#include <unistd.h>
+#include "garlic-platform.h"   //garlicStderrIsTTY
 
 string getCommandLineString(int argc, char *argv[])
 {
@@ -39,7 +39,7 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     }
     LOG.setVerbosity(QUIET, VERBOSE);
     //The bar writes backspaces, so it is only useful on a terminal.
-    setProgressEnabled(!QUIET && (VERBOSE || isatty(STDERR_FILENO)));
+    setProgressEnabled(!QUIET && (VERBOSE || garlicStderrIsTTY()));
     if (QUIET) cout.rdbuf(&GARLIC_NULLBUF);
 
     string outdir = params->getStringFlag(ARG_OUTDIR);

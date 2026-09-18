@@ -2,7 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <utility>
-#include <sys/stat.h>
+#include "garlic-platform.h"   //garlicMkdir, garlicIsPathSep
 #include <cerrno>
 
 const string VERSION = "1.1.6a";
@@ -823,11 +823,18 @@ bool makeOutdir(string dir){
 	string partial;
 	for(unsigned int i = 0; i < dir.size(); i++){
 		partial += dir[i];
-		if(dir[i] == '/' || i + 1 == dir.size()){
-			if(partial == "/" || partial == "./" || partial == "../") continue;
+		if(garlicIsPathSep(dir[i]) || i + 1 == dir.size()){
 			string p = partial;
-			if(p.size() > 1 && p[p.size()-1] == '/') p.erase(p.size()-1);
-			if(mkdir(p.c_str(), 0777) != 0 && errno != EEXIST){
+			if(p.size() > 1 && garlicIsPathSep(p[p.size()-1])) p.erase(p.size()-1);
+			//Nothing to create for the root, for . or .., or for a bare drive
+			//letter such as C: -- mkdir would fail on each with a misleading
+			//message.  Checked after trimming so it covers "/", "./" and "C:\\"
+			//alike; the old code compared the untrimmed string against a fixed
+			//list of three POSIX spellings.
+			if(p.empty() || p == "." || p == "..") continue;
+			if(p.size() == 1 && garlicIsPathSep(p[0])) continue;
+			if(p.size() == 2 && p[1] == ':') continue;
+			if(garlicMkdir(p.c_str()) != 0 && errno != EEXIST){
 				LOG.err("ERROR: Could not create output directory:", p);
 				return true;
 			}

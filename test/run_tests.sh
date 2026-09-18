@@ -933,6 +933,60 @@ threads() {
 }
 
 # ---------------------------------------------------------------------------
+# 4g. --outdir
+# ---------------------------------------------------------------------------
+# makeOutdir had no coverage at all until the MinGW build failed on it: POSIX
+# mkdir takes (path, mode) and the Windows CRT takes (path) only, so the call
+# did not compile there.  A function that needs an #ifdef needs a test.
+outdir_paths() {
+    echo "== --outdir =="
+    OD=$WORK/outdir; mkdir -p "$OD"
+    A="--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000"
+    # shellcheck disable=SC2086
+    "$GARLIC" $A --out "$OD/plain" --force >/dev/null 2>&1
+
+    # a nested path is created in full, and produces the same calls
+    # shellcheck disable=SC2086
+    "$GARLIC" $A --outdir "$OD/a/b/c" --out r --force >/dev/null 2>&1
+    if [ -f "$OD/a/b/c/r.roh.bed" ]; then ok; else bad "--outdir did not create a/b/c"; fi
+    if cmp -s "$OD/a/b/c/r.roh.bed" "$OD/plain.roh.bed"; then ok
+    else bad "--outdir output differs from the same run without it"; fi
+
+    # an existing directory is not an error (mkdir returns EEXIST)
+    # shellcheck disable=SC2086
+    expect_exit 0 "--outdir onto an existing directory" \
+        "$GARLIC" $A --outdir "$OD/a/b/c" --out r --force
+
+    # a trailing separator
+    # shellcheck disable=SC2086
+    "$GARLIC" $A --outdir "$OD/trail/" --out r --force >/dev/null 2>&1
+    if [ -f "$OD/trail/r.roh.bed" ]; then ok; else bad "--outdir with a trailing / failed"; fi
+
+    # a path that cannot be created is a usage error, not a crash and not a
+    # silent write into the working directory
+    # shellcheck disable=SC2086
+    expect_exit 1 "--outdir onto an uncreatable path" \
+        "$GARLIC" $A --outdir "$OD/plain.roh.bed/sub" --out r --force
+
+    # On POSIX a backslash is an ordinary filename character and must NOT split
+    # the path; on Windows it is a separator.  Test whichever applies.
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            # shellcheck disable=SC2086
+            "$GARLIC" $A --outdir "$OD/w1\\w2" --out r --force >/dev/null 2>&1
+            if [ -f "$OD/w1/w2/r.roh.bed" ]; then ok
+            else bad "backslash was not treated as a separator on Windows"; fi
+            ;;
+        *)
+            # shellcheck disable=SC2086
+            "$GARLIC" $A --outdir "$OD/one\\two" --out r --force >/dev/null 2>&1
+            if [ -f "$OD/one\\two/r.roh.bed" ]; then ok
+            else bad "backslash should be one directory name on POSIX"; fi
+            ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
 params_roundtrip() {
@@ -990,6 +1044,7 @@ ind_metadata
 vcf_input
 vcf_likelihoods
 threads
+outdir_paths
 exit_codes
 params_roundtrip
 bed_format
