@@ -394,6 +394,10 @@ With --tgls (legacy; the format holds ONE value per genotype): GQ As above.  The
 --phased <bool>: Set if data are phased and you want to calculate r2 instead of hr2 while --weighted is set. Uses extra RAM. Has no effect on computations without --weighted.
 	Default: false
 
+--pool-populations <bool>: Analyse every individual together as one population, ignoring the population labels.  This is what garlic did before per-population analysis, and it restores the old output names as well: <out>.roh.bed rather than <out>.<POP>.roh.bed.
+Allele frequencies are then computed by pooling everyone, which inflates heterozygosity relative to any one population and biases the LOD scores for all of them.  Use it when the labels are not populations -- column 1 of a TFAM is the PLINK family ID, which is often one family or even one sample per value -- or to reproduce an earlier run.
+	Default: false
+
 --pop <string>: A file mapping sample ID to population, replacing the population labels that would otherwise come from the TFAM. Whitespace separated, '#' comments and blank lines ignored, .gz accepted:
   <sample_id>  <population>  [sex]
 Two required columns in THAT order. Note this is the opposite order to a TFAM, whose first column is the population. The optional third column is sex in PLINK coding (1 male, 2 female, 0 or -9 unknown); unlike a TFAM, anything else is an error rather than being read as unknown.

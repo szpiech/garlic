@@ -293,6 +293,19 @@ const string DEFAULT_OUTDIR = "";
 const string HELP_OUTDIR = "Write all output files into this directory, which is created if it does not\n\
 \texist. Equivalent to prefixing --out with the path.";
 
+const string ARG_POOL = "--pool-populations";
+const bool DEFAULT_POOL = false;
+const string HELP_POOL = "Analyse every individual together as one population, ignoring the population\n\
+\tlabels.  This is what garlic did before per-population analysis, and it\n\
+\trestores the old output names as well: <out>.roh.bed rather than\n\
+\t<out>.<POP>.roh.bed.\n\
+\t\n\
+\tAllele frequencies are then computed by pooling everyone, which inflates\n\
+\theterozygosity relative to any one population and biases the LOD scores\n\
+\tfor all of them.  Use it when the labels are not populations -- column 1\n\
+\tof a TFAM is the PLINK family ID, which is often one family or even one\n\
+\tsample per value -- or to reproduce an earlier run.";
+
 const string ARG_FROH = "--froh";
 const bool DEFAULT_FROH = false;
 const string HELP_FROH = "Also write <out>.froh.tsv: per-individual autozygous total and fraction,\n\
@@ -439,6 +452,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_AUTOSOMES_ONLY, DEFAULT_AUTOSOMES_ONLY, "", HELP_AUTOSOMES_ONLY);
 	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
 	params->addFlag(ARG_OUTDIR, DEFAULT_OUTDIR, "", HELP_OUTDIR);
+	params->addFlag(ARG_POOL, DEFAULT_POOL, "", HELP_POOL);
 	params->addFlag(ARG_FROH, DEFAULT_FROH, "", HELP_FROH);
 	params->addFlag(ARG_AUTO_WINSIZE_THRESHOLD, DEFAULT_AUTO_WINSIZE_THRESHOLD, "", HELP_AUTO_WINSIZE_THRESHOLD);
 	params->addFlag(ARG_KDE_POINTS, DEFAULT_KDE_POINTS, "", HELP_KDE_POINTS);

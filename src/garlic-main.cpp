@@ -507,12 +507,12 @@ int main(int argc, char *argv[])
         //ORDER does not have to match the order they appear in the TFAM.
         try {
             vector<string> want;
-            if (populations.size() > 1)
+            if (populations.size() > 1 && !params->getBoolFlag(ARG_POOL))
                 for (unsigned int k = 0; k < populations.size(); k++)
                     want.push_back(populations[k].first);
             vector< vector< FreqData * >* > *sets =
                 readFreqData(freqfile, mapDataByChr, want);
-            if (populations.size() > 1) fileFreq = sets;
+            if (!want.empty()) fileFreq = sets;
             else { freqDataByChr = sets->at(0); sets->clear(); delete sets; }
         }
         catch (...)
@@ -598,7 +598,22 @@ int main(int argc, char *argv[])
     //largest structure in the run, and holding one at a time bounds peak
     //memory by the largest population rather than by their sum.  The inner
     //stages are already threaded, so nothing is left idle.
-    bool singlePop = (populations.size() <= 1);
+    //--pool-populations restores the pre-per-population behaviour: one
+    //analysis over everyone, pooled frequencies, unlabelled output names.
+    //Implemented by making the loop take the single-population path rather
+    //than by rewriting the population list, so the run record still reports
+    //which populations were actually present.
+    bool POOL = params->getBoolFlag(ARG_POOL);
+    if (POOL && populations.size() > 1)
+    {
+        LOG.log("--pool-populations: analysing all", indData->nind, false);
+        LOG.log(" individuals as one population.");
+        LOG.err("WARNING: --pool-populations pools allele frequencies across", int(populations.size()), false);
+        LOG.err(" populations,");
+        LOG.err("\twhich inflates heterozygosity relative to any one of them and biases");
+        LOG.err("\tthe LOD scores for all of them.");
+    }
+    bool singlePop = (populations.size() <= 1) || POOL;
 
     //A population's allele frequencies are estimated from that population
     //alone, so a small one estimates them coarsely: with n individuals the
@@ -641,7 +656,8 @@ int main(int argc, char *argv[])
 
 
     int writeStatus = 0;
-    for (unsigned int k = 0; k < populations.size() && writeStatus == 0; k++)
+    unsigned int npass = POOL ? 1 : (unsigned int)populations.size();
+    for (unsigned int k = 0; k < npass && writeStatus == 0; k++)
     {
         const string &popName = populations[k].first;
 
@@ -773,6 +789,7 @@ int main(int argc, char *argv[])
             vector< pair<string,string> > resolved;
             ostringstream v;
             v << opt.SEED;                    resolved.push_back(make_pair("seed", v.str()));
+            if (POOL) resolved.push_back(make_pair("populations_pooled", "true"));
             if (!singlePop)
             {
                 //Quoted here: writeParamsJSON emits a resolved value verbatim,

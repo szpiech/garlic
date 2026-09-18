@@ -1357,6 +1357,57 @@ multi_population() {
     if [ -f "$MP/lg.POPA.roh.bed" ] && [ -f "$MP/lg.POPB.roh.bed" ]; then ok
     else bad "a one-column frequency file was refused for a multi-population run"; fi
 
+    # --pool-populations ignores the labels and analyses everyone together,
+    # which is what garlic did before.  Checked INTRINSICALLY rather than
+    # against an old binary: pooling a two-population file must give exactly
+    # what the same genotypes give under a one-population TFAM, because that
+    # is the same computation on the same individuals.
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --froh --pool-populations \
+        --out "$MP/pooled" --quiet --force >/dev/null 2>&1
+    gz "$EX/chr21.tfam.gz" > "$MP/one.tfam"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" $A --froh \
+        --out "$MP/asone" --quiet --force >/dev/null 2>&1
+    # The CALLS must match.  The track lines and the froh 'pop' column carry
+    # the labels, which genuinely differ between the two TFAMs -- that is the
+    # inputs disagreeing about names, not the analyses disagreeing about ROH.
+    if cmp -s "$(grep -v '^track' "$MP/pooled.roh.bed" > "$MP/pc.bed"; echo "$MP/pc.bed")" \
+              "$(grep -v '^track' "$MP/asone.roh.bed" > "$MP/ac.bed"; echo "$MP/ac.bed")"; then ok
+    else bad "--pool-populations did not reproduce the single-population ROH calls"; fi
+    cut -f1,3,4,5,6 "$MP/pooled.froh.tsv" | grep -v '^##' > "$MP/pf.tsv"
+    cut -f1,3,4,5,6 "$MP/asone.froh.tsv" | grep -v '^##' > "$MP/af.tsv"
+    if cmp -s "$MP/pf.tsv" "$MP/af.tsv"; then ok
+    else bad "--pool-populations --froh differs from the single-population run"; fi
+    # the labels themselves must follow the TFAM, which is what makes the
+    # comparison above a comparison of calls rather than of names
+    if [ "$(cut -f2 "$MP/pooled.froh.tsv" | grep -c POPA)" -gt 0 ]; then ok
+    else bad "a pooled run lost the population labels from its froh table"; fi
+
+    # and it restores the old output names
+    if [ -f "$MP/pooled.roh.bed" ] && [ ! -f "$MP/pooled.POPA.roh.bed" ]; then ok
+    else bad "--pool-populations did not restore the unlabelled output names"; fi
+
+    # the record still reports which populations were present, and marks the
+    # pooling -- otherwise a pooled run is indistinguishable from a file that
+    # really had one population
+    if grep -q '"populations_pooled": true' "$MP/pooled.params.json" &&
+       grep -q '"populations": \["POPA", "POPB"\]' "$MP/pooled.params.json"; then ok
+    else bad "a pooled run's record does not mark the pooling or list the populations"; fi
+
+    # pooling several populations biases the frequencies, and says so
+    # shellcheck disable=SC2086
+    if "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --pool-populations \
+            --out "$MP/pw" --force 2>&1 | grep -q "pools allele frequencies across 2 populations"; then ok
+    else bad "--pool-populations did not warn that frequencies are pooled"; fi
+
+    # on a file that really has one population the flag is a no-op
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" $A --froh --pool-populations \
+        --out "$MP/p1" --quiet --force >/dev/null 2>&1
+    if cmp -s "$MP/p1.roh.bed" "$MP/asone.roh.bed"; then ok
+    else bad "--pool-populations changed a single-population run"; fi
+
     # one population keeps the unlabelled names, so nothing existing changes
     gz "$EX/chr21.tfam.gz" > "$MP/one.tfam"
     # shellcheck disable=SC2086

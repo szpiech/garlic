@@ -204,6 +204,10 @@ extern const string ARG_OUTDIR;
 extern const string DEFAULT_OUTDIR;
 extern const string HELP_OUTDIR;
 
+extern const string ARG_POOL;
+extern const bool DEFAULT_POOL;
+extern const string HELP_POOL;
+
 extern const string ARG_FROH;
 extern const bool DEFAULT_FROH;
 extern const string HELP_FROH;
