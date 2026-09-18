@@ -68,6 +68,7 @@ struct GarlicOptions
 const int OPTIONS_OK = 0;           //carry on
 const int OPTIONS_USAGE_ERROR = 1;  //a flag was missing, malformed or contradictory
 const int OPTIONS_DONE = 2;         //the run finished inside here (--freq-only)
+const int OPTIONS_RUNTIME_ERROR = 3;//the command line was fine; something failed
 
 //Reads every flag into opt, validates it, and applies the settings that are
 //global rather than per-run (thread counts, RNG seed, the KDE/GMM/auto-winsize

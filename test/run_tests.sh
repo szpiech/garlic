@@ -990,7 +990,23 @@ outdir_paths() {
         found=$(find "$WORK" -name 'r.roh.bed' 2>/dev/null | tr '\n' ' ')
         echo "        r.roh.bed under \$WORK: ${found:-nowhere}"
         [ -f ./r.roh.bed ] && echo "        also in the cwd: --outdir was ignored entirely"
+        # garlic logs the basename it resolved, but --quiet suppresses it.  Re-run
+        # without --quiet and read it back: that names the path it actually used,
+        # which is the one fact the exit status cannot give.
+        # shellcheck disable=SC2086
+        "$GARLIC" $A --outdir "$OD/plain.roh.bed/sub" --out r --force 2>&1 \
+            | grep -i "output file basename" | head -1 | sed 's/^/        garlic resolved: /'
     fi
+
+    # An output basename whose directory does not exist is a runtime error with
+    # a message, not a crash.  errlog opens <out>.log lazily in commit(), threw
+    # 0 there, and nothing caught it: this used to die with "terminating due to
+    # uncaught exception of type int" and SIGABRT (exit 134) after validating
+    # every argument.  Uses a missing directory rather than an unwritable one,
+    # because chmod does not restrict the owner on Windows.
+    # shellcheck disable=SC2086
+    expect_exit 2 "--out into a directory that does not exist" \
+        "$GARLIC" $A --out "$OD/no/such/dir/r" --force
 
     # ...and neither is a path that exists as a FILE.  mkdir returns EEXIST for
     # that, which garlic used to accept before aborting in the writers (exit

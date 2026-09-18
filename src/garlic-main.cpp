@@ -33,7 +33,9 @@ int main(int argc, char *argv[])
         //main owns params on every path now.  The --freq-only exit used to
         //return without deleting it, leaking 249 allocations / 31 KB.
         delete params;
-        return (optStatus == OPTIONS_USAGE_ERROR) ? 1 : 0;
+        if (optStatus == OPTIONS_USAGE_ERROR) return 1;
+        if (optStatus == OPTIONS_RUNTIME_ERROR) return 2;
+        return 0;
     }
 
     //References rather than copies, so the pipeline below reads and writes the
@@ -453,13 +455,23 @@ int main(int argc, char *argv[])
     //Output ROH calls to file, one for each individual
     //includes A/B/C/etc size classifications
     cout << "Writing ROH tracts.\n";
-    writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, boundSizes, indData->pop, VERSION, CM);
-
-    if (params->getBoolFlag(ARG_FROH))
+    //The writers throw 0 when they cannot open their output, and nothing
+    //caught it: the calls run after every other stage, so an output path that
+    //became unwritable turned a complete analysis into SIGABRT with the
+    //results discarded.  Reported and carried to the exit status instead, so
+    //the cleanup below still runs.
+    int writeStatus = 0;
+    try
     {
-        writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
-                  indData->pop, centro, CM);
+        writeROHData(makeROHFilename(outfile), rohDataByInd, mapDataByChr, boundSizes, indData->pop, VERSION, CM);
+
+        if (params->getBoolFlag(ARG_FROH))
+        {
+            writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
+                      indData->pop, centro, CM);
+        }
     }
+    catch (...) { logCurrentException("writing the ROH calls"); writeStatus = 2; }
 
     //Machine-readable record of what this run actually did.  The auto-selected
     //values were previously only prose lines in the .log, which is what the
@@ -478,7 +490,8 @@ int main(int argc, char *argv[])
         v << "]";                         resolved.push_back(make_pair("size_bounds", v.str()));
         v.str(""); v << (AUTO_CUTOFF ? "true" : "false");  resolved.push_back(make_pair("cutoff_was_automatic", v.str()));
         v.str(""); v << (AUTO_BOUNDS ? "true" : "false");  resolved.push_back(make_pair("bounds_were_automatic", v.str()));
-        writeParamsJSON(outfile + ".params.json", params, resolved);
+        try { writeParamsJSON(outfile + ".params.json", params, resolved); }
+        catch (...) { logCurrentException("writing the parameter record"); writeStatus = 2; }
     }
 
     //centro is read by writeFROH; it used to be deleted before the writers ran.
@@ -497,5 +510,5 @@ int main(int argc, char *argv[])
     //main are gone: they are pthreads-win32 specific, and std::thread needs no
     //per-process initialisation on any platform.
 
-    return 0;
+    return writeStatus;
 }

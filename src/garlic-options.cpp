@@ -303,7 +303,19 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     //in memory so that a rejected command line leaves no files behind.
     bool FORCE = params->getBoolFlag(ARG_FORCE);
     if (checkOutfileClobber(opt.outfile, FORCE)) return OPTIONS_USAGE_ERROR;
-    LOG.commit();
+    //commit(), not init(), is where the .log is actually opened -- init
+    //deliberately opens nothing so a rejected command line leaves no files.
+    //It throws 0 on failure and nothing caught it, so `--out <an unwritable
+    //path>` died with "terminating due to uncaught exception of type int" and
+    //SIGABRT (exit 134) rather than naming the file it could not write.
+    //commit() has already named it on cerr.
+    try { LOG.commit(); }
+    catch (...)
+    {
+        cerr << "ERROR: could not open the log for output basename "
+             << opt.outfile << "\n";
+        return OPTIONS_RUNTIME_ERROR;
+    }
 
     if (FREQ_ONLY){//calculated on the fly, as the file is read, to save RAM
         if (opt.vcffile.compare(DEFAULT_VCF) != 0)
