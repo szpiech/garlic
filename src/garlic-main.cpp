@@ -100,6 +100,10 @@ int main(int argc, char *argv[])
     vector< MapData * > *mapDataByChr = NULL;
     //string popName;
     IndData *indData = NULL;
+    //Filled once --pop has had its say; see enumeratePopulations.  Declared
+    //here rather than at the point of use because that is inside the reading
+    //try block, and the parameter record below needs it.
+    vector< pair<string, int> > populations;
     vector< HapData * > *hapDataByChr = NULL;
     vector< FreqData * > *freqDataByChr = NULL;
     vector< GenoFreqData * > *genoFreqDataByChr = NULL;
@@ -177,7 +181,22 @@ int main(int argc, char *argv[])
         }
         checkIndData(indData, metaSource);
 
-        //LOG.log("Population:", popName);
+        //Recorded before anything acts on it.  garlic still pools every
+        //individual for allele frequencies at this commit -- the warning in
+        //checkIndData still applies and is still emitted -- but which
+        //populations are present, and in what order, is now on the record.
+        populations = enumeratePopulations(indData);
+        {
+            stringstream ps;
+            ps << "Populations found: " << populations.size() << " (";
+            for (unsigned int i = 0; i < populations.size(); i++)
+            {
+                if (i) ps << ", ";
+                ps << populations[i].first << ": " << populations[i].second;
+            }
+            ps << ")";
+            LOG.log(ps.str());
+        }
         LOG.log("Total diploid individuals:", numInd);
 
         if (opt.vcffile.compare(DEFAULT_VCF) == 0 && tglsfile.compare(DEFAULT_TGLS) != 0) {
@@ -485,6 +504,13 @@ int main(int argc, char *argv[])
         v.str(""); v << LOD_CUTOFF;       resolved.push_back(make_pair("lod_cutoff", v.str()));
         v.str(""); v << KDE_THIN_STEP;    resolved.push_back(make_pair("kde_thin_step", v.str()));
         v.str(""); v << mapDataByChr->size(); resolved.push_back(make_pair("chromosomes_analysed", v.str()));
+        v.str(""); v << "[";
+        for (unsigned int i = 0; i < populations.size(); i++)
+        {
+            if (i) v << ", ";
+            v << "\"" << populations[i].first << "\"";
+        }
+        v << "]";                         resolved.push_back(make_pair("populations", v.str()));
         v.str(""); v << "[";
         for (unsigned int i = 0; i < boundSizes.size(); i++) { if (i) v << ", "; v << boundSizes[i]; }
         v << "]";                         resolved.push_back(make_pair("size_bounds", v.str()));

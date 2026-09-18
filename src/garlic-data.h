@@ -462,6 +462,15 @@ void applyPopFile(const string &filename, IndData *indData);
 //every input path reaches them.  `source` names the file in the messages.
 void checkIndData(IndData *indData, const string &source);
 
+//The distinct population labels, in ORDER OF FIRST APPEARANCE, each paired
+//with the number of individuals carrying it.
+//
+//First appearance rather than sorted: it is the order the input presents, it
+//is stable under relabelling, and it is the order in which populations will be
+//analysed once they are analysed separately -- which also fixes the order the
+//per-population RNG seeds are derived in, so a run stays reproducible.
+vector< pair<string, int> > enumeratePopulations(IndData *indData);
+
 //True when a VCF REF or ALT field is a single unambiguous nucleotide, which is
 //garlic's whole domain: a biallelic SNV coded 0/1/2.  Case-insensitive ACGT
 //only -- 'N' is excluded deliberately, since a site whose REF or ALT is

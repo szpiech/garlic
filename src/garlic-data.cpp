@@ -3193,6 +3193,28 @@ void applyPopFile(const string &filename, IndData *indData)
     return;
 }
 
+vector< pair<string, int> > enumeratePopulations(IndData *indData)
+{
+    vector< pair<string, int> > pops;
+    if (indData == NULL) return pops;
+
+    //map only to find a label again in O(log n); the ORDER is pops', which is
+    //order of first appearance, not the map's (which would be sorted).
+    map<string, unsigned int> indexOf;
+    for (int i = 0; i < indData->nind; i++)
+    {
+        const string &p = indData->pop[i];
+        map<string, unsigned int>::iterator it = indexOf.find(p);
+        if (it == indexOf.end())
+        {
+            indexOf[p] = (unsigned int)(pops.size());
+            pops.push_back(make_pair(p, 1));
+        }
+        else pops[it->second].second++;
+    }
+    return pops;
+}
+
 void checkIndData(IndData *indData, const string &source)
 {
     if (indData == NULL) return;

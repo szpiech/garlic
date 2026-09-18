@@ -54,6 +54,61 @@ static void cks(const string &got, const string &want, const char *what)
     }
 }
 
+// ------------------------------------------- enumeratePopulations() -----
+// The ORDER is the contract, not just the contents: it decides which
+// population is analysed first and, once per-population seeding exists, which
+// seed each one gets.  A map-keyed implementation would return sorted order
+// for free, which is why the labels below are deliberately chosen so that
+// sorted and first-appearance differ.
+static IndData *makeInd(const char **pops, int n)
+{
+    IndData *d = initIndData(n);
+    for (int i = 0; i < n; i++)
+    {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "ind%d", i);
+        d->indID[i] = buf;
+        d->pop[i]   = pops[i];
+    }
+    return d;
+}
+
+static void test_enumeratePopulations()
+{
+    // "zeta" first, "alpha" second: sorted order would invert these.
+    const char *mixed[] = {"zeta", "zeta", "alpha", "zeta", "alpha", "mid"};
+    IndData *d = makeInd(mixed, 6);
+    vector< pair<string, int> > got = enumeratePopulations(d);
+    ck(got.size() == 3, "enumeratePopulations: three distinct labels");
+    if (got.size() == 3)
+    {
+        cks(got[0].first, "zeta",  "enumeratePopulations: first appearance wins, not sort order");
+        cks(got[1].first, "alpha", "enumeratePopulations: second by first appearance");
+        cks(got[2].first, "mid",   "enumeratePopulations: third by first appearance");
+        ck(got[0].second == 3, "enumeratePopulations: count for the first label");
+        ck(got[1].second == 2, "enumeratePopulations: count for the second label");
+        ck(got[2].second == 1, "enumeratePopulations: count for the third label");
+    }
+    int total = 0;
+    for (unsigned int i = 0; i < got.size(); i++) total += got[i].second;
+    ck(total == d->nind, "enumeratePopulations: counts sum to nind");
+    releaseIndData(d);
+
+    const char *one[] = {"36", "36", "36"};
+    IndData *s1 = makeInd(one, 3);
+    vector< pair<string, int> > g1 = enumeratePopulations(s1);
+    ck(g1.size() == 1 && g1[0].second == 3, "enumeratePopulations: single population");
+    releaseIndData(s1);
+
+    // Labels are compared as strings, so these are three populations, not one.
+    const char *casey[] = {"pop", "POP", "Pop"};
+    IndData *s2 = makeInd(casey, 3);
+    ck(enumeratePopulations(s2).size() == 3, "enumeratePopulations: labels are case sensitive");
+    releaseIndData(s2);
+
+    ck(enumeratePopulations(NULL).empty(), "enumeratePopulations: NULL gives an empty list");
+}
+
 // ---------------------------------------------------------------- lod() ----
 // lod(g, p, e) = log10( P(g | autozygous) / P(g | not autozygous) ) with a
 // per-genotype error rate e.  The three branches are hand-computable.
@@ -598,6 +653,7 @@ int main()
     //compile (which is the whole point) while keeping it out of the run.
     (void)&compile_time_logger_overload_coverage;
     printf("garlic unit tests\n");
+    test_enumeratePopulations();
     test_lod();
     test_interpolate();
     test_inGap();
