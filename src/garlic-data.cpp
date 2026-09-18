@@ -1757,23 +1757,29 @@ void writeFreqData(string freqOutfile,
     return;
 }
 
-vector< FreqData * > *readFreqData(string freqfile,
-                                   vector< MapData * > *mapDataByChr)
+//Split a whitespace-separated header line into fields.
+static vector<string> splitFields(const string &line)
 {
-    //scan file for format integrity
-    int minCols = 5;
-    int expectedRows = 1;
+    vector<string> out;
+    stringstream ss(line);
+    string f;
+    while (ss >> f) out.push_back(f);
+    return out;
+}
 
-    //allocate
-    vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
-    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++){
+vector< vector< FreqData * >* > *readFreqData(string freqfile,
+                                              vector< MapData * > *mapDataByChr,
+                                              const vector<string> &populations)
+{
+    //Pooled analysis asks for nothing by name and gets one set.
+    bool pooled = populations.empty();
+    unsigned int nwanted = (pooled ? 1 : (unsigned int)populations.size());
+
+    int expectedRows = 1;
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
         expectedRows += mapDataByChr->at(chr)->nloci;
-        FreqData *data = initFreqData(mapDataByChr->at(chr)->nloci);
-        freqDataByChr->push_back(data);
-    }
 
     igzstream fin;
-
     fin.open(freqfile.c_str());
     if (fin.fail()){
         LOG.err("ERROR: Failed to open", freqfile);
@@ -1782,19 +1788,80 @@ vector< FreqData * > *readFreqData(string freqfile,
 
     if (!LOG.isQuiet()) cerr << "Reading " << freqfile << "\n";
     string line;
-    int currentRows = 0;
     int currentCols = 0;
     int previousCols = -1;
 
-    string header, junk;
+    string header;
     getline(fin, header);
-    stringstream ss;
+    vector<string> headerFields = splitFields(header);
+    if (headerFields.size() < 5)
+    {
+        LOG.err("ERROR: header of", freqfile, false);
+        LOG.err(" has fewer than 5 fields; expected CHR SNP POS ALLELE <population>...");
+        throw 0;
+    }
+    //Everything after ALLELE names a population.
+    vector<string> colName(headerFields.begin() + 4, headerFields.end());
+    int minCols = 4 + int(colName.size());
 
-    string locusID;
+    //Which column feeds which requested population.
+    vector<int> columnFor(nwanted, 0);
+    if (colName.size() == 1)
+    {
+        //Every frequency file garlic has ever written, and any file written
+        //for a single population.  Applies to everyone, whatever it is named
+        //-- the name is not checked, so a file headed FREQ, MAF or anything
+        //else keeps working.
+        for (unsigned int k = 0; k < nwanted; k++) columnFor[k] = 0;
+    }
+    else if (pooled)
+    {
+        LOG.err("ERROR:", freqfile, false);
+        LOG.err(" has frequencies for", int(colName.size()), false);
+        LOG.err(" populations, but this run analyses every sample as one.");
+        LOG.err("\tThere is no correct way to choose between them.");
+        LOG.err("\tSupply a file with a single frequency column, which applies to everyone.");
+        throw 0;
+    }
+    else
+    {
+        for (unsigned int k = 0; k < nwanted; k++)
+        {
+            int found = -1;
+            for (unsigned int c = 0; c < colName.size(); c++)
+                if (colName[c] == populations[k]) { found = int(c); break; }
+            if (found < 0)
+            {
+                LOG.err("ERROR:", freqfile, false);
+                LOG.err(" has no frequency column for population", populations[k]);
+                LOG.err("\tColumns present:", header);
+                throw 0;
+            }
+            columnFor[k] = found;
+        }
+        //Extra columns are fine: one file may carry every population the
+        //project has, and a run may analyse a subset of them.
+    }
+
+    //Allocated only now: every check above throws, and an allocation made
+    //before them would be leaked on the way out.
+    vector< vector< FreqData * >* > *out = new vector< vector< FreqData * >* >;
+    for (unsigned int k = 0; k < nwanted; k++)
+    {
+        vector< FreqData * > *byChr = new vector< FreqData * >;
+        for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+            byChr->push_back(initFreqData(mapDataByChr->at(chr)->nloci));
+        out->push_back(byChr);
+    }
+
+    stringstream ss;
+    string locusID, chromosome;
     char allele;
-    string chromosome;
     double position;
     int lineNum = 1;
+    vector<double> value(colName.size());
+    try
+    {
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
@@ -1823,7 +1890,15 @@ vector< FreqData * > *readFreqData(string freqfile,
             }
             previousCols = currentCols;
 
-            ss >> chromosome >> locusID >> position >> allele >> freqDataByChr->at(chr)->freq[locus];
+            ss >> chromosome >> locusID >> position >> allele;
+            for (unsigned int c = 0; c < colName.size(); c++) ss >> value[c];
+            if (ss.fail())
+            {
+                LOG.err("ERROR: could not read", int(colName.size()), false);
+                LOG.err(" frequencies on line", lineNum, false);
+                LOG.err(" of", freqfile);
+                throw 0;
+            }
             if (mapDataByChr->at(chr)->locusName[locus].compare(locusID) != 0){
                 LOG.err("ERROR: Loci appear mismatched in:", freqfile);
                 LOG.err("ERROR: at line:", lineNum);
@@ -1831,11 +1906,15 @@ vector< FreqData * > *readFreqData(string freqfile,
                 LOG.err("ERROR: tped file locus name:", mapDataByChr->at(chr)->locusName[locus]);
                 throw 0;
             }
-            //check if the internal coding of the '1' allele for this tped file 
-            //matches the '1' allele coding in the freq file
-            //If not, take 1-freq.
-            if(mapDataByChr->at(chr)->allele[locus] != allele){
-                freqDataByChr->at(chr)->freq[locus] = 1 - freqDataByChr->at(chr)->freq[locus];
+            //Does the internal coding of the '1' allele for this dataset match
+            //the one in the freq file?  If not, take 1-freq.  ONE decision per
+            //locus, applied to every population -- which is why the format is
+            //wide: the counted allele belongs to the site, not the population.
+            bool flip = (mapDataByChr->at(chr)->allele[locus] != allele);
+            for (unsigned int k = 0; k < nwanted; k++)
+            {
+                double f = value[columnFor[k]];
+                out->at(k)->at(chr)->freq[locus] = (flip ? 1 - f : f);
             }
             ss.clear();
         }
@@ -1844,14 +1923,23 @@ vector< FreqData * > *readFreqData(string freqfile,
     if (lineNum != expectedRows)
     {
         LOG.err("ERROR:", freqfile, false);
-        LOG.err(" has", currentRows, false);
-        LOG.err(" rows but expected", expectedRows);
+        LOG.err(" has", lineNum - 1, false);
+        LOG.err(" rows but expected", expectedRows - 1);
         throw 0;
+    }
+    }
+    catch (...)
+    {
+        //The rows are read into `out`; a malformed row must not leak it.
+        for (unsigned int k = 0; k < out->size(); k++) releaseFreqData(out->at(k));
+        out->clear();
+        delete out;
+        throw;
     }
 
     fin.close();
 
-    return freqDataByChr;
+    return out;
 }
 
 //allocates the arrays and populates them with MISSING or "--" depending on type

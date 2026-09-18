@@ -1072,6 +1072,62 @@ outdir_paths() {
 }
 
 # ---------------------------------------------------------------------------
+# 4h. --freq-file format
+# ---------------------------------------------------------------------------
+# The frequency file is WIDE: one row per locus, one frequency column per
+# population, named in the header after ALLELE.  Wide rather than one row per
+# (locus, population) because ALLELE orients the frequency and belongs to the
+# SITE -- one ALLELE column makes it impossible for two populations to
+# disagree about the orientation of a locus.
+#
+# Only the CLI-reachable cases are here.  Matching a population to its column
+# by NAME is covered where it becomes reachable, once populations are analysed
+# separately; until then this run has one pooled analysis and asks for one
+# column.
+freq_file_format() {
+    echo "== --freq-file format =="
+    FF=$WORK/ff; mkdir -p "$FF"
+    A="--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60
+       --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000"
+
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 \
+        --error 0.001 --freq-only --out "$FF/base" --quiet --force >/dev/null 2>&1
+
+    # the five-column file garlic writes must read back unchanged
+    # shellcheck disable=SC2086
+    "$GARLIC" $A --freq-file "$FF/base.freq.gz" --out "$FF/legacy" --quiet --force >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    "$GARLIC" $A --out "$FF/nofreq" --quiet --force >/dev/null 2>&1
+    if [ -s "$FF/legacy.roh.bed" ]; then ok
+    else bad "a five-column frequency file no longer reads"; fi
+
+    # the single column applies whatever it is called: files predating any
+    # population naming must keep working, so the name is not checked when
+    # there is only one.
+    gzip -cd "$FF/base.freq.gz" | sed '1s/FREQ/MAF/' | gzip > "$FF/maf.freq.gz"
+    # shellcheck disable=SC2086
+    "$GARLIC" $A --freq-file "$FF/maf.freq.gz" --out "$FF/maf" --quiet --force >/dev/null 2>&1
+    if [ -s "$FF/maf.roh.bed" ] && cmp -s "$FF/maf.roh.bed" "$FF/legacy.roh.bed"; then ok
+    else bad "a single frequency column named something other than FREQ changed the result"; fi
+
+    # a wide file has no meaning for a run that analyses every sample as one:
+    # there is no correct column to choose, so it is an error rather than a
+    # silent pick.
+    gzip -cd "$FF/base.freq.gz" | awk 'NR==1{print $0"\tPOPB"} NR>1{print $0"\t"$5}' \
+        | gzip > "$FF/wide.freq.gz"
+    # shellcheck disable=SC2086
+    expect_exit 2 "a multi-population frequency file in a pooled run" \
+        "$GARLIC" $A --freq-file "$FF/wide.freq.gz" --out "$FF/wide" --force
+
+    # a header too short to name its columns
+    gzip -cd "$FF/base.freq.gz" | sed '1s/.*/CHR\tSNP\tPOS/' | gzip > "$FF/shorthdr.freq.gz"
+    # shellcheck disable=SC2086
+    expect_exit 2 "a frequency file whose header has fewer than five fields" \
+        "$GARLIC" $A --freq-file "$FF/shorthdr.freq.gz" --out "$FF/sh" --force
+}
+
+# ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
 params_roundtrip() {
@@ -1129,6 +1185,7 @@ ind_metadata
 vcf_input
 vcf_likelihoods
 threads
+freq_file_format
 outdir_paths
 exit_codes
 params_roundtrip

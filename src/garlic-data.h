@@ -367,8 +367,33 @@ void writeFreqData(string freqOutfile,
                    vector< MapData * > *mapDataByChr,
                    IndData *indData);
 
-vector< FreqData * > *readFreqData(string freqfile,
-                                   vector< MapData * > *mapDataByChr);
+//Read a frequency file, returning one set of per-chromosome frequencies for
+//each requested population, in the order of `populations`.
+//
+//The file is WIDE: one row per locus, one frequency column per population,
+//with the population names in the header after ALLELE.
+//
+//    CHR   SNP     POS    ALLELE   YRI    CEU
+//    chr1  rs1234  1005   A        0.31   0.62
+//
+//Wide rather than one row per (locus, population), for two reasons.  ALLELE
+//orients the frequency -- readFreqData flips to 1-f when it disagrees with
+//mapData->allele -- and the counted allele is a property of the SITE, so one
+//ALLELE column makes it impossible for two populations to disagree about the
+//orientation of the same locus.  And the reader walks loci in lockstep with
+//mapData, one row each, which a long layout would break.
+//
+//Backward compatible: a file with exactly ONE frequency column applies that
+//column to every requested population, whatever the column is called.  That
+//is every frequency file garlic has ever written.
+//
+//`populations` empty means "one pooled set", which is what a pooled analysis
+//wants; a file with several columns is then an error, because there is no
+//correct way to choose between them.
+vector< vector< FreqData * >* > *readFreqData(string freqfile,
+                                              vector< MapData * > *mapDataByChr,
+                                              const vector<string> &populations);
+
 
 //indData is used only to name the individual in a diagnostic; the values are
 //read positionally as before.

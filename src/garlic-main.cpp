@@ -233,7 +233,18 @@ int main(int argc, char *argv[])
     else //(!AUTO_FREQ)
     {
         cout << "Loading user provided allele frequencies from " << freqfile << "\n";
-        try { freqDataByChr = readFreqData(freqfile, mapDataByChr); }
+        //An empty population list asks for ONE pooled set, which is what this
+        //pipeline still computes.  Per-population requests arrive with the
+        //per-population loop; until then a wide file is refused rather than
+        //having one of its columns picked arbitrarily.
+        try {
+            vector<string> pooledRequest;
+            vector< vector< FreqData * >* > *sets =
+                readFreqData(freqfile, mapDataByChr, pooledRequest);
+            freqDataByChr = sets->at(0);
+            sets->clear();
+            delete sets;
+        }
         catch (...) { logCurrentException("reading the allele frequency file"); return 2; }
     }
 
