@@ -819,6 +819,16 @@ bool checkError(double error, string tglsfile, bool wasSet, bool haveVCFLikeliho
 }
 
 //mkdir -p, so --outdir can name a nested path.
+//Is this a path component there is nothing to create for -- the root, . or
+//.., or a bare drive letter such as C:?  mkdir fails on each with a misleading
+//message.  Applied to already-trimmed components.
+static bool isPathStub(const string &p, bool (*isSep)(char)){
+	if(p.empty() || p == "." || p == "..") return true;
+	if(p.size() == 1 && isSep(p[0])) return true;
+	if(p.size() == 2 && p[1] == ':') return true;
+	return false;
+}
+
 bool makeOutdir(string dir){
 	if(dir.empty()) return false;
 	string partial;
@@ -827,14 +837,7 @@ bool makeOutdir(string dir){
 		if(garlicIsPathSep(dir[i]) || i + 1 == dir.size()){
 			string p = partial;
 			if(p.size() > 1 && garlicIsPathSep(p[p.size()-1])) p.erase(p.size()-1);
-			//Nothing to create for the root, for . or .., or for a bare drive
-			//letter such as C: -- mkdir would fail on each with a misleading
-			//message.  Checked after trimming so it covers "/", "./" and "C:\\"
-			//alike; the old code compared the untrimmed string against a fixed
-			//list of three POSIX spellings.
-			if(p.empty() || p == "." || p == "..") continue;
-			if(p.size() == 1 && garlicIsPathSep(p[0])) continue;
-			if(p.size() == 2 && p[1] == ':') continue;
+			if(isPathStub(p, garlicIsPathSep)) continue;
 			if(garlicMkdir(p.c_str()) != 0 && errno != EEXIST){
 				LOG.err("ERROR: Could not create output directory:", p);
 				return true;
@@ -847,6 +850,19 @@ bool makeOutdir(string dir){
 				return true;
 			}
 		}
+	}
+
+	//Postcondition, checked once on the whole path rather than inferred from the
+	//loop above.  The loop's per-component checks depend on mkdir's and stat's
+	//errno conventions agreeing across platforms, and on MinGW a path whose
+	//parent is a regular file still came back as success.  What actually has to
+	//be true when this returns is simply that `dir` is now a usable directory,
+	//so test exactly that.
+	string full = dir;
+	while(full.size() > 1 && garlicIsPathSep(full[full.size()-1])) full.erase(full.size()-1);
+	if(!isPathStub(full, garlicIsPathSep) && !garlicIsDir(full.c_str())){
+		LOG.err("ERROR: Output directory could not be created:", full);
+		return true;
 	}
 	return false;
 }

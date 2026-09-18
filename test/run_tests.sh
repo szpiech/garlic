@@ -255,9 +255,17 @@ determinism() {
 # ---------------------------------------------------------------------------
 expect_exit() {
     want=$1; what=$2; shift 2
-    "$@" >/dev/null 2>&1
+    # Keep stderr.  It used to be discarded, which made every exit-code failure
+    # in this suite undiagnosable from a CI log -- you could see that garlic
+    # returned the wrong status but not what it thought it was doing.  On
+    # failure the program's own diagnosis is worth more than the status is.
+    "$@" >/dev/null 2>"$WORK/.expect_exit.err"
     got=$?
-    if [ "$got" -eq "$want" ]; then ok; else bad "$what: exit $got, expected $want"; fi
+    if [ "$got" -eq "$want" ]; then ok
+    else
+        bad "$what: exit $got, expected $want"
+        sed -n '1,3p' "$WORK/.expect_exit.err" | sed 's/^/        /'
+    fi
 }
 
 exit_codes() {
@@ -967,6 +975,12 @@ outdir_paths() {
     # shellcheck disable=SC2086
     expect_exit 1 "--outdir onto an uncreatable path" \
         "$GARLIC" $A --outdir "$OD/plain.roh.bed/sub" --out r --force
+    # If that ever passes when it should not, the useful fact is what the path
+    # actually is on that platform, so say so rather than leaving the next
+    # reader to reason about mkdir errno conventions from a bare exit status.
+    if [ -d "$OD/plain.roh.bed" ]; then
+        echo "        NOTE: $OD/plain.roh.bed is a DIRECTORY here, not a file"
+    fi
 
     # ...and neither is a path that exists as a FILE.  mkdir returns EEXIST for
     # that, which garlic used to accept before aborting in the writers (exit
