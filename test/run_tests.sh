@@ -968,6 +968,23 @@ outdir_paths() {
     expect_exit 1 "--outdir onto an uncreatable path" \
         "$GARLIC" $A --outdir "$OD/plain.roh.bed/sub" --out r --force
 
+    # ...and neither is a path that exists as a FILE.  mkdir returns EEXIST for
+    # that, which garlic used to accept before aborting in the writers (exit
+    # 134 on POSIX, and on Windows it made the case above look like success).
+    # shellcheck disable=SC2086
+    expect_exit 1 "--outdir onto an existing file" \
+        "$GARLIC" $A --outdir "$OD/plain.roh.bed" --out r --force
+
+    # Text output must be LF on every platform: the Windows CRT turns \n into
+    # \r\n in text mode, which made every golden .roh.bed and .froh.tsv differ
+    # on MinGW while being otherwise byte-identical.  The writers open with
+    # ios::binary; this checks the bytes rather than trusting that.
+    # Counted, not read: `read` returns nonzero at EOF even when it consumed
+    # bytes, so a CRLF file would have passed a `! ... | read` test.
+    crs=$(tr -dc '\r' < "$OD/plain.roh.bed" | wc -c | tr -d ' ')
+    if [ "$crs" = "0" ]; then ok
+    else bad "output has $crs carriage returns: a writer is not in binary mode"; fi
+
     # On POSIX a backslash is an ordinary filename character and must NOT split
     # the path; on Windows it is a separator.  Test whichever applies.
     case "$(uname -s)" in

@@ -45,7 +45,8 @@ void errlog::commit()
 	if (committed) return;
 
 	logfilestream = new ofstream;
-	logfilestream->open(logfile.c_str());
+	//ios::binary: see writeROHData in garlic-roh.cpp.
+	logfilestream->open(logfile.c_str(), ios::binary);
 	if (logfilestream->fail())
 	{
 		cerr << "ERROR: Could not open " << logfile << " for logging.\n";
@@ -71,7 +72,7 @@ ostream *errlog::errOut()
 	if (committed && errstream == &errbuf)
 	{
 		errfilestream = new ofstream;
-		errfilestream->open(errfile.c_str());
+		errfilestream->open(errfile.c_str(), ios::binary);
 		if (errfilestream->fail())
 		{
 			cerr << "ERROR: Could not open " << errfile << " for logging.\n";

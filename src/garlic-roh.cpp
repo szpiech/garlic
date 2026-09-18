@@ -859,7 +859,13 @@ void writeFROH(string outfile,
     }
 
     ofstream out;
-    out.open(outfile.c_str());
+    //ios::binary so the bytes written are the bytes on disk.  Without it the
+//Windows CRT translates every \n into \r\n, and garlic's text outputs came
+//out CRLF there while being otherwise byte-identical -- confirmed by taking a
+//Unix .roh.bed, converting it, and reproducing the exact md5 CI reported.
+//A BED file should be LF, and a result that differs by platform is a result
+//users cannot checksum against each other.  No effect on POSIX.
+    out.open(outfile.c_str(), ios::binary);
     if (out.fail())
     {
         LOG.err("ERROR: Failed to open", outfile);
@@ -926,7 +932,13 @@ void writeROHData(string outfile,
     vector<string> colors = makeClassColors(nclass);
    
     ofstream out;
-    out.open(outfile.c_str());
+    //ios::binary so the bytes written are the bytes on disk.  Without it the
+//Windows CRT translates every \n into \r\n, and garlic's text outputs came
+//out CRLF there while being otherwise byte-identical -- confirmed by taking a
+//Unix .roh.bed, converting it, and reproducing the exact md5 CI reported.
+//A BED file should be LF, and a result that differs by platform is a result
+//users cannot checksum against each other.  No effect on POSIX.
+    out.open(outfile.c_str(), ios::binary);
     if (out.fail())
     {
         LOG.err("ERROR: Failed to open", outfile);

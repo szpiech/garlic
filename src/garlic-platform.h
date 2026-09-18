@@ -4,11 +4,12 @@
 //The three places where POSIX and the Windows CRT genuinely differ, kept
 //together rather than as #ifdefs at the call sites.
 
+#include <sys/stat.h>  //stat/_stat, S_IFMT, S_IFDIR
+
 #ifdef _WIN32
   #include <direct.h>    //_mkdir
   #include <io.h>        //_isatty
 #else
-  #include <sys/stat.h>  //mkdir
   #include <unistd.h>    //isatty, STDERR_FILENO
 #endif
 
@@ -38,6 +39,26 @@ static inline bool garlicStderrIsTTY()
 #else
     return isatty(STDERR_FILENO) != 0;
 #endif
+}
+
+//Does this path exist AND is it a directory?
+//
+//mkdir returning EEXIST is not enough to conclude the output directory is
+//usable: a regular FILE of that name gives EEXIST too.  garlic used to accept
+//that and then abort when the writers could not open their outputs -- exit 134
+//on POSIX for `--outdir <an existing file>`, and on Windows it made an
+//uncreatable path look like success.  Tested with the S_IFMT mask rather than
+//S_ISDIR, which POSIX guarantees but the Windows CRT does not.
+static inline bool garlicIsDir(const char *path)
+{
+#ifdef _WIN32
+    struct _stat st;
+    if (_stat(path, &st) != 0) return false;
+#else
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+#endif
+    return (st.st_mode & S_IFMT) == S_IFDIR;
 }
 
 //Windows accepts either separator in a path; POSIX treats a backslash as an

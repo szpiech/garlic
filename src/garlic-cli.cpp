@@ -498,7 +498,8 @@ param_t *getCLI(int argc, char *argv[], int &status)
 
 void writeParamsJSON(string file, param_t *params, vector< pair<string,string> > &resolved)
 {
-	ofstream out(file.c_str());
+	//ios::binary: see writeROHData in garlic-roh.cpp.
+	ofstream out(file.c_str(), ios::binary);
 	if (out.fail())
 	{
 		LOG.err("ERROR: Failed to open", file);
@@ -836,6 +837,13 @@ bool makeOutdir(string dir){
 			if(p.size() == 2 && p[1] == ':') continue;
 			if(garlicMkdir(p.c_str()) != 0 && errno != EEXIST){
 				LOG.err("ERROR: Could not create output directory:", p);
+				return true;
+			}
+			//EEXIST alone does not mean the path is usable: a regular file of
+			//that name gives EEXIST as well, and garlic then aborted when the
+			//writers could not open their outputs (exit 134, no diagnosis).
+			if(!garlicIsDir(p.c_str())){
+				LOG.err("ERROR: Output path exists but is not a directory:", p);
 				return true;
 			}
 		}

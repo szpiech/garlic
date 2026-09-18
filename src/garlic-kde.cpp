@@ -383,7 +383,8 @@ int get_arg_min(double *nums, int size)
 void writeKDEResult(KDEResult *kdeResult, string outfile)
 {
     ofstream fout;
-    fout.open(outfile.c_str());
+    //ios::binary: see writeROHData in garlic-roh.cpp.
+    fout.open(outfile.c_str(), ios::binary);
     if (fout.fail())
     {
         LOG.err("ERROR: Failed to open", outfile);
