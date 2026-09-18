@@ -102,6 +102,46 @@ building on a cluster.
 ---CHANGES---
 UNRELEASED - Correctness, performance, and command line work.
 
+*** BEHAVIOUR CHANGE: input with more than one population label is now analysed one
+population at a time, and the output file names change accordingly. ***  The LOD score is
+parameterised by population allele frequency, so pooling distinct populations inflates
+heterozygosity relative to any one of them and biases the ratio for all of them.  Earlier
+versions pooled every individual and printed a warning telling the user to run each
+population separately; garlic now does that itself.  Each population gets allele frequencies
+from its own individuals, its own site filtering, its own automatically selected window size,
+LOD cutoff and size-class boundaries, and its own random stream derived from --seed.  A value
+given explicitly on the command line is not re-derived, so --winsize, --overlap-frac,
+--lod-cutoff and --size-bounds apply to every population.  Analysing several populations
+together gives each of them exactly what analysing it alone gives; they do not interact.
+
+With ONE population nothing changes: the file names, the numbers and the log are what they
+always were.  With more than one, the label is inserted before the extension --
+<out>.<POP>.roh.bed, <out>.<POP>.froh.tsv, <out>.<POP>.params.json,
+<out>.<POP>.<winsize>SNPs.kde -- while .log, .error and .freq.gz are written once for the run.
+Anything that globs <out>.roh.bed will need to account for that.
+
+--pool-populations restores the previous behaviour exactly: every individual analysed
+together, pooled frequencies, unlabelled file names.  Its output is byte-identical to the
+previous version's on the same input.
+
+Note for users of PLINK-derived files: column 1 of a TFAM is garlic's population label, but
+PLINK calls it the FAMILY ID, and it is often one family -- sometimes one sample -- per value.
+Such a file will now produce one analysis per family.  garlic warns when the smallest
+population has fewer than five individuals, and when there are more than two populations per
+individual on average, but it cannot tell the two situations apart with certainty.  Use --pop
+to supply real population labels, or --pool-populations to ignore them.
+
+--freq-file now accepts one frequency column per population, matched by the column header, so
+the column order need not match the order the populations appear in the input.  A file with a
+single frequency column still applies to every population whatever that column is called, so
+frequency files from earlier versions keep working.  garlic writes the same format: both the
+analysis and --freq-only produce a .freq.gz that can be given straight back with --freq-file
+to reproduce the run.
+
+A population that cannot be analysed -- too few ROH for the size-class GMM, or a LOD cutoff
+that cannot be selected -- is named in the error, and the run stops rather than writing a
+partial set of results that looks complete.
+
 *** NOT BACKWARD COMPATIBLE: .roh.bed coordinates have moved by one base. *** BED
 chromStart is 0-based and chromEnd is exclusive, but garlic wrote the 1-based position of
 the ROH's first variant, so chromEnd minus chromStart came out one less than the length in

@@ -149,13 +149,13 @@ Using the command line flag {\tt --help}, will print a help dialog with a summar
 
 \subsection{Input Files}
 
-Genotypes are read from either a VCF ({\tt --vcf}) or a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}).  The two are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Consecutive loci are assumed to be in order with respect to their physical position, and all records for a chromosome must be contiguous --- what {\tt bcftools sort} produces.  {\tt garlic} computes allele frequencies over every sample in the file, so different populations should be analysed separately; {\tt --pop} supplies the population label that appears in the output.
+Genotypes are read from either a VCF ({\tt --vcf}) or a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}).  The two are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Consecutive loci are assumed to be in order with respect to their physical position, and all records for a chromosome must be contiguous --- what {\tt bcftools sort} produces.  If the file contains more than one population, each is analysed separately; see Section~\ref{sec:multipop}.  {\tt --pop} overrides the labels, which for a TPED/TFAM pair are otherwise taken from column 1 of the TFAM.
 
 \subsubsection{VCF input}
 
 Biallelic SNVs carrying a {\tt GT} field are used.  Multiallelic sites, indels, symbolic ALT alleles ({\tt *}, {\tt <NON\_REF>}) and records with no {\tt GT} in {\tt FORMAT} are skipped, and the counts are written to the log rather than passed over silently.  The {\tt FILTER} column is reported either way and only acted on under {\tt --vcf-pass-only}, since it records the variant caller's thresholds rather than {\tt garlic}'s.
 
-A VCF states things a TPED cannot, and {\tt garlic} checks them: ploidy is per call, so anything other than a diploid genotype is an error naming the site and the sample; phase is per call, so {\tt --phased} requires {\tt |} everywhere rather than silently mis-reading a {\tt /}; and samples are named in the {\tt \#CHROM} line, so {\tt --tfam} is not accepted alongside {\tt --vcf} --- it could only disagree.  Use {\tt --pop} for population labels; omitting it labels every sample {\tt unknown} and warns, because the allele frequencies really are pooled over all of them.
+A VCF states things a TPED cannot, and {\tt garlic} checks them: ploidy is per call, so anything other than a diploid genotype is an error naming the site and the sample; phase is per call, so {\tt --phased} requires {\tt |} everywhere rather than silently mis-reading a {\tt /}; and samples are named in the {\tt \#CHROM} line, so {\tt --tfam} is not accepted alongside {\tt --vcf} --- it could only disagree.  Use {\tt --pop} for population labels; omitting it labels every sample {\tt unknown} and warns, because the allele frequencies really are pooled over all of them.  With {\tt --pop}, each population is analysed separately; see Section~\ref{sec:multipop}.
 
 The counted allele is ALT.  For the same genotypes a TPED counts whichever allele it saw first, so the frequency column may come out as $1-f$ relative to a TPED run.  This changes no ROH call, and a {\tt .freq.gz} file remains interchangeable between the two readers: {\tt readFreqData} compares the {\tt ALLELE} column against the reader's own coding and flips the frequency when they differ.
 
@@ -254,6 +254,20 @@ CHR	SNP	POS	ALLELE	FREQ
 <chr>	<locus ID>	<pos>	<allele>	<freq>
 \end{lstlisting}
 ~\\
+With more than one population the file carries one frequency column per population, headed by its label:
+\begin{lstlisting}
+CHR	SNP	POS	ALLELE	POPA	POPB
+<chr>	<locus ID>	<pos>	<allele>	<freq>	<freq>
+\end{lstlisting}
+~\\
+This is the format {\tt --freq-file} reads, so a run's own frequency file can be given back to {\tt garlic} to reproduce that run.  A file with a single frequency column is applied to every population, whatever the column is called, so a frequency file from an earlier version keeps working.  {\tt --freq-only} writes the same file without performing the analysis.
+~\\
+With {\tt --froh}, a {\tt .froh.tsv} table gives each individual's autozygous
+total and the fraction of the analysed genome it covers, one row per individual
+per size class plus a row for all classes together.  The denominator is stated
+in the header, as are the size-class boundaries actually used, so the fractions
+can be recomputed or compared across runs.
+
 Kernel density estimation of the LOD score distribution is output to {\tt .<winsize>SNPs.kde} formatted as
 \begin{lstlisting}
 <LOD score> <density>
@@ -282,6 +296,78 @@ When requested, raw LOD scores are also output.  This file contains one row per 
 
 Use {\tt --out <string>} to provide a base name for an output file.  This will be used in place of {\tt <outfile>} above.  Default value is {\tt outfile}.  
 
+\subsection{Multiple populations}
+\label{sec:multipop}
+
+The LOD score is parameterised by population allele frequency, so pooling
+distinct populations inflates heterozygosity relative to any one of them and
+biases the ratio for all of them.  When the input contains more than one
+population label, {\tt garlic} therefore analyses each population separately
+and in turn.  Each receives
+
+\begin{itemize}
+\item allele frequencies computed from its own individuals;
+\item its own site filtering, so a site that is monomorphic in one population
+      but polymorphic in another is dropped where it is uninformative;
+\item its own automatically selected window size, LOD score cutoff and
+      size-class boundaries;
+\item its own random number stream, derived from {\tt --seed}, so its result
+      does not depend on how many populations preceded it in the file.
+\end{itemize}
+
+\noindent A value given explicitly on the command line is not re-derived, so
+{\tt --winsize}, {\tt --overlap-frac}, {\tt --lod-cutoff} and
+{\tt --size-bounds} apply to every population.
+
+The consequence worth stating plainly is that analysing several populations
+together gives each of them exactly what analysing it alone would give.  The
+populations do not interact; running them in one command is a convenience, not
+a joint model.
+
+Populations are processed one at a time rather than together, so peak memory
+is bounded by the largest population rather than by their sum.
+
+\subsubsection{Where the labels come from}
+
+For a TPED/TFAM pair the label is column 1 of the TFAM.  {\bf PLINK calls that
+column the family ID}, and in many files it is one family --- sometimes one
+sample --- per value.  Such a file will produce one analysis per family, which
+is almost certainly not what was intended.  {\tt garlic} warns when the
+smallest population has fewer than five individuals, and again when there are
+more than two populations per individual on average, but it cannot tell the two
+situations apart with certainty.  Use {\tt --pop} to supply real population
+labels, or {\tt --pool-populations} to ignore them.
+
+A VCF carries no population labels, so {\tt --pop} is the only way to set them;
+without it every sample is labelled {\tt unknown} and the analysis is pooled.
+
+\subsubsection{Output files}
+
+With one population the output file names are unchanged.  With more than one,
+the population label is inserted before the extension:
+{\tt <out>.<POP>.roh.bed}, {\tt <out>.<POP>.froh.tsv},
+{\tt <out>.<POP>.params.json} and {\tt <out>.<POP>.<winsize>SNPs.kde}.  The
+{\tt .log}, {\tt .error} and {\tt .freq.gz} files are written once for the
+whole run.
+
+\subsubsection{{\tt --pool-populations}}
+
+This flag makes {\tt garlic} ignore the labels and analyse every individual
+together, which is what it did before per-population analysis existed.  Allele
+frequencies, the LOD score cutoff, the window size and the size classes are
+then computed over every sample at once, and the unlabelled output names are
+restored.  Use it when the labels are not populations, or to reproduce a run
+from an earlier version.  The {\tt .froh.tsv} header records that pooling
+happened, and so does {\tt .params.json}.
+
+\subsubsection{When a population cannot be analysed}
+
+A small population can fail size-class fitting or cutoff selection where a
+pooled fit would have succeeded.  {\tt garlic} reports which population failed
+and stops, rather than writing a partial set of results that looks complete.
+Supplying {\tt --size-bounds} or {\tt --lod-cutoff} avoids the automatic step
+that failed.
+
 \subsection{Controlling GARLIC}
 
 \noindent The remaining flags control window construction, LOD score
@@ -295,6 +381,25 @@ accepted -- and to miss every flag added since.
 \section{Change Log}
 
 \begin{lstlisting}
+UNRELEASED - Input with more than one population label is now analysed one population at a
+time; see "Multiple populations" under Program Options. Each population gets allele frequencies from its own individuals, its
+own site filtering, its own automatically selected window size, LOD cutoff and size-class
+boundaries, and its own random stream. A value given on the command line is not re-derived
+and applies to every population. Analysing several populations together gives each of them
+what analysing it alone gives.
+
+With ONE population nothing changes. With more than one, the label is inserted before the
+extension: <out>.<POP>.roh.bed and so on. --pool-populations restores the previous behaviour
+exactly, and its output is byte-identical to the previous version's.
+
+Column 1 of a TFAM is garlic's population label but PLINK's FAMILY ID, so a file that uses it
+per family will now produce one analysis per family. garlic warns, but use --pop or
+--pool-populations.
+
+--freq-file accepts one frequency column per population, matched by header; a single-column
+file still applies to everything. The .freq.gz garlic writes, from the analysis or from
+--freq-only, can be given straight back with --freq-file.
+
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 
 18JUL2017 - v1.1.5 Introduced --ld-subsample argument. If set > 0, will use only a subset of individuals for computing LD statistics when calculating wLOD scores. 
