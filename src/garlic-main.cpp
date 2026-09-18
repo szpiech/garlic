@@ -316,6 +316,25 @@ int main(int argc, char *argv[])
                         MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, KDE_THIN_STEP, LD_SUBSAMPLE);
 
         freeRNG();
+
+        //This return used to skip main's entire cleanup block, so
+        //--winsize-multi leaked every structure it had loaded: measured at 420
+        //blocks / 1,074,816 bytes on chr21 with leaks(1), and LeakSanitizer in
+        //CI reported 441 allocations / 968,474 bytes on the same path.  It is
+        //the only early return that reaches here with a full dataset loaded.
+        //
+        //rohLength, rohDataByInd and kdeResult do not exist yet on this path,
+        //so the list is main's normal exit minus those three.  genoFreqDataByChr
+        //is NULL unless (!PHASED && WEIGHTED), and releaseGenoFreq dereferences
+        //its argument, so it needs the guard.
+        releaseHapData(hapDataByChr);
+        releaseFreqData(freqDataByChr);
+        if (USE_GL) releaseGLData(GLDataByChr);
+        if (genoFreqDataByChr != NULL) releaseGenoFreq(genoFreqDataByChr);
+        releaseMapData(mapDataByChr);
+        releaseIndData(indData);
+        delete centro;
+        delete params;
         return 0;
     }
     else if (AUTO_WINSIZE)
