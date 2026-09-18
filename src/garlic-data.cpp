@@ -386,21 +386,24 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
 
             if(oneAllele == TPED_MISSING && alleleStr1 != TPED_MISSING) oneAllele = alleleStr1;
             if(oneAllele == TPED_MISSING && alleleStr2 != TPED_MISSING) oneAllele = alleleStr2;
-            if (alleleStr1 == TPED_MISSING) data[i] += -9;
-            else if (alleleStr1 == oneAllele){
-                data[i] += 1;
-                nalleles++;
-                total++;
-            }
-            else total++;
-            if (alleleStr2 == TPED_MISSING) data[i] += -9;
-            else if (alleleStr2 == oneAllele){
-                data[i] += 1;
-                nalleles++;
-                total++;
-            }
-            else total++;
-            if (data[i] < 0) data[i] = -9;
+
+            //Counted explicitly rather than accumulated into data[i] and then
+            //clamped.  The old form added -9 per missing allele and clamped any
+            //negative to -9, which collapsed a HALF call onto a fully missing
+            //one -- losing the fact that one real allele was observed, even
+            //though the frequency counters below had already used it.  The
+            //frequency arithmetic here is unchanged; what changes is that the
+            //matrix now records which case this was.
+            int observed = 0, counted = 0;
+            if (alleleStr1 != TPED_MISSING) { observed++; if (alleleStr1 == oneAllele) counted++; }
+            if (alleleStr2 != TPED_MISSING) { observed++; if (alleleStr2 == oneAllele) counted++; }
+            nalleles += counted;
+            total    += observed;
+
+            if (observed == 2)      data[i] = geno_t(counted);
+            else if (observed == 1) data[i] = (counted == 1 ? GENO_HALF_COUNTED : GENO_HALF_OTHER);
+            else                    data[i] = GENO_MISSING;
+
             if(PHASED) firstCopy[i] = (alleleStr1 == oneAllele);
         }
 
@@ -495,10 +498,9 @@ vector< FreqData * > *calcFreqDataForIndices(vector< HapData * > *hapDataByChr,
             double nalleles = 0, total = 0;
             for (unsigned int k = 0; k < keepInd.size(); k++)
             {
-                geno_t g = hap->data[locus][keepInd[k]];
-                //Matches loadVCFData: a call is either fully usable or not
-                //counted.  See calcFreqDataForIndices in the header.
-                if (g != GENO_MISSING) { nalleles += double(g); total += 2; }
+                //Half calls contribute their one observed allele, matching both
+                //loaders.  See the genotype encoding in garlic-data.h.
+                addAlleleCounts(hap->data[locus][keepInd[k]], nalleles, total);
             }
             freq[locus] = alleleFrequency(nalleles, total, nresample, r);
         }
@@ -655,7 +657,7 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
         int gtIndex = gtIndexOf(fmt);
         if (gtIndex < 0) continue;
 
-        int nalleles = 0, total = 0;
+        double nalleles = 0, total = 0;
         for (int i = 0; i < numInd; i++)
         {
             p = skipSpace(p, pEnd);
@@ -684,7 +686,7 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
                 throw 0;
             }
             p = tEnd;
-            if (dosage != GENO_MISSING) { nalleles += dosage; total += 2; }
+            addAlleleCounts(geno_t(dosage), nalleles, total);
         }
 
         double freq = alleleFrequency(nalleles, total, nresample, r);
@@ -1149,7 +1151,7 @@ double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j, int *indI
         //for (int ind = 0; ind < hapData->nind; ind++) {
         for (int k = 0; k < ldSubsample; k++) {
             int ind = indIndex[k];
-            if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
+            if (genoIsCalled(hapData->data[i][ind]) && genoIsCalled(hapData->data[j][ind])) {
                 total++;
                 if (hapData->data[i][ind] != 1 && hapData->data[j][ind] != 1) {
                     HAB++;
@@ -1178,7 +1180,7 @@ double r2(HapData *hapData, FreqData *freqData, int i, int j, int *indIndex, int
         //for (int ind = 0; ind < hapData->nind; ind++) {
         for (int k = 0; k < ldSubsample; k++) {
             int ind = indIndex[k];
-            if (hapData->data[i][ind] != -9 && hapData->data[j][ind] != -9) {
+            if (genoIsCalled(hapData->data[i][ind]) && genoIsCalled(hapData->data[j][ind])) {
                 total+=2;
                 if (hapData->data[i][ind] == 2 && hapData->data[j][ind] == 2) x11+=2;
                 else if (hapData->data[i][ind] == 1 && hapData->data[j][ind] == 2) x11++;
@@ -1238,7 +1240,7 @@ GenoFreqData *calculateGenoFreq(HapData *hapData){
         freqHom = 0;
         for (int ind = 0; ind < hapData->nind; ind++)
         {
-            if (hapData->data[locus][ind] != -9)
+            if (genoIsCalled(hapData->data[locus][ind]))
             {
                 if(hapData->data[locus][ind] == 2 || hapData->data[locus][ind] == 0) freqHom++;
                 total++;
@@ -2754,7 +2756,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
         if (PHASED) firstCopy = new bool[numInd];
         if (USE_GL)  glrow = new double[numInd];
 
-        int nalleles = 0, total = 0;
+        double nalleles = 0, total = 0;
 
         for (int i = 0; i < numInd; i++)
         {
@@ -2819,12 +2821,15 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                 while (fe < tEnd && *fe != ':') fe++;
                 string val(f, fe > f ? fe - f : 0);
 
-                if (dosage == GENO_MISSING || val.empty() || val.compare(".") == 0)
+                //genoIsCalled, not != GENO_MISSING: a HALF call has a genotype
+                //code of its own now, is not usable as a genotype, and so needs
+                //no per-genotype error rate.
+                if (!genoIsCalled(geno_t(dosage)) || val.empty() || val.compare(".") == 0)
                 {
                     //lod() takes its default branch for a missing genotype, so
                     //the error value is never read there.  1.0 is the honest
                     //placeholder: maximum uncertainty.
-                    if (dosage != GENO_MISSING)
+                    if (genoIsCalled(geno_t(dosage)))
                     {
                         abortRowRead(hap, fc, gl, data, firstCopy, glrow);
                         LOG.err("ERROR: sample", sampleIDs[i], false);
@@ -2875,7 +2880,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
 
             //Frequency over NON-MISSING alleles only, matching loadTPEDData,
             //which increments total only for an allele it could read.
-            if (dosage != GENO_MISSING) { nalleles += dosage; total += 2; }
+            addAlleleCounts(geno_t(dosage), nalleles, total);
         }
 
         p = skipSpace(p, pEnd);
@@ -2980,6 +2985,7 @@ bool parseGT(const char *sample, const char *sampleEnd, int gtIndex, int altInde
     firstCopy = false;
 
     bool anyMissing = false;
+    int nObserved = 0;
     const char *q = f;
     while (q < fEnd)
     {
@@ -2998,7 +3004,7 @@ bool parseGT(const char *sample, const char *sampleEnd, int gtIndex, int altInde
         ploidy++;
 
         if (idx < 0) anyMissing = true;
-        else if (idx == altIndex) dosage++;
+        else { nObserved++; if (idx == altIndex) dosage++; }
 
         if (q < fEnd)
         {
@@ -3010,7 +3016,18 @@ bool parseGT(const char *sample, const char *sampleEnd, int gtIndex, int altInde
     }
 
     if (ploidy == 0) return false;
-    if (anyMissing) dosage = GENO_MISSING;
+    if (anyMissing)
+    {
+        //A diploid HALF call keeps the allele that was observed: it is real
+        //data and counts towards the allele frequency, even though the
+        //genotype itself is unusable.  This is what loadTPEDData has always
+        //done; the VCF path used to collapse it onto GENO_MISSING and throw
+        //the observed allele away.
+        if (ploidy == 2 && nObserved == 1)
+            dosage = (dosage == 1 ? GENO_HALF_COUNTED : GENO_HALF_OTHER);
+        else
+            dosage = GENO_MISSING;
+    }
     return true;
 }
 

@@ -1128,6 +1128,96 @@ freq_file_format() {
 }
 
 # ---------------------------------------------------------------------------
+# 4i. Half calls
+# ---------------------------------------------------------------------------
+# A HALF call -- one allele observed, one missing ("A 0" in a TPED, "0/." in a
+# VCF) -- is unusable as a genotype, but the allele that WAS observed is real.
+# loadTPEDData has always counted it towards the allele frequency while storing
+# the genotype as missing; the VCF path used to discard it, so the two input
+# paths disagreed.  They now agree.
+#
+# The fixture is hand sized so the two rules give visibly different numbers.
+# Four individuals at one locus: A/A, A/G, G/G, A/. with A counted.
+#     counting the observed allele:  4 of 7  = 0.571429
+#     discarding the half call:      3 of 6  = 0.5
+# and through the VCF with REF=A ALT=G, where ALT is counted:
+#     counting:                      3 of 7  = 0.428571
+#     discarding:                    3 of 6  = 0.5
+# So the two frequencies must be COMPLEMENTARY.  Under the old behaviour the
+# VCF gave 0.5 and they summed to 1.071429.
+half_calls() {
+    echo "== half calls =="
+    HC=$WORK/hc; mkdir -p "$HC"
+
+    printf 'f1\ti1\t0\t0\t0\t0\nf2\ti2\t0\t0\t0\t0\nf3\ti3\t0\t0\t0\t0\nf4\ti4\t0\t0\t0\t0\n' > "$HC/h.tfam"
+    # rsHALF carries the half call; the rest exist only so a window can form
+    # (--winsize must be > 1).
+    {
+      printf 'chr21\trsHALF\t0\t9411000\tA\tA\tA\tG\tG\tG\tA\t0\n'
+      printf 'chr21\trsB\t0\t9412000\tC\tC\tC\tT\tT\tT\tC\tC\n'
+      printf 'chr21\trsC\t0\t9413000\tG\tG\tG\tG\tA\tA\tG\tA\n'
+      printf 'chr21\trsD\t0\t9414000\tT\tT\tT\tC\tC\tC\tT\tT\n'
+    } > "$HC/h.tped"
+
+    {
+      printf '##fileformat=VCFv4.2\n'
+      printf '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+      printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ti1\ti2\ti3\ti4\n'
+      printf 'chr21\t9411000\trsHALF\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t0/.\n'
+      printf 'chr21\t9412000\trsB\tC\tT\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t0/0\n'
+      printf 'chr21\t9413000\trsC\tG\tA\t.\tPASS\t.\tGT\t0/0\t0/0\t1/1\t0/1\n'
+      printf 'chr21\t9414000\trsD\tT\tC\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t0/0\n'
+    } > "$HC/h.vcf"
+    printf 'i1\tP\ni2\tP\ni3\tP\ni4\tP\n' > "$HC/h.pop"
+
+    "$GARLIC" --tped "$HC/h.tped" --tfam "$HC/h.tfam" --build hg18 --error 0.001 \
+        --freq-only --out "$HC/t" --quiet --force >/dev/null 2>&1
+    "$GARLIC" --vcf "$HC/h.vcf" --pop "$HC/h.pop" --build hg18 --error 0.001 \
+        --freq-only --out "$HC/v" --quiet --force >/dev/null 2>&1
+
+    ft=$(gzip -cd "$HC/t.freq.gz" 2>/dev/null | awk 'NR==2{print $5}')
+    fv=$(gzip -cd "$HC/v.freq.gz" 2>/dev/null | awk 'NR==2{print $5}')
+
+    # the TPED rule, unchanged: 4 of 7 observed alleles
+    if [ "$ft" = "0.571429" ]; then ok
+    else bad "TPED half call: frequency $ft, expected 0.571429 (4 of 7 observed alleles)"; fi
+
+    # the VCF must now follow it: 3 of 7, counting ALT.  0.5 here means the
+    # half call was discarded, which is the behaviour this replaced.
+    if [ "$fv" = "0.428571" ]; then ok
+    else bad "VCF half call: frequency $fv, expected 0.428571 (3 of 7); 0.5 means the observed allele was discarded"; fi
+
+    # stated as the property rather than the two numbers: the paths count the
+    # same alleles, in opposite orientations
+    sum=$(awk -v a="$ft" -v b="$fv" 'BEGIN{printf "%.6f", a+b}')
+    if [ "$sum" = "1.000000" ]; then ok
+    else bad "TPED and VCF frequencies do not reconcile: $ft + $fv = $sum"; fi
+
+    # and the genotype is still missing: a half call must not be scored.  With
+    # every individual either missing or called, a run over this one locus must
+    # not crash and must produce no tract.
+    # every locus must reconcile, not just the one with the half call
+    # Two files and a two-file awk, not `paste <(...) <(...)`: process
+    # substitution is a bashism and this suite runs under POSIX sh, where it
+    # produced an empty count that read as a failure.
+    gzip -cd "$HC/t.freq.gz" | awk 'NR>1{print $5}' > "$HC/tf"
+    gzip -cd "$HC/v.freq.gz" | awk 'NR>1{print $5}' > "$HC/vf"
+    recon=$(awk 'NR==FNR{a[FNR]=$1; next}
+                 {d=a[FNR]+$1-1; if (d<0) d=-d; if (d>1e-6) bad++}
+                 END{print bad+0}' "$HC/tf" "$HC/vf")
+    if [ "$recon" = "0" ]; then ok
+    else bad "$recon loci do not reconcile between the TPED and VCF paths"; fi
+
+    # the genotype is still missing: a half call must not be scored, and a
+    # dataset containing one must run.
+    "$GARLIC" --tped "$HC/h.tped" --tfam "$HC/h.tfam" --build hg18 --winsize 2 \
+        --error 0.001 --lod-cutoff 2.5 --size-bounds 100 200 \
+        --out "$HC/roh" --quiet --force >/dev/null 2>&1
+    if [ -f "$HC/roh.roh.bed" ]; then ok
+    else bad "a dataset containing a half call failed to run"; fi
+}
+
+# ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
 params_roundtrip() {
@@ -1186,6 +1276,7 @@ vcf_input
 vcf_likelihoods
 threads
 freq_file_format
+half_calls
 outdir_paths
 exit_codes
 params_roundtrip

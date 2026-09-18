@@ -288,6 +288,31 @@ static void test_calcFreqDataForIndices()
     releaseHapData(hv);
 }
 
+// ------------------------------------------------ addAlleleCounts() -----
+// What each genotype code contributes to an allele frequency.  This is the
+// rule that makes the TPED and VCF paths agree about half calls, so it is
+// pinned rather than left implicit in four accumulation loops.
+static void test_addAlleleCounts()
+{
+    double na, t;
+    #define ACC(g) (na = 0, t = 0, addAlleleCounts((g), na, t))
+    ACC(0); ck(na == 0 && t == 2, "addAlleleCounts: 0 contributes 0 of 2");
+    ACC(1); ck(na == 1 && t == 2, "addAlleleCounts: 1 contributes 1 of 2");
+    ACC(2); ck(na == 2 && t == 2, "addAlleleCounts: 2 contributes 2 of 2");
+    ACC(GENO_HALF_COUNTED); ck(na == 1 && t == 1, "addAlleleCounts: a half call of the counted allele contributes 1 of 1");
+    ACC(GENO_HALF_OTHER);   ck(na == 0 && t == 1, "addAlleleCounts: a half call of the other allele contributes 0 of 1");
+    ACC(GENO_MISSING);      ck(na == 0 && t == 0, "addAlleleCounts: a fully missing call contributes nothing");
+
+    // the two half codes together are exactly one heterozygote's worth, which
+    // is why a half call cannot be treated as missing without biasing the
+    // frequency towards whatever the called individuals carry
+    na = 0; t = 0;
+    addAlleleCounts(GENO_HALF_COUNTED, na, t);
+    addAlleleCounts(GENO_HALF_OTHER,   na, t);
+    ck(na == 1 && t == 2, "addAlleleCounts: two opposite half calls sum to one heterozygote");
+    #undef ACC
+}
+
 // ---------------------------------------------------------------- lod() ----
 // lod(g, p, e) = log10( P(g | autozygous) / P(g | not autozygous) ) with a
 // per-genotype error rate e.  The three branches are hand-computable.
@@ -710,9 +735,27 @@ static void test_parseGT()
     // --- missing and half calls ---
     ck(GT("./.") && d == GENO_MISSING && pl == 2, "parseGT ./. -> missing");
     ck(GT(".|.") && d == GENO_MISSING,            "parseGT .|. -> missing");
-    ck(GT("0/.") && d == GENO_MISSING,            "parseGT 0/. -> MISSING, not dosage 0");
-    ck(GT("./1") && d == GENO_MISSING,            "parseGT ./1 -> MISSING, not dosage 1");
-    ck(GT("1/.") && d == GENO_MISSING,            "parseGT 1/. -> MISSING, not dosage 1");
+    // A HALF call keeps the allele that WAS observed.  These three used to
+    // return GENO_MISSING, throwing that allele away; loadTPEDData has always
+    // counted it towards the allele frequency while storing the genotype as
+    // missing, and the VCF path now does the same.  The genotype is still
+    // unusable -- every negative code is missing to lod() -- but the observed
+    // allele reaches the frequency.
+    ck(GT("0/.") && d == GENO_HALF_OTHER,   "parseGT 0/. -> half call, observed allele is not the counted one");
+    ck(GT("./1") && d == GENO_HALF_COUNTED, "parseGT ./1 -> half call, observed allele IS the counted one");
+    ck(GT("1/.") && d == GENO_HALF_COUNTED, "parseGT 1/. -> half call, order does not matter");
+    ck(GT("1|.") && d == GENO_HALF_COUNTED, "parseGT 1|. -> half call on a phased genotype");
+    ck(!genoIsCalled(GENO_HALF_COUNTED) && !genoIsCalled(GENO_HALF_OTHER) && !genoIsCalled(GENO_MISSING),
+       "parseGT: no half code counts as a called genotype");
+    ck(genoIsCalled(0) && genoIsCalled(1) && genoIsCalled(2),
+       "parseGT: 0, 1 and 2 are called genotypes");
+    // lod() must not distinguish them: all negatives take its default branch
+    ck(lod(GENO_HALF_COUNTED, 0.3, 0.001) == lod(GENO_MISSING, 0.3, 0.001) &&
+       lod(GENO_HALF_OTHER,   0.3, 0.001) == lod(GENO_MISSING, 0.3, 0.001),
+       "parseGT: a half call scores exactly as missing in lod()");
+    // at a multiallelic site the counted allele is whichever altIndex names
+    ck(GTI("2/.", 0, 2) && d == GENO_HALF_COUNTED, "parseGT 2/. with altIndex 2 -> counted");
+    ck(GTI("1/.", 0, 2) && d == GENO_HALF_OTHER,   "parseGT 1/. with altIndex 2 -> not counted");
     ck(GT(".")   && d == GENO_MISSING && pl == 1, "parseGT . -> missing, ploidy 1");
 
     // --- ploidy is reported, not rejected: the caller names site and sample ---
@@ -835,6 +878,7 @@ int main()
     test_enumeratePopulations();
     test_subsetDataByIndex();
     test_alleleFrequency();
+    test_addAlleleCounts();
     test_calcFreqDataForIndices();
     test_lod();
     test_interpolate();

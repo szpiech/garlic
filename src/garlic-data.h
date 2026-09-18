@@ -60,7 +60,41 @@ const geno_t GENO_UNSET = -9;
 //parsed and found missing, as opposed to one not yet parsed.  The LOD lookup
 //table maps anything outside {0,1,2} to its default slot, so -9 needs no
 //special case downstream.
-const geno_t GENO_MISSING = -9;
+//Genotype encoding.  0, 1 and 2 are the number of copies of the counted
+//allele.  Every negative value means "not a usable genotype" -- lod() returns
+//0 for any of them and the LOD lookup table maps them all to its missing slot
+//-- but they differ in what they contribute to an ALLELE FREQUENCY:
+//
+//   GENO_MISSING       both alleles unobserved        contributes nothing
+//   GENO_HALF_COUNTED  one allele observed, and it IS the counted allele
+//                                                     contributes 1 of 1
+//   GENO_HALF_OTHER    one allele observed, and it is not the counted allele
+//                                                     contributes 0 of 1
+//
+//A half call ("A 0" in a TPED, "0/." in a VCF) is unusable as a genotype, but
+//the allele that WAS observed is real data.  loadTPEDData has always counted
+//it towards the frequency while storing the genotype as missing; the VCF path
+//discarded it entirely.  These codes let both paths agree, and let a frequency
+//be recomputed for a subset of individuals from the matrix alone -- which the
+//old encoding could not, because it threw the half call away.
+const geno_t GENO_MISSING      = -9;
+const geno_t GENO_HALF_COUNTED = -1;
+const geno_t GENO_HALF_OTHER   = -2;
+
+//Is this a usable genotype?  Any test for "not missing" must use this rather
+//than `!= GENO_MISSING`, which the half codes pass.
+inline bool genoIsCalled(geno_t g) { return g >= 0; }
+
+//One genotype's contribution to an allele frequency.  Centralised for the same
+//reason as alleleFrequency: four sites accumulate this, and they must agree
+//about the half codes or the input paths diverge again.
+inline void addAlleleCounts(geno_t g, double &nalleles, double &total)
+{
+    if (g >= 0)                      { nalleles += double(g); total += 2; }
+    else if (g == GENO_HALF_COUNTED) { nalleles += 1;         total += 1; }
+    else if (g == GENO_HALF_OTHER)   {                        total += 1; }
+    //GENO_MISSING contributes nothing.
+}
 
 
 
