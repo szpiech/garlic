@@ -973,13 +973,23 @@ outdir_paths() {
     # a path that cannot be created is a usage error, not a crash and not a
     # silent write into the working directory
     # shellcheck disable=SC2086
+    f0=$fail
+    # shellcheck disable=SC2086
     expect_exit 1 "--outdir onto an uncreatable path" \
         "$GARLIC" $A --outdir "$OD/plain.roh.bed/sub" --out r --force
-    # If that ever passes when it should not, the useful fact is what the path
-    # actually is on that platform, so say so rather than leaving the next
-    # reader to reason about mkdir errno conventions from a bare exit status.
-    if [ -d "$OD/plain.roh.bed" ]; then
-        echo "        NOTE: $OD/plain.roh.bed is a DIRECTORY here, not a file"
+    # This passes on POSIX and fails on MinGW, where garlic exits 0 with no
+    # error at all -- so makeOutdir returned false AND its postcondition found a
+    # real directory at the path it resolved, while the shell still sees
+    # plain.roh.bed as a regular file.  Those are only consistent if garlic and
+    # the shell disagree about where that path is.  Rather than reason about
+    # MSYS2 argument conversion from a bare exit status, report where the output
+    # actually landed -- that names the path garlic resolved.
+    if [ "$fail" -ne "$f0" ]; then
+        printf '        plain.roh.bed: '; ls -ld "$OD/plain.roh.bed" 2>&1 | head -1
+        printf '        sub:           '; ls -ld "$OD/plain.roh.bed/sub" 2>&1 | head -1
+        found=$(find "$WORK" -name 'r.roh.bed' 2>/dev/null | tr '\n' ' ')
+        echo "        r.roh.bed under \$WORK: ${found:-nowhere}"
+        [ -f ./r.roh.bed ] && echo "        also in the cwd: --outdir was ignored entirely"
     fi
 
     # ...and neither is a path that exists as a FILE.  mkdir returns EEXIST for
