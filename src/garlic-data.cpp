@@ -3470,30 +3470,28 @@ void releaseDoubleData(vector < DoubleData * > *rawWinDataByPop)
     return;
 }
 
-void subsetData(vector< HapData * > *hapDataByChr,
-                vector< GenoLikeData *> *GLDataByChr,
-                IndData *indData,
-                vector< HapData * > **subsetHapDataByChr,
-                vector< GenoLikeData *> **subsetGLDataByChr,
-                IndData **subsetIndData,
-                int subsample, bool USE_GL, bool PHASED)
+void subsetDataByIndex(vector< HapData * > *hapDataByChr,
+                       vector< GenoLikeData *> *GLDataByChr,
+                       IndData *indData,
+                       const vector<int> &keepInd,
+                       vector< HapData * > **subsetHapDataByChr,
+                       vector< GenoLikeData *> **subsetGLDataByChr,
+                       IndData **subsetIndData,
+                       bool USE_GL, bool PHASED)
 {
-    GarlicRNG *r = getRNG();
+    int nind = int(keepInd.size());
 
-    int nind = hapDataByChr->at(0)->nind;
-    vector<int> randInd;
-    if (subsample >= nind)
+    //Checked once here rather than trusted per element: every read below is
+    //data[locus][keepInd[ind]], so one bad index is an out-of-bounds read
+    //repeated nloci times, and silent.
+    int navail = (hapDataByChr->size() > 0 ? hapDataByChr->at(0)->nind : 0);
+    for (int i = 0; i < nind; i++)
     {
-        randInd.resize(nind);
-        for (int i = 0; i < nind; i++) randInd[i] = i;
-    }
-    else
-    {
-        vector<int> indIndex(nind);
-        for (int i = 0; i < nind; i++) indIndex[i] = i;
-        randInd.resize(subsample);
-        r->choose(randInd.data(), subsample, indIndex.data(), nind);
-        nind = subsample;
+        if (keepInd[i] < 0 || keepInd[i] >= navail || keepInd[i] >= indData->nind)
+        {
+            LOG.err("ERROR: individual index out of range in subsetDataByIndex:", keepInd[i]);
+            throw 0;
+        }
     }
 
     IndData *newIndData = initIndData(nind);
@@ -3503,18 +3501,18 @@ void subsetData(vector< HapData * > *hapDataByChr,
     //so the subsequent releaseIndData(subset) freed memory that main still
     //owned and freed again -> abort under --auto-winsize.  Deep copy instead.
     for (int ind = 0; ind < nind; ind++) {
-        newIndData->indID[ind] = indData->indID[randInd[ind]];
-        newIndData->pop[ind]   = indData->pop[randInd[ind]];
+        newIndData->indID[ind] = indData->indID[keepInd[ind]];
+        newIndData->pop[ind]   = indData->pop[keepInd[ind]];
+        newIndData->sex[ind]   = indData->sex[keepInd[ind]];
     }
-    LOG.loga("Individuals used for KDE:", newIndData->indID.data(), nind);
 
     vector< HapData * > *newHapDataByChr = new vector< HapData * >;
-    vector< GenoLikeData * > *newGLDataByChr;
+    vector< GenoLikeData * > *newGLDataByChr = NULL;
     if (USE_GL) newGLDataByChr = new vector< GenoLikeData * >;
 
     int nchr = hapDataByChr->size();
     HapData *hapData;
-    GenoLikeData *GLData;
+    GenoLikeData *GLData = NULL;
     for (int chr = 0; chr < nchr; chr++)
     {
         int nloci = hapDataByChr->at(chr)->nloci;
@@ -3525,9 +3523,9 @@ void subsetData(vector< HapData * > *hapDataByChr,
         {
             for (int ind = 0; ind < nind; ind++)
             {
-                hapData->data[locus][ind] = hapDataByChr->at(chr)->data[locus][randInd[ind]];
-                if (PHASED) hapData->firstCopy[locus][ind] = hapDataByChr->at(chr)->firstCopy[locus][randInd[ind]];
-                if (USE_GL) GLData->data[locus][ind] = GLDataByChr->at(chr)->data[locus][randInd[ind]];
+                hapData->data[locus][ind] = hapDataByChr->at(chr)->data[locus][keepInd[ind]];
+                if (PHASED) hapData->firstCopy[locus][ind] = hapDataByChr->at(chr)->firstCopy[locus][keepInd[ind]];
+                if (USE_GL) GLData->data[locus][ind] = GLDataByChr->at(chr)->data[locus][keepInd[ind]];
             }
         }
         newHapDataByChr->push_back(hapData);
@@ -3539,6 +3537,40 @@ void subsetData(vector< HapData * > *hapDataByChr,
     *(subsetHapDataByChr) = newHapDataByChr;
     if(USE_GL) *(subsetGLDataByChr) = newGLDataByChr;
     *(subsetIndData) = newIndData;
+    return;
+}
+
+void subsetData(vector< HapData * > *hapDataByChr,
+                vector< GenoLikeData *> *GLDataByChr,
+                IndData *indData,
+                vector< HapData * > **subsetHapDataByChr,
+                vector< GenoLikeData *> **subsetGLDataByChr,
+                IndData **subsetIndData,
+                int subsample, bool USE_GL, bool PHASED)
+{
+    int nind = hapDataByChr->at(0)->nind;
+    vector<int> randInd;
+    if (subsample >= nind)
+    {
+        randInd.resize(nind);
+        for (int i = 0; i < nind; i++) randInd[i] = i;
+    }
+    else
+    {
+        GarlicRNG *r = getRNG();
+        vector<int> indIndex(nind);
+        for (int i = 0; i < nind; i++) indIndex[i] = i;
+        randInd.resize(subsample);
+        r->choose(randInd.data(), subsample, indIndex.data(), nind);
+    }
+
+    subsetDataByIndex(hapDataByChr, GLDataByChr, indData, randInd,
+                      subsetHapDataByChr, subsetGLDataByChr, subsetIndData,
+                      USE_GL, PHASED);
+
+    //Logged here, not in the gather: the gather is also how a population is
+    //selected, and that has nothing to do with the KDE.
+    LOG.loga("Individuals used for KDE:", (*subsetIndData)->indID.data(), int(randInd.size()));
     return;
 }
 

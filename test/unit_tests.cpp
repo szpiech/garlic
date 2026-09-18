@@ -109,6 +109,122 @@ static void test_enumeratePopulations()
     ck(enumeratePopulations(NULL).empty(), "enumeratePopulations: NULL gives an empty list");
 }
 
+// ---------------------------------------------- subsetDataByIndex() -----
+// The gather behind both --kde-subsample and, shortly, per-population
+// selection.  Two properties matter beyond "it copies something":
+//
+//   ORDER follows keepInd, not the natural order -- the caller controls the
+//   individual ordering of the result, which is what lets a population be
+//   gathered in file order.
+//
+//   It DEEP copies.  subsetData used to alias IndData::pop, which leaked one
+//   array and double-freed another (the --auto-winsize abort, B1).  That exact
+//   bug is no longer expressible -- IndData holds std::vector and Matrix<T>
+//   since the ownership refactor, and both deep copy on assignment -- so the
+//   assertions below are a guard against a future reintroduction of raw
+//   pointer sharing, not a live reproduction.  Injecting the original
+//   `newIndData->pop = indData->pop` now fails the ORDER check instead, which
+//   is worth knowing: it is the gather checks that discriminate today.
+static void test_subsetDataByIndex()
+{
+    const int nind = 5, nloci = 4;
+    IndData *ind = initIndData(nind);
+    const char *ids[]  = {"i0", "i1", "i2", "i3", "i4"};
+    const char *pops[] = {"A",  "B",  "A",  "C",  "B"};
+    for (int i = 0; i < nind; i++)
+    {
+        ind->indID[i] = ids[i];
+        ind->pop[i]   = pops[i];
+        ind->sex[i]   = (i % 2) + 1;
+    }
+
+    //Heap allocated because releaseHapData(vector<HapData*>*) deletes the
+    //vector itself, as it does for the real per-chromosome vectors.
+    vector< HapData * > *hv = new vector< HapData * >;
+    HapData *hap = initHapData(nind, nloci, true);
+    for (int l = 0; l < nloci; l++)
+        for (int i = 0; i < nind; i++)
+        {
+            hap->data[l][i]      = geno_t(10 * l + i);
+            hap->firstCopy[l][i] = (unsigned char)(i % 2);
+        }
+    hv->push_back(hap);
+
+    // the "B" individuals, in file order: 1 then 4
+    vector<int> keep;
+    keep.push_back(1); keep.push_back(4);
+
+    vector< HapData * > *subHap = NULL;
+    IndData *subInd = NULL;
+    subsetDataByIndex(hv, NULL, ind, keep, &subHap, NULL, &subInd, false, true);
+
+    ck(subInd != NULL && subInd->nind == 2, "subsetDataByIndex: subset has the requested size");
+    cks(subInd->indID[0], "i1", "subsetDataByIndex: first individual follows keepInd");
+    cks(subInd->indID[1], "i4", "subsetDataByIndex: second individual follows keepInd");
+    cks(subInd->pop[0],   "B",  "subsetDataByIndex: population label follows");
+    ck(subInd->sex[1] == 1,     "subsetDataByIndex: sex follows");
+    ck(subHap->at(0)->nind == 2 && subHap->at(0)->nloci == nloci,
+       "subsetDataByIndex: genotype matrix is nloci x |keepInd|");
+
+    bool geno = true, fc = true;
+    for (int l = 0; l < nloci; l++)
+    {
+        if (subHap->at(0)->data[l][0] != geno_t(10 * l + 1)) geno = false;
+        if (subHap->at(0)->data[l][1] != geno_t(10 * l + 4)) geno = false;
+        if (subHap->at(0)->firstCopy[l][0] != 1) fc = false;
+        if (subHap->at(0)->firstCopy[l][1] != 0) fc = false;
+    }
+    ck(geno, "subsetDataByIndex: genotypes are the chosen individuals' own");
+    ck(fc,   "subsetDataByIndex: firstCopy follows the same individuals");
+
+    // reversed order must reverse the result, not re-sort it
+    vector<int> rev;
+    rev.push_back(4); rev.push_back(1);
+    vector< HapData * > *revHap = NULL;
+    IndData *revInd = NULL;
+    subsetDataByIndex(hv, NULL, ind, rev, &revHap, NULL, &revInd, false, true);
+    cks(revInd->indID[0], "i4", "subsetDataByIndex: keepInd order is honoured, not sorted");
+    ck(revHap->at(0)->data[0][0] == geno_t(4),
+       "subsetDataByIndex: genotypes follow the reversed order too");
+    releaseHapData(revHap); releaseIndData(revInd);
+
+    // Mutate the subset, then check the WHOLE original.  Checking one cell is
+    // not enough: an alias shifts which element a given subset index lands on,
+    // so a single-cell check can read an untouched one and pass.
+    bool origOK = true;
+    subInd->pop[0]   = "MUTATED";
+    subInd->indID[0] = "MUTATED";
+    subHap->at(0)->data[0][0] = geno_t(99);
+    for (int i = 0; i < nind; i++)
+        if (ind->pop[i] != pops[i] || ind->indID[i] != ids[i]) origOK = false;
+    for (int l = 0; l < nloci; l++)
+        for (int i = 0; i < nind; i++)
+            if (hap->data[l][i] != geno_t(10 * l + i)) origOK = false;
+    ck(origOK, "subsetDataByIndex: mutating the subset leaves the whole original intact");
+
+    releaseHapData(subHap); releaseIndData(subInd);
+    origOK = true;
+    for (int i = 0; i < nind; i++)
+        if (ind->pop[i] != pops[i] || ind->indID[i] != ids[i]) origOK = false;
+    for (int l = 0; l < nloci; l++)
+        for (int i = 0; i < nind; i++)
+            if (hap->data[l][i] != geno_t(10 * l + i)) origOK = false;
+    ck(origOK, "subsetDataByIndex: releasing the subset leaves the whole original intact");
+
+    // an out-of-range index is an error, not an out-of-bounds read
+    vector<int> bad;
+    bad.push_back(0); bad.push_back(nind);
+    vector< HapData * > *badHap = NULL;
+    IndData *badInd = NULL;
+    bool threw = false;
+    try { subsetDataByIndex(hv, NULL, ind, bad, &badHap, NULL, &badInd, false, true); }
+    catch (...) { threw = true; }
+    ck(threw, "subsetDataByIndex: an out-of-range index is rejected");
+
+    releaseHapData(hv);
+    releaseIndData(ind);
+}
+
 // ---------------------------------------------------------------- lod() ----
 // lod(g, p, e) = log10( P(g | autozygous) / P(g | not autozygous) ) with a
 // per-genotype error rate e.  The three branches are hand-computable.
@@ -654,6 +770,7 @@ int main()
     (void)&compile_time_logger_overload_coverage;
     printf("garlic unit tests\n");
     test_enumeratePopulations();
+    test_subsetDataByIndex();
     test_lod();
     test_interpolate();
     test_inGap();

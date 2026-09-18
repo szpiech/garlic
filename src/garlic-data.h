@@ -404,6 +404,27 @@ GenoLikeData *initGLData(const vector< double * > &GL, int nloci, int nind);
 void releaseGLData(GenoLikeData *data);
 void releaseGLData(vector< GenoLikeData * > *GLDataByChr);
 
+//Gather an explicit set of individuals into freshly allocated structures.
+//
+//Everything is deep copied: subsetData used to alias IndData::pop instead,
+//which leaked one array and double-freed another (the --auto-winsize abort).
+//keepInd may be any subset in any order; the output is in keepInd's order, so
+//the caller controls the individual ordering of the result.
+//
+//This is the gather subsetData has always done, separated from the choice of
+//WHICH individuals, so that a population can be selected as easily as a random
+//subsample.
+void subsetDataByIndex(vector< HapData * > *hapDataByChr,
+                       vector< GenoLikeData *> *GLDataByChr,
+                       IndData *indData,
+                       const vector<int> &keepInd,
+                       vector< HapData * > **subsetHapDataByChr,
+                       vector< GenoLikeData *> **subsetGLDataByChr,
+                       IndData **subsetIndData,
+                       bool USE_GL, bool PHASED);
+
+//Random subsample of `subsample` individuals (all of them if subsample >= n).
+//A thin wrapper over subsetDataByIndex that draws the indices.
 void subsetData(vector< HapData * > *hapDataByChr,
                 vector< GenoLikeData *> *GLDataByChr,
                 IndData *indData,
