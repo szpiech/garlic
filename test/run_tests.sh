@@ -973,29 +973,57 @@ outdir_paths() {
     # a path that cannot be created is a usage error, not a crash and not a
     # silent write into the working directory
     # shellcheck disable=SC2086
+    # A path that cannot be created is a usage error, not a crash and not a
+    # silent write into the working directory.
+    #
+    # Windows takes a native path here rather than the POSIX one, and that is
+    # the point.  Passing "$OD/plain.roh.bed/sub" to a native binary from an
+    # MSYS2 shell does not reach it intact: three runs of this case reported
+    #
+    #     garlic resolved: Output file basename: /tmp/.../plain.roh.bed/sub/r
+    #
+    # i.e. the raw POSIX string, which the Windows CRT then resolves relative
+    # to the current drive -- a fresh, creatable chain that the shell's view of
+    # $WORK does not contain, so garlic succeeded and its output vanished.
+    # MSYS2 converted the neighbouring arguments ("$OD/a/b/c", and "$OD/plain.roh.bed"
+    # itself) correctly; the one it passed through is the one whose parent
+    # component is a regular FILE, which is what a converter resolving the
+    # longest existing prefix would choke on.  cygpath sidesteps the converter
+    # so the case tests garlic rather than the harness.
     f0=$fail
-    # shellcheck disable=SC2086
-    expect_exit 1 "--outdir onto an uncreatable path" \
-        "$GARLIC" $A --outdir "$OD/plain.roh.bed/sub" --out r --force
-    # This passes on POSIX and fails on MinGW, where garlic exits 0 with no
-    # error at all -- so makeOutdir returned false AND its postcondition found a
-    # real directory at the path it resolved, while the shell still sees
-    # plain.roh.bed as a regular file.  Those are only consistent if garlic and
-    # the shell disagree about where that path is.  Rather than reason about
-    # MSYS2 argument conversion from a bare exit status, report where the output
-    # actually landed -- that names the path garlic resolved.
-    if [ "$fail" -ne "$f0" ]; then
-        printf '        plain.roh.bed: '; ls -ld "$OD/plain.roh.bed" 2>&1 | head -1
-        printf '        sub:           '; ls -ld "$OD/plain.roh.bed/sub" 2>&1 | head -1
-        found=$(find "$WORK" -name 'r.roh.bed' 2>/dev/null | tr '\n' ' ')
-        echo "        r.roh.bed under \$WORK: ${found:-nowhere}"
-        [ -f ./r.roh.bed ] && echo "        also in the cwd: --outdir was ignored entirely"
-        # garlic logs the basename it resolved, but --quiet suppresses it.  Re-run
-        # without --quiet and read it back: that names the path it actually used,
-        # which is the one fact the exit status cannot give.
+    UNCREATABLE="$OD/plain.roh.bed/sub"
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            # Without cygpath the substitution would be empty and UNCREATABLE
+            # would become "\plain.roh.bed\sub" -- a drive-relative path garlic
+            # can create, so the case would report something meaningless rather
+            # than nothing.  Skip instead.
+            if command -v cygpath >/dev/null 2>&1; then
+                UNCREATABLE="$(cygpath -w "$OD")\\plain.roh.bed\\sub"
+            else
+                echo "  SKIP  --outdir onto an uncreatable path: cygpath not available"
+                UNCREATABLE=""
+            fi
+            ;;
+    esac
+    if [ -n "$UNCREATABLE" ]; then
         # shellcheck disable=SC2086
-        "$GARLIC" $A --outdir "$OD/plain.roh.bed/sub" --out r --force 2>&1 \
-            | grep -i "output file basename" | head -1 | sed 's/^/        garlic resolved: /'
+        expect_exit 1 "--outdir onto an uncreatable path" \
+            "$GARLIC" $A --outdir "$UNCREATABLE" --out r --force
+        if [ "$fail" -ne "$f0" ]; then
+            echo "        requested: $UNCREATABLE"
+            printf '        plain.roh.bed: '; ls -ld "$OD/plain.roh.bed" 2>&1 | head -1
+            printf '        sub:           '; ls -ld "$OD/plain.roh.bed/sub" 2>&1 | head -1
+            found=$(find "$WORK" -name 'r.roh.bed' 2>/dev/null | tr '\n' ' ')
+            echo "        r.roh.bed under \$WORK: ${found:-nowhere}"
+            [ -f ./r.roh.bed ] && echo "        also in the cwd: --outdir was ignored entirely"
+            # garlic logs the basename it resolved, but --quiet suppresses it.  Re-run
+            # without --quiet and read it back: that names the path it actually used,
+            # which is the one fact the exit status cannot give.
+            # shellcheck disable=SC2086
+            "$GARLIC" $A --outdir "$UNCREATABLE" --out r --force 2>&1 \
+                | grep -i "output file basename" | head -1 | sed 's/^/        garlic resolved: /'
+        fi
     fi
 
     # An output basename whose directory does not exist is a runtime error with
