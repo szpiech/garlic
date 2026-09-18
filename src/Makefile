@@ -13,7 +13,6 @@
 # which left the macOS build at -O0 and ~3.4x slower than -O2.
 
 CXX ?= g++
-I_PATH = ../include
 
 UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
@@ -112,11 +111,11 @@ else ifeq ($(PLATFORM),macos-arm)
   ARCHFLAGS =
   LINK_OPTS =
 else ifeq ($(PLATFORM),win32)
-  # No -I ../include/win32 either: that directory holds the 2017 zlib headers
-  # that went with the 32-bit archive.  MSYS2 supplies zlib.h and libz for the
-  # architecture actually being built (mingw-w64-x86_64-zlib for MINGW64,
-  # mingw-w64-i686-zlib for MINGW32), which is the only combination that can
-  # work -- a 64-bit build cannot use an i386 archive at all.
+  # No include path either: ../include/win32 held the 2017 zlib headers that
+  # went with the 32-bit archive, and both are gone.  MSYS2 supplies zlib.h and
+  # libz for the architecture actually being built (mingw-w64-x86_64-zlib for
+  # MINGW64, mingw-w64-i686-zlib for MINGW32), which is the only combination
+  # that can work -- a 64-bit build cannot use an i386 archive at all.
   # -DPTW32_STATIC_LIB is gone: it guarded the pthread_win32_process_attach_np
   # /detach_np pair in main, which pthreads-win32 requires and std::thread does
   # not.  Nothing tests the macro now.
@@ -184,7 +183,7 @@ garlic$(EXE) : $(OBJS)
 DEPFLAGS = -MMD -MP
 
 %.o : %.cpp
-	$(CC) $(G++FLAG) $(DEPFLAGS) -c $< -I$(I_PATH) $(I_PATH2)
+	$(CC) $(G++FLAG) $(DEPFLAGS) -c $< $(I_PATH2)
 
 # garlic-version.h is generated, so it has to exist before the first compile
 # that includes it; the .d file cannot know about it on a clean tree.

@@ -88,7 +88,7 @@ unit_tests() {
     # cannot link it at all, so pointing at it here (as an earlier version of
     # this stage did) only moved the failure.
     # shellcheck disable=SC2086
-    if $CXX -O1 -std=c++11 -I"$ROOT/include" -I"$ROOT/src" \
+    if $CXX -O1 -std=c++11 -I"$ROOT/src" \
             "$ROOT/test/unit_tests.cpp" $OBJ -lz \
             -o "$WORK/unit_tests" 2>"$WORK/unit_build.log"; then
         if "$WORK/unit_tests"; then ok; else bad "unit tests reported failures"; fi
