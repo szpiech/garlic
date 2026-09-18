@@ -50,6 +50,7 @@ struct PopResult
 
 static PopResult analyzePopulation(const GarlicOptions &opt,
                                    param_t *params,
+                                   const string &popLabel,
                                    vector< HapData * > *hapDataByChr,
                                    vector< FreqData * > *freqDataByChr,
                                    vector< MapData * > *mapDataByChr,
@@ -62,6 +63,12 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
 {
     PopResult res;
     res.status = POP_OK;
+
+    //Empty for a single-population run, so its messages read exactly as they
+    //always did.  With several, every failure has to say WHICH population it
+    //is talking about -- otherwise the user gets the existing advice with no
+    //way to know where to apply it.
+    const string where = popLabel.empty() ? string("") : (" [population " + popLabel + "]");
 
     //Read-only for this population.
     const string &outfile          = opt.outfile;
@@ -213,7 +220,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         //happily wrote a complete, plausible-looking .roh.bed from it.
         if (!cutoffOK)
         {
-            LOG.err("ERROR: Could not select a LOD score cutoff automatically. Stopping.");
+            LOG.err("ERROR: Could not select a LOD score cutoff automatically" + where + ". Stopping.");
             res.status = POP_ERROR; return res;
         }
 
@@ -236,7 +243,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         //SIGABRT after having already done all the work.  Report it instead.
         if (rohLength == NULL || rohLength->size < NCLUST)
         {
-            LOG.err("ERROR: Cannot fit a", NCLUST, false);
+            LOG.err("ERROR:" + where + " Cannot fit a", NCLUST, false);
             LOG.err("-component GMM to", int(rohLength == NULL ? 0 : rohLength->size), false);
             LOG.err(" ROH.");
             LOG.err("\tNo (or too few) ROH were called, so size classes cannot be chosen automatically.");
@@ -282,7 +289,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         if (params->getBoolFlag(ARG_FROH))
         {
             writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
-                      indData->pop, centro, CM);
+                  indData->pop, centro, CM, popLabel, opt.POOLED);
         }
     }
     catch (...) { logCurrentException("writing the ROH calls"); writeStatus = 2; }
@@ -379,6 +386,8 @@ int main(int argc, char *argv[])
     vector< GenMapScaffold *> *scaffoldMapByChr = NULL;
     //One frequency set per population, when --freq-file supplied them.
     vector< vector< FreqData * >* > *fileFreq = NULL;
+    //The same, when garlic computed them itself.
+    vector< vector< FreqData * >* > popFreq;
     bool USE_GL = false;
     try
     {
@@ -487,6 +496,63 @@ int main(int argc, char *argv[])
     }
     catch (...) { logCurrentException("reading the input files"); return 2; }
 
+    //--pool-populations restores the pre-per-population behaviour: one
+    //analysis over everyone, pooled frequencies, unlabelled output names.
+    //Implemented by making the loop take the single-population path rather
+    //than by rewriting the population list, so the run record still reports
+    //which populations were actually present.
+    bool POOL = params->getBoolFlag(ARG_POOL);
+    opt.POOLED = POOL;
+    if (POOL && populations.size() > 1)
+    {
+        LOG.log("--pool-populations: analysing all", indData->nind, false);
+        LOG.log(" individuals as one population.");
+        LOG.err("WARNING: --pool-populations pools allele frequencies across", int(populations.size()), false);
+        LOG.err(" populations,");
+        LOG.err("\twhich inflates heterozygosity relative to any one of them and biases");
+        LOG.err("\tthe LOD scores for all of them.");
+    }
+    bool singlePop = (populations.size() <= 1) || POOL;
+
+    //A population's allele frequencies are estimated from that population
+    //alone, so a small one estimates them coarsely: with n individuals the
+    //only attainable values are multiples of 1/(2n).  Worth saying, because
+    //the split is silent otherwise.
+    if (!singlePop)
+    {
+        int smallest = indData->nind;
+        for (unsigned int k = 0; k < populations.size(); k++)
+            if (populations[k].second < smallest) smallest = populations[k].second;
+        if (smallest < 5)
+        {
+            LOG.err("WARNING: the smallest population has", smallest, false);
+            LOG.err(" individuals.");
+            LOG.err("\tAllele frequencies are estimated within each population, so they");
+            LOG.err("\tresolve only to multiples of 1/(2n) there.");
+        }
+        //Column 1 of a TFAM is garlic's population label, but PLINK calls it
+        //the FAMILY ID and it is often one family -- sometimes one individual
+        //-- per value.  Averaging under two individuals per population is a
+        //much better sign of that than of real populations.
+        if (populations.size() * 2 > (unsigned int)indData->nind)
+        {
+            LOG.err("WARNING:", int(populations.size()), false);
+            LOG.err(" populations for", indData->nind, false);
+            LOG.err(" individuals.");
+            LOG.err("\tgarlic takes the population label from column 1 of the TFAM, which");
+            LOG.err("\tPLINK calls the family ID; if those are family or sample identifiers");
+            LOG.err("\trather than populations, this run is analysing each one separately.");
+            LOG.err("\tUse --pop to supply the population labels.");
+        }
+    }
+
+    //Which individuals belong to each population, in file order.
+    vector< vector<int> > popIndex(populations.size());
+    for (int i = 0; i < indData->nind; i++)
+        for (unsigned int k = 0; k < populations.size(); k++)
+            if (indData->pop[i].compare(populations[k].first) == 0)
+            { popIndex[k].push_back(i); break; }
+
 //++++++++++Allele frequencies++++++++++
     if (AUTO_FREQ)
     {
@@ -495,7 +561,26 @@ int main(int argc, char *argv[])
 
         string freqOutfile = outfile;
         freqOutfile += ".freq";
-        writeFreqData(freqOutfile, freqDataByChr, mapDataByChr, indData);
+        if (singlePop)
+        {
+            writeFreqData(freqOutfile, freqDataByChr, mapDataByChr, indData);
+        }
+        else
+        {
+            //One column per population, which is the format --freq-file reads,
+            //so a run's own frequency file reproduces that run.  A single
+            //pooled column would describe an analysis that did not happen.
+            //Computed here rather than in the loop because the file is written
+            //against the UNFILTERED map, and filtering is per population.
+            vector<string> popNames;
+            for (unsigned int k = 0; k < populations.size(); k++)
+            {
+                popNames.push_back(populations[k].first);
+                popFreq.push_back(calcFreqDataForIndices(hapDataByChr, popIndex[k], nresample));
+            }
+            try { writeFreqDataWide(freqOutfile, popFreq, popNames, mapDataByChr); }
+            catch (...) { logCurrentException("writing the allele frequency file"); return 2; }
+        }
     }
     else //(!AUTO_FREQ)
     {
@@ -598,62 +683,6 @@ int main(int argc, char *argv[])
     //largest structure in the run, and holding one at a time bounds peak
     //memory by the largest population rather than by their sum.  The inner
     //stages are already threaded, so nothing is left idle.
-    //--pool-populations restores the pre-per-population behaviour: one
-    //analysis over everyone, pooled frequencies, unlabelled output names.
-    //Implemented by making the loop take the single-population path rather
-    //than by rewriting the population list, so the run record still reports
-    //which populations were actually present.
-    bool POOL = params->getBoolFlag(ARG_POOL);
-    if (POOL && populations.size() > 1)
-    {
-        LOG.log("--pool-populations: analysing all", indData->nind, false);
-        LOG.log(" individuals as one population.");
-        LOG.err("WARNING: --pool-populations pools allele frequencies across", int(populations.size()), false);
-        LOG.err(" populations,");
-        LOG.err("\twhich inflates heterozygosity relative to any one of them and biases");
-        LOG.err("\tthe LOD scores for all of them.");
-    }
-    bool singlePop = (populations.size() <= 1) || POOL;
-
-    //A population's allele frequencies are estimated from that population
-    //alone, so a small one estimates them coarsely: with n individuals the
-    //only attainable values are multiples of 1/(2n).  Worth saying, because
-    //the split is silent otherwise.
-    if (!singlePop)
-    {
-        int smallest = indData->nind;
-        for (unsigned int k = 0; k < populations.size(); k++)
-            if (populations[k].second < smallest) smallest = populations[k].second;
-        if (smallest < 5)
-        {
-            LOG.err("WARNING: the smallest population has", smallest, false);
-            LOG.err(" individuals.");
-            LOG.err("\tAllele frequencies are estimated within each population, so they");
-            LOG.err("\tresolve only to multiples of 1/(2n) there.");
-        }
-        //Column 1 of a TFAM is garlic's population label, but PLINK calls it
-        //the FAMILY ID and it is often one family -- sometimes one individual
-        //-- per value.  Averaging under two individuals per population is a
-        //much better sign of that than of real populations.
-        if (populations.size() * 2 > (unsigned int)indData->nind)
-        {
-            LOG.err("WARNING:", int(populations.size()), false);
-            LOG.err(" populations for", indData->nind, false);
-            LOG.err(" individuals.");
-            LOG.err("\tgarlic takes the population label from column 1 of the TFAM, which");
-            LOG.err("\tPLINK calls the family ID; if those are family or sample identifiers");
-            LOG.err("\trather than populations, this run is analysing each one separately.");
-            LOG.err("\tUse --pop to supply the population labels.");
-        }
-    }
-
-    //Which individuals belong to each population, in file order.
-    vector< vector<int> > popIndex(populations.size());
-    for (int i = 0; i < indData->nind; i++)
-        for (unsigned int k = 0; k < populations.size(); k++)
-            if (indData->pop[i].compare(populations[k].first) == 0)
-            { popIndex[k].push_back(i); break; }
-
 
     int writeStatus = 0;
     unsigned int npass = POOL ? 1 : (unsigned int)populations.size();
@@ -701,7 +730,13 @@ int main(int argc, char *argv[])
                 pFreq = fileFreq->at(k);
                 fileFreq->at(k) = NULL;
             }
-            else pFreq = calcFreqDataForIndices(hapDataByChr, popIndex[k], nresample);
+            else
+            {
+                //Computed and written above; handed over the same way, so the
+                //frequencies in <out>.freq.gz are exactly the ones used.
+                pFreq = popFreq[k];
+                popFreq[k] = NULL;
+            }
             pMap = cloneMapData(mapDataByChr);
         }
 
@@ -757,6 +792,7 @@ int main(int argc, char *argv[])
         }
 
         PopResult pop = analyzePopulation(popOpt, params,
+                                          singlePop ? string("") : popName,
                                           pHap, pFreq, pMap,
                                           pGL, pGF,
                                           pInd, centro, USE_GL, variantDensity);
@@ -830,6 +866,9 @@ int main(int argc, char *argv[])
     //The scaffold is read by every population's filtering and interpolation,
     //so it is released here rather than after the first one.
     if (scaffoldMapByChr != NULL) releaseGenMapScaffold(scaffoldMapByChr);
+    for (unsigned int i = 0; i < popFreq.size(); i++)
+        if (popFreq[i] != NULL) releaseFreqData(popFreq[i]);
+    popFreq.clear();
     if (fileFreq != NULL)
     {
         //Whatever the loop did not consume -- everything, if it stopped early.

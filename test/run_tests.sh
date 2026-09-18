@@ -1408,6 +1408,47 @@ multi_population() {
     if cmp -s "$MP/p1.roh.bed" "$MP/asone.roh.bed"; then ok
     else bad "--pool-populations changed a single-population run"; fi
 
+    # The run's own frequency file is written in the format --freq-file reads,
+    # one column per population, so feeding it back reproduces the run.  A
+    # single pooled column would describe an analysis that did not happen.
+    if gz "$MP/both.freq.gz" | head -1 | grep -q 'ALLELE.*POPA.*POPB'; then ok
+    else bad "a multi-population run did not write a per-population frequency file"; fi
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --froh \
+        --freq-file "$MP/both.freq.gz" --out "$MP/rtf" --quiet --force >/dev/null 2>&1
+    if cmp -s "$MP/rtf.POPA.roh.bed" "$MP/both.POPA.roh.bed" &&
+       cmp -s "$MP/rtf.POPB.roh.bed" "$MP/both.POPB.roh.bed"; then ok
+    else bad "a run's own frequency file did not reproduce the run"; fi
+
+    # A pooled table has to be distinguishable from a per-population one once
+    # it is separated from the run.  The pop COLUMN already names the
+    # population in a per-population table, so only the pooled case needs a
+    # header -- and adding one to the per-population case would make a
+    # population's table depend on what it was run alongside.
+    if grep -q '^## populations_pooled	true' "$MP/pooled.froh.tsv" &&
+       ! grep -q 'populations_pooled' "$MP/both.POPA.froh.tsv"; then ok
+    else bad "the froh table does not mark pooling, or marks it when not pooled"; fi
+
+    # A population that cannot be analysed must say WHICH, and stop the run:
+    # a partial result set that looks complete is the worse failure.
+    # shellcheck disable=SC2086
+    if "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" --build hg18 --winsize 60 \
+            --error 0.001 --lod-cutoff 99999 --out "$MP/fail" --force 2>&1 \
+            | grep -q '\[population POPA\] Cannot fit'; then ok
+    else bad "a population that failed size-class fitting was not named"; fi
+    if [ ! -f "$MP/fail.POPB.roh.bed" ]; then ok
+    else bad "a failed population did not stop the run"; fi
+    # shellcheck disable=SC2086
+    expect_exit 2 "a failed population exits 2" \
+        "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" --build hg18 --winsize 60 \
+        --error 0.001 --lod-cutoff 99999 --out "$MP/fail2" --force
+    # and the single-population wording is untouched: no label, same capital
+    # shellcheck disable=SC2086
+    if "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" --build hg18 --winsize 60 \
+            --error 0.001 --lod-cutoff 99999 --out "$MP/fail3" --force 2>&1 \
+            | grep -q 'ERROR: Cannot fit a'; then ok
+    else bad "the single-population failure message changed"; fi
+
     # one population keeps the unlabelled names, so nothing existing changes
     gz "$EX/chr21.tfam.gz" > "$MP/one.tfam"
     # shellcheck disable=SC2086

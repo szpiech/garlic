@@ -30,6 +30,9 @@ struct GarlicOptions
     bool            WEIGHTED;
     string          mapfile;
     bool            CM;
+    //--pool-populations.  Read in main, carried here so the per-population
+    //analysis can mark its outputs without another parameter.
+    bool            POOLED;
     string          BUILD;
     string          centromereFile;
     bool            NO_CENTROMERE;

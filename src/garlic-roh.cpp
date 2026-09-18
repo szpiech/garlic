@@ -824,7 +824,9 @@ void writeFROH(string outfile,
                vector< double > bounds,
                const vector<string> &pop,
                centromere *centro,
-               bool CM)
+               bool CM,
+               const string &popLabel,
+               bool pooled)
 {
     const int nclass = int(bounds.size()) + 1;
 
@@ -873,6 +875,13 @@ void writeFROH(string outfile,
     }
 
     out << "## garlic FROH\n";
+    //Whether the individuals below were analysed TOGETHER.  Only the pooled
+    //case needs saying: in a per-population table the pop column is already
+    //constant and names the population, so a "## population" line would
+    //repeat it -- and would make a population's table differ depending on
+    //whether it was run alongside others, which is exactly the equivalence
+    //the suite asserts.
+    if (pooled) out << "## populations_pooled\ttrue\n";
     out << "## units\t" << (CM ? "cM" : "bp") << "\n";
     out << "## denominator\t" << (long long)(denom + 0.5) << "\t";
     out << (CM ? "sum over analysed chromosomes of (last - first genetic position)"

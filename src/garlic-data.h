@@ -396,6 +396,14 @@ FreqData *initFreqData(int nloci);
 void releaseFreqData(FreqData *data);
 void releaseFreqData(vector< FreqData * > *freqDataByChr);
 
+//The multi-population counterpart of writeFreqData: one frequency column per
+//population, headed by its label.  This is the format readFreqData accepts, so
+//a run's own frequency file can be fed back with --freq-file to reproduce it.
+void writeFreqDataWide(string freqOutfile,
+                       const vector< vector< FreqData * >* > &freqByPop,
+                       const vector<string> &popNames,
+                       vector< MapData * > *mapDataByChr);
+
 void writeFreqData(string freqOutfile,
                    vector< FreqData * > *freqDataByChr,
                    vector< MapData * > *mapDataByChr,

@@ -1721,6 +1721,45 @@ void releaseFreqData(vector< FreqData * > *freqDataByChr)
     return;
 }
 
+void writeFreqDataWide(string freqOutfile,
+                       const vector< vector< FreqData * >* > &freqByPop,
+                       const vector<string> &popNames,
+                       vector< MapData * > *mapDataByChr)
+{
+    freqOutfile += ".gz";
+    ogzstream fout;
+    fout.open(freqOutfile.c_str());
+
+    if (fout.fail())
+    {
+        LOG.err("ERROR: Failed to open", freqOutfile);
+        throw 0;
+    }
+
+    fout << "CHR\tSNP\tPOS\tALLELE";
+    for (unsigned int p = 0; p < popNames.size(); p++) fout << "\t" << popNames[p];
+    fout << "\n";
+
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+    {
+        for (int locus = 0; locus < mapDataByChr->at(chr)->nloci; locus++)
+        {
+            fout << mapDataByChr->at(chr)->chr << "\t"
+                 << mapDataByChr->at(chr)->locusName[locus] << "\t"
+                 << pos_t(mapDataByChr->at(chr)->physicalPos[locus]) << "\t"
+                 << mapDataByChr->at(chr)->allele[locus];
+            for (unsigned int p = 0; p < freqByPop.size(); p++)
+                fout << "\t" << freqByPop[p]->at(chr)->freq[locus];
+            fout << "\n";
+        }
+    }
+
+    fout.close();
+    LOG.log("Wrote allele frequencies for", int(popNames.size()), false);
+    LOG.log(" populations to", freqOutfile);
+    return;
+}
+
 void writeFreqData(string freqOutfile,
                    vector< FreqData * > *freqDataByChr,
                    vector< MapData * > *mapDataByChr,

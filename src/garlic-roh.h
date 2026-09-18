@@ -74,13 +74,18 @@ void setGMMParams(int maxIter, double tol);
 
 //Per-individual autozygous total and fraction, by size class.  Long format so
 //the number of classes (which --nclust controls) does not change the columns.
+//popLabel is empty for a single-population run and pooled marks
+//--pool-populations, so a table can be told apart from one produced by a file
+//that really had a single population.
 void writeFROH(string outfile,
                vector< ROHData * > *rohDataByInd,
                vector< MapData * > *mapDataByChr,
                vector< double > bounds,
                const vector<string> &pop,
                centromere *centro,
-               bool CM);
+               bool CM,
+               const string &popLabel,
+               bool pooled);
 void calcLOD(MapData *mapData,
              HapData *hapData, FreqData *freqData,
              GenoLikeData *GLData,
