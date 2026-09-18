@@ -424,15 +424,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         }
 
         if(AUTO_FREQ){
-            double freqtmp = (total == 0) ? 0 : (double(nalleles)/double(total)) ;
-            if (nresample > 0 && total != 0){
-                int count = 0;
-                for (int i = 0; i < nresample; i++){
-                    if (r->uniform() <= freqtmp) count++;
-                }
-                freqtmp = double(count) / double(nresample);
-            }
-            freq.push_back(freqtmp);
+            freq.push_back(alleleFrequency(nalleles, total, nresample, r));
         }
     }
 
@@ -472,6 +464,47 @@ GenoLikeData *initGLData(const vector< double * > &GL, int nloci, int nind){
     glData->data.finishRows();
 
     return glData;
+}
+
+double alleleFrequency(double nalleles, double total, int nresample, GarlicRNG *r)
+{
+    double freq = (total == 0) ? 0 : (nalleles / total);
+    if (nresample > 0 && total != 0)
+    {
+        int count = 0;
+        for (int i = 0; i < nresample; i++) if (r->uniform() <= freq) count++;
+        freq = double(count) / double(nresample);
+    }
+    return freq;
+}
+
+vector< FreqData * > *calcFreqDataForIndices(vector< HapData * > *hapDataByChr,
+                                             const vector<int> &keepInd,
+                                             int nresample)
+{
+    GarlicRNG *r = getRNG();
+    vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
+
+    for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
+    {
+        HapData *hap = hapDataByChr->at(chr);
+        int nloci = hap->nloci;
+        vector<double> freq(nloci);
+        for (int locus = 0; locus < nloci; locus++)
+        {
+            double nalleles = 0, total = 0;
+            for (unsigned int k = 0; k < keepInd.size(); k++)
+            {
+                geno_t g = hap->data[locus][keepInd[k]];
+                //Matches loadVCFData: a call is either fully usable or not
+                //counted.  See calcFreqDataForIndices in the header.
+                if (g != GENO_MISSING) { nalleles += double(g); total += 2; }
+            }
+            freq[locus] = alleleFrequency(nalleles, total, nresample, r);
+        }
+        freqDataByChr->push_back(initFreqData(freq, nloci));
+    }
+    return freqDataByChr;
 }
 
 FreqData *initFreqData(const vector<double> &freq, int nloci){
@@ -654,13 +687,7 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY)
             if (dosage != GENO_MISSING) { nalleles += dosage; total += 2; }
         }
 
-        double freq = (total == 0) ? 0 : (double(nalleles) / double(total));
-        if (nresample > 0 && total != 0)
-        {
-            int count = 0;
-            for (int i = 0; i < nresample; i++) if (r->uniform() <= freq) count++;
-            freq = double(count) / double(nresample);
-        }
+        double freq = alleleFrequency(nalleles, total, nresample, r);
 
         //ALT in the ALLELE column.  readFreqData compares it against
         //mapData->allele and flips to 1-f on a mismatch, so this file is
@@ -748,14 +775,7 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING)
             }
         }
 
-        double freq = (total == 0) ? 0 : (nalleles/total);
-        if (nresample > 0 && total != 0){
-            count = 0;
-            for (int i = 0; i < nresample; i++){
-                if (r->uniform() <= freq) count++;
-            }
-            freq = double(count) / double(nresample);
-        }
+        double freq = alleleFrequency(nalleles, total, nresample, r);
         ss.clear();
         
         //pos_t, not int: this was the last 32-bit truncation of a physical
@@ -2788,14 +2808,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
 
         if (AUTO_FREQ)
         {
-            double freqtmp = (total == 0) ? 0 : (double(nalleles) / double(total));
-            if (nresample > 0 && total != 0)
-            {
-                int count = 0;
-                for (int i = 0; i < nresample; i++) if (r->uniform() <= freqtmp) count++;
-                freqtmp = double(count) / double(nresample);
-            }
-            freq.push_back(freqtmp);
+                freq.push_back(alleleFrequency(nalleles, total, nresample, r));
         }
     }
 

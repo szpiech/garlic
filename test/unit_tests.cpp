@@ -225,6 +225,69 @@ static void test_subsetDataByIndex()
     releaseIndData(ind);
 }
 
+// ------------------------------------------------ allele frequency -----
+// alleleFrequency() is the rule four call sites had each written out:
+// loadTPEDData, loadVCFData, freqOnly, freqOnlyVCF.
+static void test_alleleFrequency()
+{
+    ckd(alleleFrequency(3, 6, 0, NULL), 0.5,  1e-12, "alleleFrequency: 3 of 6");
+    ckd(alleleFrequency(5, 5, 0, NULL), 1.0,  1e-12, "alleleFrequency: fixed");
+    ckd(alleleFrequency(0, 8, 0, NULL), 0.0,  1e-12, "alleleFrequency: absent");
+    // total == 0 is the no-data case and must not divide; every caller relies
+    // on this branch for a locus where nobody was called.
+    ckd(alleleFrequency(0, 0, 0, NULL), 0.0,  1e-12, "alleleFrequency: no observations gives 0, not NaN");
+    // r is documented as ignorable when nresample <= 0; NULL above proves it.
+    ckd(alleleFrequency(1, 4, -1, NULL), 0.25, 1e-12, "alleleFrequency: negative nresample is no resampling");
+}
+
+// ------------------------------------------ calcFreqDataForIndices() ----
+// Per-population frequencies, from the loaded genotype matrix.  The property
+// that matters is not just "it divides correctly" but that the SAME locus
+// gets DIFFERENT frequencies in different subsets -- that is the whole point
+// of analysing populations separately.
+static void test_calcFreqDataForIndices()
+{
+    const int nind = 4, nloci = 3;
+    vector< HapData * > *hv = new vector< HapData * >;
+    HapData *hap = initHapData(nind, nloci, false);
+    //                 ind:   0            1            2            3
+    geno_t g[3][4] = {{ 0,           1,           2,           GENO_MISSING },
+                      { 2,           2,           2,           2            },
+                      { GENO_MISSING, GENO_MISSING, 0,          1            }};
+    for (int l = 0; l < nloci; l++)
+        for (int i = 0; i < nind; i++) hap->data[l][i] = g[l][i];
+    hv->push_back(hap);
+
+    vector<int> all;
+    for (int i = 0; i < nind; i++) all.push_back(i);
+    vector< FreqData * > *fAll = calcFreqDataForIndices(hv, all, 0);
+    ck(fAll->size() == 1 && fAll->at(0)->nloci == nloci,
+       "calcFreqDataForIndices: one FreqData per chromosome, nloci long");
+    ckd(fAll->at(0)->freq[0], 3.0 / 6.0, 1e-12, "calcFreqDataForIndices: missing individual excluded from both numerator and denominator");
+    ckd(fAll->at(0)->freq[1], 1.0,       1e-12, "calcFreqDataForIndices: fixed locus");
+    ckd(fAll->at(0)->freq[2], 1.0 / 4.0, 1e-12, "calcFreqDataForIndices: two missing individuals excluded");
+
+    // the same loci, two different halves of the cohort
+    vector<int> firstTwo, lastTwo;
+    firstTwo.push_back(0); firstTwo.push_back(1);
+    lastTwo.push_back(2);  lastTwo.push_back(3);
+    vector< FreqData * > *fA = calcFreqDataForIndices(hv, firstTwo, 0);
+    vector< FreqData * > *fB = calcFreqDataForIndices(hv, lastTwo,  0);
+
+    ckd(fA->at(0)->freq[0], 1.0 / 4.0, 1e-12, "calcFreqDataForIndices: locus 0 in the first half");
+    ckd(fB->at(0)->freq[0], 1.0,       1e-12, "calcFreqDataForIndices: locus 0 in the second half");
+    ck(fA->at(0)->freq[0] != fB->at(0)->freq[0],
+       "calcFreqDataForIndices: a locus gets different frequencies in different subsets");
+    // every individual of the first half is missing at locus 2
+    ckd(fA->at(0)->freq[2], 0.0,       1e-12, "calcFreqDataForIndices: all-missing subset gives 0, not NaN");
+    ckd(fB->at(0)->freq[2], 1.0 / 4.0, 1e-12, "calcFreqDataForIndices: locus 2 in the second half");
+    // a fixed locus is fixed in any subset
+    ckd(fA->at(0)->freq[1], 1.0, 1e-12, "calcFreqDataForIndices: fixed locus is fixed in a subset too");
+
+    releaseFreqData(fAll); releaseFreqData(fA); releaseFreqData(fB);
+    releaseHapData(hv);
+}
+
 // ---------------------------------------------------------------- lod() ----
 // lod(g, p, e) = log10( P(g | autozygous) / P(g | not autozygous) ) with a
 // per-genotype error rate e.  The three branches are hand-computable.
@@ -771,6 +834,8 @@ int main()
     printf("garlic unit tests\n");
     test_enumeratePopulations();
     test_subsetDataByIndex();
+    test_alleleFrequency();
+    test_calcFreqDataForIndices();
     test_lod();
     test_interpolate();
     test_inGap();

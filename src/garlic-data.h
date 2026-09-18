@@ -456,6 +456,38 @@ int countFields(const string &str);
 string lc(string str);
 string checkChrName(string chr);
 
+//One allele frequency from a count of counted alleles and a total of observed
+//alleles, with the optional --resample step.
+//
+//Four call sites computed this identically and independently: loadTPEDData,
+//loadVCFData, freqOnly and freqOnlyVCF.  That is the shape the filterMonomorphic*
+//family had before it was collapsed -- one rule, re-derived in several places,
+//free to drift.  Per-population frequencies add a fifth caller, so it is
+//centralised here first.
+//
+//r may be NULL when nresample <= 0, since no draw is made then.
+double alleleFrequency(double nalleles, double total, int nresample, GarlicRNG *r);
+
+//Allele frequencies for a chosen set of individuals, computed from an ALREADY
+//LOADED genotype matrix rather than from the file.
+//
+//This is how a population gets its own frequencies: the population labels are
+//not known while the file is being read (readIndData3 runs after
+//loadTPEDData, and --pop later still), so the frequencies are recomputed once
+//the labels are in hand.
+//
+//NOTE a half call ("A 0" in a TPED, "0/." in a VCF) counts as MISSING here,
+//contributing to neither numerator nor denominator, because that is what the
+//genotype matrix holds.  loadVCFData already does exactly this; loadTPEDData
+//does NOT -- it counts the present allele of a half call towards the
+//frequency while storing the genotype as missing.  So on TPED data containing
+//half calls these frequencies differ from loadTPEDData's, and agree with
+//loadVCFData's.  The two input paths already disagreed; this follows the VCF
+//one.  Neither bundled example contains a missing call of either kind.
+vector< FreqData * > *calcFreqDataForIndices(vector< HapData * > *hapDataByChr,
+                                             const vector<int> &keepInd,
+                                             int nresample);
+
 //Applies a --pop file to already-assembled IndData, matching BY SAMPLE ID.
 //
 //Format: whitespace-separated, '#' comments and blank lines skipped, read
