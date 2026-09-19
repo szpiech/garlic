@@ -833,32 +833,45 @@ void writeFROH(string outfile,
                vector< ROHData * > *rohDataByInd,
                vector< MapData * > *mapDataByChr,
                vector< double > bounds,
-               const vector<string> &pop,
+               IndData *indData,
                centromere *centro,
                bool CM,
                const string &popLabel,
-               bool pooled)
+               bool pooled,
+               const vector<ChrRole> *role)
 {
-    const int nclass = int(bounds.size()) + 1;
+    const int nclass = int(bounds.size()) + 1;   //A..  plus the ALL column set
 
-    //Denominator: the span actually covered by the data on each analysed
-    //chromosome, minus the assembly gap where it falls inside that span.  This
-    //is stated in the file header because there is no single conventional
-    //choice and the numbers are not comparable across denominators.
-    double denom = 0;
+    //Two denominators, not one.  An individual that cannot carry a run of
+    //homozygosity on the sex chromosome must not have that chromosome in the
+    //denominator of anything -- it would deflate its FROH by the sex
+    //chromosome's share of the analysed span -- and autosomal and
+    //sex-chromosomal FROH are not summable in any case: the X coalesces
+    //faster than the autosomes and carries more ROH at the same level of
+    //consanguinity, so the two are quantities to compare, not to pool.
+    //
+    //Because eligibility is per individual but the SPAN is not, this is two
+    //constants and a rule about who gets the second one, rather than a
+    //denominator per individual.
+    double denomAuto = 0, denomSex = 0;
+    bool haveSexChr = false;
+    string sexChrNames;
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         MapData *md = mapDataByChr->at(chr);
+        ChrRole r = (role != NULL && chr < role->size()) ? role->at(chr) : CHR_AUTOSOME;
         if (md->nloci < 2) continue;
+
+        double span;
         if (CM)
         {
-            denom += md->geneticPos[md->nloci - 1] - md->geneticPos[0];
+            span = md->geneticPos[md->nloci - 1] - md->geneticPos[0];
         }
         else
         {
             double lo = md->physicalPos[0];
             double hi = md->physicalPos[md->nloci - 1];
-            double span = hi - lo;
+            span = hi - lo;
             double gs = centro->centromereStart(md->chr);
             double ge = centro->centromereEnd(md->chr);
             if (ge > gs)
@@ -867,8 +880,16 @@ void writeFROH(string outfile,
                 double ole = (ge < hi ? ge : hi);
                 if (ole > ols) span -= (ole - ols);
             }
-            denom += span;
         }
+
+        if (r == CHR_SEX_SHARED)
+        {
+            denomSex += span;
+            haveSexChr = true;
+            if (!sexChrNames.empty()) sexChrNames += ",";
+            sexChrNames += md->chr;
+        }
+        else denomAuto += span;
     }
 
     ofstream out;
@@ -894,44 +915,80 @@ void writeFROH(string outfile,
     //the suite asserts.
     if (pooled) out << "## populations_pooled\ttrue\n";
     out << "## units\t" << (CM ? "cM" : "bp") << "\n";
-    out << "## denominator\t" << (long long)(denom + 0.5) << "\t";
-    out << (CM ? "sum over analysed chromosomes of (last - first genetic position)"
-                : "sum over analysed chromosomes of (last - first physical position), minus the assembly gap inside that span")
-        << "\n";
     out << "## size_class_boundaries";
     for (unsigned int i = 0; i < bounds.size(); i++) out << "\t" << bounds[i];
     out << "\n";
-    out << "ind\tpop\tsize_class\tn_roh\tlength\tfroh\n";
+    out << "## autosome_denominator\t" << (long long)(denomAuto + 0.5) << "\t";
+    out << (CM ? "sum over analysed autosomes of (last - first genetic position)"
+               : "sum over analysed autosomes of (last - first physical position), minus the assembly gap inside that span")
+        << "\n";
+    if (haveSexChr)
+    {
+        out << "## sex_chromosomes\t" << sexChrNames << "\n";
+        out << "## sexchr_denominator\t" << (long long)(denomSex + 0.5) << "\t"
+            << "the same over the shared sex chromosome; applies only to individuals diploid there\n";
+        out << "## na\tNA where an individual cannot carry a run of homozygosity on the sex chromosome\n";
+    }
+
+    //One row per individual, metrics across columns: a row per size class was
+    //a shape nothing reads without reshaping it first, and it cannot carry
+    //two regions at all without repeating every individual four times.
+    out << "ind\tpop\tzygosity";
+    for (int pass = 0; pass < (haveSexChr ? 2 : 1); pass++)
+    {
+        string pre = (pass == 0 ? "auto_" : "sexchr_");
+        for (int k = 0; k <= nclass; k++)
+        {
+            string cls = (k < nclass ? sizeClassLabel(k) : string("ALL"));
+            out << "\t" << pre << cls << "_n"
+                << "\t" << pre << cls << "_len"
+                << "\t" << pre << cls << "_froh";
+        }
+    }
+    out << "\n";
 
     for (unsigned int ind = 0; ind < rohDataByInd->size(); ind++)
     {
         ROHData *rohData = rohDataByInd->at(ind);
-        vector<int> n(nclass, 0);
-        vector<double> tot(nclass, 0.0);
-        int nAll = 0;
-        double totAll = 0;
+        //[region][class]; region 0 autosomes, 1 the shared sex chromosome.
+        vector< vector<int> >    n(2, vector<int>(nclass + 1, 0));
+        vector< vector<double> > tot(2, vector<double>(nclass + 1, 0.0));
 
         for (unsigned int roh = 0; roh < rohData->length.size(); roh++)
         {
             double size = rohData->length[roh];
+            int c = rohData->chr[roh];
+            ChrRole r = (role != NULL && c >= 0 && (unsigned int)c < role->size())
+                        ? role->at(c) : CHR_AUTOSOME;
+            int region = (r == CHR_SEX_SHARED) ? 1 : 0;
             int k = rohSizeClassIndex(size, bounds);
-            n[k]++;
-            tot[k] += size;
-            nAll++;
-            totAll += size;
+            n[region][k]++;            tot[region][k] += size;
+            n[region][nclass]++;       tot[region][nclass] += size;
         }
 
-        for (int k = 0; k < nclass; k++)
+        int zyg = (ind < indData->zygo.size()) ? indData->zygo[ind] : ZYG_UNKNOWN;
+        const char *zname = (zyg == ZYG_HOMOGAMETIC ? "homogametic"
+                          : (zyg == ZYG_HETEROGAMETIC ? "heterogametic" : "unknown"));
+
+        out << rohData->indID << "\t" << indData->pop[ind] << "\t"
+            << (haveSexChr ? zname : "NA");
+
+        for (int region = 0; region < (haveSexChr ? 2 : 1); region++)
         {
-            out << rohData->indID << "\t" << pop[ind] << "\t" << sizeClassLabel(k) << "\t"
-                << n[k] << "\t" << fmtLength(tot[k], CM) << "\t"
-                << fixed << setprecision(8) << (denom > 0 ? tot[k] / denom : 0.0)
-                << defaultfloat << "\n";
+            //NA rather than 0 for an individual that cannot be autozygous
+            //there: zero is a measurement and this is not one.
+            bool eligible = (region == 0) || eligibleForCalling(CHR_SEX_SHARED, zyg);
+            double denom = (region == 0) ? denomAuto : denomSex;
+            for (int k = 0; k <= nclass; k++)
+            {
+                if (!eligible) { out << "\tNA\tNA\tNA"; continue; }
+                out << "\t" << n[region][k]
+                    << "\t" << fmtLength(tot[region][k], CM)
+                    << "\t" << fixed << setprecision(8)
+                    << (denom > 0 ? tot[region][k] / denom : 0.0) << defaultfloat;
+            }
         }
-        out << rohData->indID << "\t" << pop[ind] << "\tALL\t"
-            << nAll << "\t" << fmtLength(totAll, CM) << "\t"
-            << fixed << setprecision(8) << (denom > 0 ? totAll / denom : 0.0)
-            << defaultfloat << "\n";
+        out << "\n";
     }
 
     out.close();

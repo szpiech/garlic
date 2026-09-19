@@ -310,7 +310,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         if (params->getBoolFlag(ARG_FROH))
         {
             writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
-                  indData->pop, centro, CM, popLabel, opt.POOLED);
+                  indData, centro, CM, popLabel, opt.POOLED, chrRole);
         }
     }
     catch (...) { logCurrentException("writing the ROH calls"); writeStatus = 2; }

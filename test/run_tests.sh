@@ -1382,8 +1382,11 @@ multi_population() {
     if cmp -s "$(grep -v '^track' "$MP/pooled.roh.bed" > "$MP/pc.bed"; echo "$MP/pc.bed")" \
               "$(grep -v '^track' "$MP/asone.roh.bed" > "$MP/ac.bed"; echo "$MP/ac.bed")"; then ok
     else bad "--pool-populations did not reproduce the single-population ROH calls"; fi
-    cut -f1,3,4,5,6 "$MP/pooled.froh.tsv" | grep -v '^##' > "$MP/pf.tsv"
-    cut -f1,3,4,5,6 "$MP/asone.froh.tsv" | grep -v '^##' > "$MP/af.tsv"
+    # Every column except the pop label, which is the one thing allowed to
+    # differ.  Listing the columns by number silently stopped comparing the
+    # rest of the table when FROH went wide.
+    cut -f1,3- "$MP/pooled.froh.tsv" | grep -v '^##' > "$MP/pf.tsv"
+    cut -f1,3- "$MP/asone.froh.tsv" | grep -v '^##' > "$MP/af.tsv"
     if cmp -s "$MP/pf.tsv" "$MP/af.tsv"; then ok
     else bad "--pool-populations --froh differs from the single-population run"; fi
     # the labels themselves must follow the TFAM, which is what makes the
@@ -1763,6 +1766,23 @@ sex_chromosomes() {
     if grep -q "inferred from heterozygosity: 45" "$WORK/sx12.log" && \
        [ "$(sum "$WORK/sx12.roh.bed")" = "$(sum "$WORK/sx9.roh.bed")" ]; then ok
     else bad "zygosity inferred from heterozygosity did not reproduce the declared run"; fi
+
+    # 9e2. FROH is reported for the two regions separately, with their own
+    #      denominators, and is NA -- not zero -- for an individual that
+    #      cannot be autozygous on the sex chromosome.  Zero is a measurement;
+    #      this is not one.
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --sex-system xy --froh --out "$WORK/sx14" --force >/dev/null 2>&1
+    if grep -q "^## autosome_denominator" "$WORK/sx14.froh.tsv" && \
+       grep -q "^## sexchr_denominator" "$WORK/sx14.froh.tsv"; then ok
+    else bad "FROH did not report the two denominators separately"; fi
+    naz=$(awk -F'\t' '!/^##/ && $1 != "ind" { print $3":"($NF == "NA" ? "NA" : "num") }' \
+          "$WORK/sx14.froh.tsv" | sort -u | tr '\n' ';')
+    if [ "$naz" = "heterogametic:NA;homogametic:num;" ]; then ok
+    else bad "sex-chromosome FROH is not NA for exactly the hemizygous individuals: $naz"; fi
+    # One row per individual, not one per size class.
+    if [ "$(grep -vc '^##' "$WORK/sx14.froh.tsv")" -eq 46 ]; then ok
+    else bad "FROH is not one row per individual plus a header"; fi
 
     # 9f. A cutoff at or below the uncallable-window sentinel would call every
     #     window that exists to be uncallable, including these.
