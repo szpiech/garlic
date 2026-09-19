@@ -1679,8 +1679,13 @@ sex_chromosomes() {
     #     it does not have, which is exactly 0 and would be called under any
     #     negative cutoff if they were not masked.
     if [ -f "$WORK/sx9.roh.bed" ] && [ -f "$WORK/sx9.sexcheck.tsv" ]; then
-        bycls=$(awk '
-            FNR==NR { if (FNR > 5) zyg[$1] = $7; next }
+        # The zygosity column is found by NAME, not by number: a column added
+        # to the sex check should not quietly turn this assertion into one
+        # that compares heterozygosity rates to the word "homogametic" and
+        # passes for the wrong reason.
+        bycls=$(awk -F'\t' '
+            FNR == NR && $1 == "ind" { for (i = 1; i <= NF; i++) col[$i] = i; next }
+            FNR == NR { if (col["zygosity_used"] > 0) zyg[$1] = $(col["zygosity_used"]); next }
             /^track/ { l = $0; sub(/.*Ind: /, "", l); sub(/ Pop:.*/, "", l); ind = l; next }
             $1 == "chrX" { n[zyg[ind]]++ }
             END { for (k in n) printf "%s=%d ", k, n[k] }
@@ -1849,6 +1854,72 @@ sex_chromosomes() {
         --par chrX:99000000-99100000 --out "$WORK/sx21" --force >/dev/null 2>"$WORK/sx21.stderr"
     if grep -q "contains no loci" "$WORK/sx21.stderr"; then ok
     else bad "an excluded region matching no locus did not warn"; fi
+
+    # 11. A hemizygous VCF.  Writing one allele is how a VCF says hemizygous,
+    #     and it used to be rejected outright, which left all of the above
+    #     reachable only from TPED-style "A A" coding.
+    {
+        printf '##fileformat=VCFv4.2\n'
+        printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tm1\tm2\tf1\tf2\n'
+        printf 'chrX\t1000\ts1\tA\tG\t.\tPASS\t.\tGT\t0\t1\t0/1\t0/0\n'
+        printf 'chrX\t2000\ts2\tA\tG\t.\tPASS\t.\tGT\t1\t1\t1/1\t0/1\n'
+    } > "$WORK/sxhap.vcf"
+    printf 'm1\tP\t1\nm2\tP\t1\nf1\tP\t2\nf2\tP\t2\n' > "$WORK/sxhap.pop"
+    # Undeclared, it is still an error: a haploid genotype on an autosome is
+    # malformed input and that check is worth keeping.
+    "$GARLIC" --vcf "$WORK/sxhap.vcf" --pop "$WORK/sxhap.pop" --no-centromere --error 0.001 \
+        --winsize 2 --lod-cutoff 2.5 --size-bounds 100 200 \
+        --out "$WORK/sx22" --force >/dev/null 2>"$WORK/sx22.stderr"
+    if [ $? -ne 0 ] && grep -q "has ploidy 1" "$WORK/sx22.stderr"; then ok
+    else bad "a haploid genotype was accepted without a declaration"; fi
+    # Declared, it is a hemizygous call: a half call, which contributes its one
+    # allele to the frequency and no genotype.
+    "$GARLIC" --vcf "$WORK/sxhap.vcf" --pop "$WORK/sxhap.pop" --no-centromere --error 0.001 \
+        --winsize 2 --lod-cutoff 2.5 --size-bounds 100 200 --sex-system xy \
+        --out "$WORK/sx23run" --force >/dev/null 2>"$WORK/sx23run.stderr"
+    if [ $? -eq 0 ] && [ -f "$WORK/sx23run.sexcheck.tsv" ]; then ok
+    else bad "a declared hemizygous VCF was not read"; fi
+    # The haploid calls are what establishes zygosity here: those individuals
+    # have no diploid genotype at all, so the heterozygosity rate cannot.
+    hap=$(awk -F'\t' '$1 == "ind" { for (i = 1; i <= NF; i++) c[$i] = i; next }
+                       !/^##/ { printf "%s:%s:%s ", $1, $(c["n_half"]), $(c["zygosity_used"]) }' \
+          "$WORK/sx23run.sexcheck.tsv")
+    if [ "$hap" = "m1:2:heterogametic m2:2:heterogametic f1:0:homogametic f2:0:homogametic " ]; then ok
+    else bad "haploid calls did not establish zygosity: $hap"; fi
+
+    # 12. --freq-only streams the file and never builds the chromosome table,
+    #     so it has to answer the same questions the full path does.  It used
+    #     to count every individual as diploid and write a frequency file that
+    #     --freq-file would then feed back into a run.
+    "$GARLIC" --tped "$WORK/sxXhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" --no-centromere \
+        --error 0.001 --sex-system xy --freq-only --out "$WORK/sx24" >/dev/null 2>&1
+    "$GARLIC" --tped "$WORK/sxXhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" --no-centromere \
+        --error 0.001 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+        --sex-system xy --out "$WORK/sx25" --force >/dev/null 2>&1
+    if [ "$(sumgz "$WORK/sx24.freq.gz")" = "$(sumgz "$WORK/sx25.freq.gz")" ]; then ok
+    else bad "--freq-only and the full path disagree on the sex chromosome frequency"; fi
+    # Undeclared, it refuses rather than counting everyone as diploid.
+    "$GARLIC" --tped "$WORK/sxXhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" --no-centromere \
+        --error 0.001 --freq-only --out "$WORK/sx26" >/dev/null 2>"$WORK/sx26.stderr"
+    if [ $? -ne 0 ] && grep -q "has not been told how to treat" "$WORK/sx26.stderr"; then ok
+    else bad "--freq-only did not refuse an undeclared sex chromosome"; fi
+    # Sex it cannot infer in one pass: refuse, and say where it would be
+    # inferred instead.
+    "$GARLIC" --tped "$WORK/sxXhemi.tped.gz" --tfam "$WORK/sxnosex.tfam" --no-centromere \
+        --error 0.001 --sex-system xy --freq-only --out "$WORK/sx27" >/dev/null 2>"$WORK/sx27.stderr"
+    if [ $? -ne 0 ] && grep -q "cannot infer it from" "$WORK/sx27.stderr"; then ok
+    else bad "--freq-only did not refuse an unrecorded sex"; fi
+    # An autosome-only run is untouched by any of this.
+    "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --no-centromere \
+        --error 0.001 --freq-only --out "$WORK/sx28" >/dev/null 2>&1
+    if [ $? -eq 0 ] && [ -s "$WORK/sx28.freq.gz" ]; then ok
+    else bad "--freq-only broke on autosomes"; fi
+    # A malformed record used to abort: "terminating due to uncaught exception
+    # of type int", exit 134, with no diagnosis.
+    printf '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\nchr1\t1\tr\tA\tG\t.\tPASS\t.\tGT\t0\n' > "$WORK/sxbad.vcf"
+    expect_exit 2 "--freq-only reports a bad record instead of aborting" \
+        "$GARLIC" --vcf "$WORK/sxbad.vcf" --no-centromere --error 0.001 --freq-only \
+        --out "$WORK/sx29"
 
     # 9f. A cutoff at or below the uncallable-window sentinel would call every
     #     window that exists to be uncallable, including these.

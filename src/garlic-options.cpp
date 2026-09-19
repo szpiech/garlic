@@ -322,26 +322,86 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
         //is the file --freq-file reads.  --pool-populations asks for the
         //single pooled column instead, and so does a cohort with one label.
         bool POOL = params->getBoolFlag(ARG_POOL);
-        if (opt.vcffile.compare(DEFAULT_VCF) != 0)
+
+        //The sex chromosome's allele frequency depends on who is hemizygous
+        //there, so --freq-only has to know the same two things the full path
+        //works out: which chromosomes are not autosomes, and which individuals
+        //have one copy of them.  It reads the file once and cannot infer an
+        //unrecorded sex from heterozygosity, so it refuses where the full path
+        //would infer -- rather than silently counting everyone as diploid,
+        //which is what it did before and which produced a frequency file that
+        //--freq-file would then feed back into a run.
+        int sexSystem = SEX_SYSTEM_UNSET;
+        string sexSystemArg = params->getStringFlag(ARG_SEX_SYSTEM);
+        if (sexSystemArg.compare(DEFAULT_SEX_SYSTEM) != 0)
         {
-            //A VCF has no labels of its own; only --pop can supply them.
-            freqOnlyVCF(opt.vcffile, opt.outfile, opt.nresample, opt.VCF_PASS_ONLY,
-                        POOL ? string("") : opt.popfile);
-        }
-        else
-        {
-            vector<string> popOfInd;
-            if (!POOL)
+            sexSystem = parseSexSystem(sexSystemArg);
+            if (sexSystem < 0)
             {
-                //The TFAM is required alongside --tped, so this always reads.
+                LOG.err("ERROR:", ARG_SEX_SYSTEM, false);
+                LOG.err(" must be xy, zw or none, not", sexSystemArg, false);
+                LOG.err(".");
+                return OPTIONS_RUNTIME_ERROR;
+            }
+        }
+        vector<string> sexChrNames, degenerateChrNames, haploidChrNames;
+        if (params->isFlagSet(ARG_SEX_CHR)) sexChrNames = params->getStringListFlag(ARG_SEX_CHR);
+        if (params->isFlagSet(ARG_SEX_CHR_DEGENERATE)) degenerateChrNames = params->getStringListFlag(ARG_SEX_CHR_DEGENERATE);
+        if (params->isFlagSet(ARG_HAPLOID_CHR)) haploidChrNames = params->getStringListFlag(ARG_HAPLOID_CHR);
+        map<string, ChrRole> declaredRoles;
+        if (declaredRolesByKey(declaredRoles, sexSystem, sexChrNames, degenerateChrNames,
+                               haploidChrNames, isHumanBuild(opt.BUILD)) < 0)
+            return OPTIONS_RUNTIME_ERROR;
+
+        vector<string> popOfInd;
+        vector<int> zygo;
+        bool haveSex = false;
+        if (opt.tpedfile.compare(DEFAULT_TPED) != 0 || opt.popfile.compare(DEFAULT_POP) != 0)
+        {
+            //The TFAM is required alongside --tped; with a VCF the sample
+            //names come from the #CHROM line and only --pop carries sex.
+            IndData *ind = NULL;
+            if (opt.tpedfile.compare(DEFAULT_TPED) != 0)
+            {
                 int nind = 0;
                 scanIndData3(opt.tfamfile, nind);
-                IndData *ind = readIndData3(opt.tfamfile, nind);
+                ind = readIndData3(opt.tfamfile, nind);
                 if (opt.popfile.compare(DEFAULT_POP) != 0) applyPopFile(opt.popfile, ind);
-                popOfInd = ind->pop;
+            }
+            if (ind != NULL)
+            {
+                if (!POOL) popOfInd = ind->pop;
+                zygo.resize(ind->nind);
+                for (int i = 0; i < ind->nind; i++)
+                    zygo[i] = zygosityForSex(sexSystem, ind->sex[i]);
+                haveSex = true;
                 releaseIndData(ind);
             }
-            freqOnly(opt.tpedfile,opt.outfile,opt.nresample,opt.TPED_MISSING, popOfInd);
+        }
+
+        //The readers throw on an unwritable output or a malformed record, and
+        //nothing caught it here: --freq-only turned a diagnosable error into
+        //SIGABRT with "terminating due to uncaught exception of type int".
+        try
+        {
+            if (opt.vcffile.compare(DEFAULT_VCF) != 0)
+            {
+                //A VCF has no labels of its own; only --pop can supply them.
+                freqOnlyVCF(opt.vcffile, opt.outfile, opt.nresample, opt.VCF_PASS_ONLY,
+                            POOL ? string("") : opt.popfile,
+                            &declaredRoles, opt.popfile, sexSystem);
+            }
+            else
+            {
+                freqOnly(opt.tpedfile, opt.outfile, opt.nresample, opt.TPED_MISSING, popOfInd,
+                         &declaredRoles, haveSex ? &zygo : NULL);
+            }
+        }
+        catch (...)
+        {
+            logCurrentException("writing the allele frequency file");
+            freeRNG();
+            return OPTIONS_RUNTIME_ERROR;
         }
         freeRNG();
         return OPTIONS_DONE;

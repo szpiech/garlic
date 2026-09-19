@@ -411,6 +411,33 @@ int main(int argc, char *argv[])
     //The same, when garlic computed them itself.
     vector< vector< FreqData * >* > popFreq;
     bool USE_GL = false;
+    //Parsed before the read, not after: a haploid genotype is an error on an
+    //autosome and the normal encoding of a hemizygous call on a sex
+    //chromosome, and the VCF reader has to tell them apart while it is still
+    //reading.  These are the flags alone; the role table proper is built from
+    //the data further down, and it is what the refusals are based on.
+    bool AUTOSOMES_ONLY = params->getBoolFlag(ARG_AUTOSOMES_ONLY);
+    string sexSystemArg = params->getStringFlag(ARG_SEX_SYSTEM);
+    int sexSystem = SEX_SYSTEM_UNSET;
+    if (sexSystemArg.compare(DEFAULT_SEX_SYSTEM) != 0)
+    {
+        sexSystem = parseSexSystem(sexSystemArg);
+        if (sexSystem < 0)
+        {
+            LOG.err("ERROR:", ARG_SEX_SYSTEM, false);
+            LOG.err(" must be xy, zw or none, not", sexSystemArg, false);
+            LOG.err(".");
+            return 1;
+        }
+    }
+    vector<string> sexChrNames, degenerateChrNames, haploidChrNames;
+    if (params->isFlagSet(ARG_SEX_CHR)) sexChrNames = params->getStringListFlag(ARG_SEX_CHR);
+    if (params->isFlagSet(ARG_SEX_CHR_DEGENERATE)) degenerateChrNames = params->getStringListFlag(ARG_SEX_CHR_DEGENERATE);
+    if (params->isFlagSet(ARG_HAPLOID_CHR)) haploidChrNames = params->getStringListFlag(ARG_HAPLOID_CHR);
+    map<string, ChrRole> declaredRoles;
+    if (declaredRolesByKey(declaredRoles, sexSystem, sexChrNames, degenerateChrNames,
+                           haploidChrNames, isHumanBuild(BUILD)) < 0) return 1;
+
     try
     {
         hapDataByChr = new vector< HapData * >;
@@ -434,7 +461,7 @@ int main(int argc, char *argv[])
             loadVCFData(opt.vcffile, numLoci, numInd,
                         &hapDataByChr, &mapDataByChr, &freqDataByChr, &GLDataByChr,
                         nresample, PHASED, AUTO_FREQ, opt.VCF_PASS_ONLY,
-                        USE_GL ? GL_TYPE : string("none"), sampleIDs);
+                        USE_GL ? GL_TYPE : string("none"), sampleIDs, &declaredRoles);
 
             LOG.log("Total loci:", numLoci);
 
@@ -589,26 +616,6 @@ int main(int argc, char *argv[])
     //been accounted for stops the run.  A hemizygous genotype is written as a
     //homozygous call, so the alternative to stopping is a plausible FROH that
     //is wrong, and a warning does not prevent that number being published.
-    bool AUTOSOMES_ONLY = params->getBoolFlag(ARG_AUTOSOMES_ONLY);
-    string sexSystemArg = params->getStringFlag(ARG_SEX_SYSTEM);
-    int sexSystem = SEX_SYSTEM_UNSET;
-    if (sexSystemArg.compare(DEFAULT_SEX_SYSTEM) != 0)
-    {
-        sexSystem = parseSexSystem(sexSystemArg);
-        if (sexSystem < 0)
-        {
-            LOG.err("ERROR:", ARG_SEX_SYSTEM, false);
-            LOG.err(" must be xy, zw or none, not", sexSystemArg, false);
-            LOG.err(".");
-            return 1;
-        }
-    }
-
-    vector<string> sexChrNames, degenerateChrNames, haploidChrNames;
-    if (params->isFlagSet(ARG_SEX_CHR)) sexChrNames = params->getStringListFlag(ARG_SEX_CHR);
-    if (params->isFlagSet(ARG_SEX_CHR_DEGENERATE)) degenerateChrNames = params->getStringListFlag(ARG_SEX_CHR_DEGENERATE);
-    if (params->isFlagSet(ARG_HAPLOID_CHR)) haploidChrNames = params->getStringListFlag(ARG_HAPLOID_CHR);
-
     SexModel sexModel;
     if (buildSexModel(sexModel, mapDataByChr, indData, sexSystem,
                       sexChrNames, degenerateChrNames, haploidChrNames,

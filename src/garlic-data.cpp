@@ -208,6 +208,49 @@ static bool defaultRoleForKey(const string &key, int system, bool humanBuild,
     return false;
 }
 
+//A haploid genotype is an error on an autosome and the normal way a hemizygous
+//call is written on a sex chromosome, so the reader has to know which it is
+//looking at while it is still reading.
+static bool haploidAllowedHere(const map<string, ChrRole> *declaredRoles, const string &chr)
+{
+    if (declaredRoles == NULL) return false;
+    map<string, ChrRole>::const_iterator it = declaredRoles->find(canonChrKey(chr));
+    return (it != declaredRoles->end() && it->second != CHR_AUTOSOME);
+}
+
+int declaredRolesByKey(map<string, ChrRole> &roleByKey,
+                       int system,
+                       const vector<string> &sexChr,
+                       const vector<string> &degenerateChr,
+                       const vector<string> &haploidChr,
+                       bool humanBuild)
+{
+    roleByKey.clear();
+    if (system == SEX_SYSTEM_NONE) return 0;
+
+    const vector<string> *lists[3] = {&sexChr, &degenerateChr, &haploidChr};
+    const ChrRole roles[3] = {CHR_SEX_SHARED, CHR_SEX_DEGENERATE, CHR_HAPLOID};
+    for (int k = 0; k < 3; k++)
+        for (unsigned int i = 0; i < lists[k]->size(); i++)
+            roleByKey[canonChrKey(lists[k]->at(i))] = roles[k];
+
+    //The conventional names, which are the same ones buildSexModel applies.
+    //Nothing is asserted about chromosomes that are not in the data: this map
+    //answers "may a haploid genotype appear here", not "what is in the file".
+    if (system == SEX_SYSTEM_XY || system == SEX_SYSTEM_ZW)
+    {
+        static const char *keys[] = {"x", "y", "z", "w", "m", "mt", "23", "24", "25", "26"};
+        for (unsigned int i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
+        {
+            string key(keys[i]);
+            if (roleByKey.count(key) > 0) continue;   //an explicit name wins
+            ChrRole r;
+            if (defaultRoleForKey(key, system, humanBuild, false, r)) roleByKey[key] = r;
+        }
+    }
+    return 0;
+}
+
 static string roleName(ChrRole r)
 {
     switch (r)
@@ -467,7 +510,7 @@ int runSexCheck(vector< HapData * > *hapDataByChr,
                 bool quietCheck)
 {
     const int nind = indData->nind;
-    vector<long long> nCalled(nind, 0), nHet(nind, 0);
+    vector<long long> nCalled(nind, 0), nHet(nind, 0), nHalf(nind, 0);
 
     for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
     {
@@ -477,6 +520,12 @@ int runSexCheck(vector< HapData * > *hapDataByChr,
             for (int ind = 0; ind < nind; ind++)
             {
                 geno_t g = hap->data[locus][ind];
+                //A half call already at this point came from the reader, not
+                //from the recode below: a VCF writes a hemizygous genotype as
+                //one allele, and loadVCFData turns that into a half call where
+                //the declaration says to expect it.  It is the strongest
+                //evidence of hemizygosity there is -- the caller said so.
+                if (g == GENO_HALF_COUNTED || g == GENO_HALF_OTHER) { nHalf[ind]++; continue; }
                 if (!genoIsCalled(g)) continue;
                 nCalled[ind]++;
                 if (g == 1) nHet[ind]++;
@@ -491,8 +540,14 @@ int runSexCheck(vector< HapData * > *hapDataByChr,
     vector<int> evidence(nind, ZYG_UNKNOWN);
     for (int i = 0; i < nind; i++)
     {
+        //Genotypes the file itself wrote as haploid settle the question
+        //without a threshold.  Both kinds can be present at once if part of
+        //the chromosome was called diploid; the haploid ones win, because a
+        //caller that emitted one allele had a reason to.
+        if (nHalf[i] > 0) { evidence[i] = ZYG_HETEROGAMETIC; }
         if (nCalled[i] == 0) continue;
         hetRate[i] = double(nHet[i]) / double(nCalled[i]);
+        if (nHalf[i] > 0) continue;
         if (hetRate[i] < hetLo)      evidence[i] = ZYG_HETEROGAMETIC;
         else if (hetRate[i] > hetHi) evidence[i] = ZYG_HOMOGAMETIC;
     }
@@ -524,9 +579,25 @@ int runSexCheck(vector< HapData * > *hapDataByChr,
         }
         else
         {
-            if (nCalled[i] == 0) { nNoData++; source[i] = "no_data"; }
+            if (nCalled[i] == 0 && nHalf[i] == 0) { nNoData++; source[i] = "no_data"; }
             else { nAmbiguous++; source[i] = "ambiguous"; }
         }
+    }
+
+    //A run of homozygosity cannot be called from half calls, whatever the
+    //metadata says: there is no genotype in them.  An individual recorded as
+    //homogametic whose every call on this chromosome is haploid is therefore
+    //not callable here, and saying so is a statement of fact rather than a
+    //policy about whose word to take.
+    int nNoDiploid = 0;
+    for (int i = 0; i < nind; i++)
+    {
+        if (indData->zygo[i] != ZYG_HOMOGAMETIC) continue;
+        if (nCalled[i] > 0) continue;
+        if (nHalf[i] == 0) continue;
+        indData->zygo[i] = ZYG_UNKNOWN;
+        source[i] = "no_diploid_calls";
+        nNoDiploid++;
     }
 
     //An inverted --sex-system is the one failure mode the flag introduces,
@@ -595,6 +666,8 @@ int runSexCheck(vector< HapData * > *hapDataByChr,
         LOG.log("\tzygosity from the recorded sex:", nDeclared);
         LOG.log("\tinferred from heterozygosity:", nInferred);
         LOG.log("\tambiguous, so not called there:", nAmbiguous);
+        if (nNoDiploid > 0)
+            LOG.log("\trecorded as diploid but with only haploid calls:", nNoDiploid);
         if (nNoData > 0) LOG.log("\tno called genotypes there:", nNoData);
         LOG.log("\themizygous genotypes recoded:", (long long)nHemizygous);
         LOG.log("\theterozygous calls in hemizygous individuals discarded:", (long long)nHetRecoded);
@@ -626,11 +699,11 @@ int runSexCheck(vector< HapData * > *hapDataByChr,
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
         if (model.role[chr] == CHR_SEX_SHARED) out << "\t" << mapDataByChr->at(chr)->chr;
     out << "\n";
-    out << "ind\tpop\tsex_declared\tn_called\tn_het\thet_rate\tzygosity_used\tzygosity_source\tn_het_recoded\n";
+    out << "ind\tpop\tsex_declared\tn_called\tn_half\tn_het\thet_rate\tzygosity_used\tzygosity_source\tn_het_recoded\n";
     for (int i = 0; i < nind; i++)
     {
         out << indData->indID[i] << "\t" << indData->pop[i] << "\t" << indData->sex[i] << "\t"
-            << nCalled[i] << "\t" << nHet[i] << "\t";
+            << nCalled[i] << "\t" << nHalf[i] << "\t" << nHet[i] << "\t";
         if (nCalled[i] == 0) out << "NA";
         else out << fixed << setprecision(6) << hetRate[i] << defaultfloat;
         out << "\t" << zygoName(indData->zygo[i]) << "\t" << source[i] << "\t"
@@ -1411,8 +1484,64 @@ static vector<int> groupPopulations(const vector<string> &popOfInd,
     return idx;
 }
 
+//--freq-only streams the file and never builds the chromosome table, so the
+//same two questions the main path answers once have to be answered per line:
+//is this chromosome one garlic has been told about, and does counting its
+//alleles need to know who is hemizygous.  Returns 0, or -1 after logging.
+static int freqOnlyChrRole(const string &chr,
+                           const map<string, ChrRole> *declaredRoles,
+                           const vector<int> *zygo,
+                           ChrRole &role)
+{
+    role = CHR_AUTOSOME;
+    string key = canonChrKey(chr);
+    if (declaredRoles != NULL)
+    {
+        map<string, ChrRole>::const_iterator it = declaredRoles->find(key);
+        if (it != declaredRoles->end()) role = it->second;
+    }
+    if (role != CHR_AUTOSOME)
+    {
+        if (zygo == NULL)
+        {
+            LOG.err("ERROR:", chr, false);
+            LOG.err(" is a sex chromosome and no sex is recorded for any individual.");
+            LOG.err("\tIts allele frequency depends on who is hemizygous. Supply sex in the");
+            LOG.err("\tTFAM or with --pop, or run without --freq-only, which infers it from");
+            LOG.err("\theterozygosity.");
+            return -1;
+        }
+        for (unsigned int i = 0; i < zygo->size(); i++)
+            if (zygo->at(i) == ZYG_UNKNOWN)
+            {
+                LOG.err("ERROR:", chr, false);
+                LOG.err(" is a sex chromosome and the sex of at least one individual is");
+                LOG.err("\tnot recorded. --freq-only reads the file once and cannot infer it from");
+                LOG.err("\theterozygosity the way a full run does; supply it, or run without");
+                LOG.err("\t--freq-only.");
+                return -1;
+            }
+        return 0;
+    }
+    //Undeclared but conventionally sex-linked: the same refusal the main path
+    //makes, for the same reason -- counting a hemizygous individual as diploid
+    //is a wrong number, not a warning.
+    if (isDetectedSexChrKey(key) || isAmbiguousNumericChrKey(key))
+    {
+        LOG.err("ERROR: garlic has not been told how to treat", chr, false);
+        LOG.err(".");
+        LOG.err("\tIts allele frequency depends on who is hemizygous there. See --sex-system,");
+        LOG.err("\tor --sex-system none if it is diploid in every individual.");
+        return -1;
+    }
+    return 0;
+}
+
 void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
-                 const string &popfile)
+                 const string &popfile,
+                 const map<string, ChrRole> *declaredRoles,
+                 const string &sexfile,
+                 int sexSystem)
 {
     GarlicRNG *r = getRNG();
 
@@ -1441,6 +1570,10 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
 
     const int VCF_FIXED = 9;
     string line, chr, locusName, ref, alt, filt, fmt;
+    string lastChr;
+    ChrRole chrRole = CHR_AUTOSOME;
+    vector<int> zygoOf;
+    const vector<int> *zygo = NULL;
     long long lineno = 0, nwritten = 0;
     int numInd = 0;
     bool haveHeader = false;
@@ -1467,7 +1600,13 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
             haveHeader = true;
             LOG.log("Samples in the VCF:", numInd);
 
-            if (!popfile.empty() && popfile.compare("none") != 0)
+            //--pop supplies the labels, the sex column, or both.  Pooling
+            //drops the labels but not the sex: which individual is hemizygous
+            //does not depend on how they are grouped.
+            string labelSource = (popfile.compare("none") == 0) ? string("") : popfile;
+            string anySource = !labelSource.empty() ? labelSource
+                             : ((sexfile.compare("none") == 0) ? string("") : sexfile);
+            if (!anySource.empty())
             {
                 //The sample IDs, so --pop can be applied to them.  Reusing
                 //applyPopFile rather than re-parsing here keeps one reader
@@ -1486,10 +1625,17 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
                     tmp->pop[c]   = "unknown";
                     tmp->sex[c]   = 0;
                 }
-                applyPopFile(popfile, tmp);
-                popOf = groupPopulations(tmp->pop, popNames);
+                applyPopFile(anySource, tmp);
+                if (!labelSource.empty())
+                {
+                    popOf = groupPopulations(tmp->pop, popNames);
+                    if (!popNames.empty()) npop = int(popNames.size());
+                }
+                zygoOf.resize(tmp->nind);
+                for (int c = 0; c < tmp->nind; c++)
+                    zygoOf[c] = zygosityForSex(sexSystem, tmp->sex[c]);
+                zygo = &zygoOf;
                 releaseIndData(tmp);
-                if (!popNames.empty()) npop = int(popNames.size());
             }
 
             fout << "CHR\tSNP\tPOS\tALLELE";
@@ -1521,6 +1667,14 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
             p = q;
             ppos = pos_t(v);
         }
+        //Checked once per chromosome rather than once per line: the answer
+        //cannot change within one.
+        if (chr.compare(lastChr) != 0)
+        {
+            lastChr = chr;
+            if (freqOnlyChrRole(chr, declaredRoles, zygo, chrRole) < 0) throw 0;
+        }
+
         p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); locusName.assign(p, tEnd - p); p = tEnd;
         p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); ref.assign(p, tEnd - p);       p = tEnd;
         p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); alt.assign(p, tEnd - p);       p = tEnd;
@@ -1558,13 +1712,27 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
                 LOG.err(" of", vcffile);
                 throw 0;
             }
-            if (ploidy != 2)
+            if (ploidy == 1 && chrRole != CHR_AUTOSOME)
+            {
+                if (dosage >= 0) dosage = (dosage == 1 ? GENO_HALF_COUNTED : GENO_HALF_OTHER);
+            }
+            else if (ploidy != 2)
             {
                 LOG.err("ERROR: a genotype at line", lineno, false);
                 LOG.err(" of", vcffile, false);
                 LOG.err(" has ploidy", ploidy, false);
                 LOG.err("; garlic calls ROH from diploid genotypes only.");
                 throw 0;
+            }
+            else if (chrRole != CHR_AUTOSOME && zygo != NULL &&
+                     i < int(zygo->size()) && zygo->at(i) == ZYG_HETEROGAMETIC)
+            {
+                //Diploid-looking call in an individual with one copy of the
+                //chromosome: the same recode the full path applies, so both
+                //produce the same frequency from the same file.
+                if (dosage == 0)      dosage = GENO_HALF_OTHER;
+                else if (dosage == 2) dosage = GENO_HALF_COUNTED;
+                else if (dosage == 1) dosage = GENO_MISSING;
             }
             p = tEnd;
             //Two allele columns per sample in a TPED; here one genotype per
@@ -1614,7 +1782,9 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
 }
 
 void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING,
-              const vector<string> &popOfInd){
+              const vector<string> &popOfInd,
+              const map<string, ChrRole> *declaredRoles,
+              const vector<int> *zygo){
     
     GarlicRNG *r = getRNG();
 
@@ -1651,7 +1821,8 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING,
     string line;
     int nloci = 0;
     int ncols;
-    string chr, locusName;
+    string chr, locusName, lastChr;
+    ChrRole chrRole = CHR_AUTOSOME;
     double gpos, ppos;
     stringstream ss;
     while(getline(fin,line)){
@@ -1664,20 +1835,55 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING,
         ss >> gpos;
         ss >> ppos;
 
+        //Checked once per chromosome, not once per line.
+        if (chr.compare(lastChr) != 0)
+        {
+            lastChr = chr;
+            if (freqOnlyChrRole(chr, declaredRoles, zygo, chrRole) < 0) throw 0;
+        }
+
         oneAllele = TPED_MISSING;
         //Counted per population, but against ONE reference allele for the
         //locus -- the first non-missing one seen, as before -- so the columns
         //describe the same allele and the ALLELE field still means something.
+        //The reference allele is chosen from the RAW columns, before any
+        //hemizygous weighting, so it is the same allele the full path counts.
         vector<double> nallelesBy(npop, 0.0), totalBy(npop, 0.0);
+        char firstOfPair = TPED_MISSING;
         for(count = 0; count < ncols-4; count++){
             ss >> junk;
-            if(junk[0] != TPED_MISSING){
-                //Two allele columns per individual.
-                int who = count / 2;
-                int p = (popNames.empty() || who >= int(popOf.size())) ? 0 : popOf[who];
+            char a = junk[0];
+            int who = count / 2;
+            if (a != TPED_MISSING && oneAllele == TPED_MISSING) oneAllele = a;
+
+            //Two allele columns per individual.  On a chromosome where this
+            //individual has one copy, the pair is ONE allele written twice, so
+            //it is counted once -- and two different alleles there are a
+            //genotype it cannot have, so they are counted not at all.
+            bool hemi = (chrRole != CHR_AUTOSOME && zygo != NULL &&
+                         who < int(zygo->size()) && zygo->at(who) == ZYG_HETEROGAMETIC);
+            if (!hemi)
+            {
+                if (a != TPED_MISSING)
+                {
+                    int p = (popNames.empty() || who >= int(popOf.size())) ? 0 : popOf[who];
+                    totalBy[p]++;
+                    if (a == oneAllele) nallelesBy[p]++;
+                }
+                continue;
+            }
+
+            if (count % 2 == 0) { firstOfPair = a; continue; }
+            char b = a, aa = firstOfPair;
+            int p = (popNames.empty() || who >= int(popOf.size())) ? 0 : popOf[who];
+            char obs = TPED_MISSING;
+            if (aa != TPED_MISSING && b != TPED_MISSING) { if (aa == b) obs = aa; }
+            else if (aa != TPED_MISSING) obs = aa;
+            else if (b != TPED_MISSING) obs = b;
+            if (obs != TPED_MISSING)
+            {
                 totalBy[p]++;
-                if(oneAllele == TPED_MISSING) oneAllele = junk.c_str()[0]; 
-                if(junk[0] == oneAllele) nallelesBy[p]++;
+                if (obs == oneAllele) nallelesBy[p]++;
             }
         }
 
@@ -3459,7 +3665,8 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                  vector< FreqData * > **freqDataByChr,
                  vector< GenoLikeData * > **GLDataByChr,
                  int nresample, bool PHASED, bool AUTO_FREQ, bool PASS_ONLY,
-                 string GL_TYPE, vector<string> &sampleIDs)
+                 string GL_TYPE, vector<string> &sampleIDs,
+                 const map<string, ChrRole> *declaredRoles)
 {
     igzstream fin;
     fin.open(vcffile.c_str());
@@ -3768,18 +3975,29 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                 LOG.err("').");
                 throw 0;
             }
-            if (ploidy != 2)
+            if (ploidy == 1 && haploidAllowedHere(declaredRoles, chr))
+            {
+                //A hemizygous call, which is how a VCF writes the sex
+                //chromosome of the heterogametic sex.  It becomes a half call:
+                //its one observed allele is real and counts towards the
+                //frequency, and it carries no genotype, which is exactly what
+                //a hemizygous call is.  parseGT has already set GENO_MISSING
+                //when that one allele was '.'.
+                if (dosage >= 0) dosage = (dosage == 1 ? GENO_HALF_COUNTED : GENO_HALF_OTHER);
+            }
+            else if (ploidy != 2)
             {
                 abortRowRead(hap, fc, gl, data, firstCopy, glrow);
                 LOG.err("ERROR: sample", sampleIDs[i], false);
                 LOG.err(" at", site, false);
                 LOG.err(" has ploidy", ploidy, false);
                 LOG.err("; garlic calls ROH from diploid genotypes only.");
-                //Advice only, and the only thing available this early: the
-                //chromosome role table is built after the whole file is read,
+                //The role table proper is built after the whole file is read,
                 //so all this can do is recognise a conventional name.
                 if (isDetectedSexChrKey(canonChrKey(chr)) || isAmbiguousNumericChrKey(canonChrKey(chr)))
-                    LOG.err("\tThis name is conventionally a sex chromosome: see --sex-system and --autosomes-only.");
+                    LOG.err("\tThis name is conventionally a sex chromosome. Declaring it with");
+                    LOG.err("\t--sex-system makes a haploid genotype there a hemizygous call rather");
+                    LOG.err("\tthan an error.");
                 throw 0;
             }
             if (PHASED && !isPhased)

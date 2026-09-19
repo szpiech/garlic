@@ -413,6 +413,18 @@ void recomputeFreqForRole(vector< HapData * > *hapDataByChr,
                           ChrRole role,
                           int nresample);
 
+//The roles that the FLAGS alone imply, keyed by canonChrKey, with no data
+//needed.  The readers need this before the data exists: a haploid genotype is
+//an error on an autosome and the normal encoding of a hemizygous call on a sex
+//chromosome, and the reader has to tell them apart while it is still reading.
+//Returns 0, or -1 after logging.
+int declaredRolesByKey(map<string, ChrRole> &roleByKey,
+                       int system,
+                       const vector<string> &sexChr,
+                       const vector<string> &degenerateChr,
+                       const vector<string> &haploidChr,
+                       bool humanBuild);
+
 //Fills model.role from the declarations, applying the conventional names for
 //the declared system, and refuses (returns -1, having logged) when a detected
 //chromosome is left with no role -- which is the "detected but undeclared is
@@ -540,14 +552,25 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                  vector< FreqData * > **freqDataByChr,
                  vector< GenoLikeData * > **GLDataByChr,
                  int nresample, bool PHASED, bool AUTO_FREQ, bool PASS_ONLY,
-                 string GL_TYPE, vector<string> &sampleIDs);
+                 string GL_TYPE, vector<string> &sampleIDs,
+                 //Chromosomes on which a haploid genotype is expected rather
+                 //than an error; see declaredRolesByKey.  NULL means every
+                 //chromosome must be diploid, which is what garlic required
+                 //before there was any notion of a sex chromosome.
+                 const map<string, ChrRole> *declaredRoles = NULL);
 
 //popOfInd carries one population label per individual, in file order.  Empty,
 //or all one label, gives the single FREQ column every earlier version wrote.
 //With several labels the output is the wide format -- one column per
 //population -- which is what --freq-file reads back.
+//zygo, when given, is one Zygo value per individual in file order; on a
+//chromosome whose declared role is not CHR_AUTOSOME a heterogametic individual
+//contributes ONE allele rather than two.  Without it every individual is
+//counted as diploid, which is what --freq-only did before.
 void freqOnly(string tpedfile, string outfile, int nresample, char TPED_MISSING,
-              const vector<string> &popOfInd);
+              const vector<string> &popOfInd,
+              const map<string, ChrRole> *declaredRoles = NULL,
+              const vector<int> *zygo = NULL);
 
 //The --freq-only pass for VCF input.  Streams like freqOnly rather than going
 //through loadVCFData, which is the point of --freq-only: the genotypes are
@@ -557,8 +580,14 @@ void freqOnly(string tpedfile, string outfile, int nresample, char TPED_MISSING,
 //A VCF carries no population labels, so they can only come from --pop.  The
 //file is applied to the sample IDs on the #CHROM line; pass DEFAULT_POP (or
 //an empty string) for the pooled single-column output.
+//sexfile is the --pop file whatever --pool-populations says, because pooling
+//changes which labels are used and not who is hemizygous; a VCF carries no
+//sex of its own, so that column is the only source there.
 void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
-                 const string &popfile);
+                 const string &popfile,
+                 const map<string, ChrRole> *declaredRoles = NULL,
+                 const string &sexfile = "",
+                 int sexSystem = SEX_SYSTEM_UNSET);
 
 double calcDensity(int numLoci, vector< MapData * > *mapDataByChr, centromere *centro);
 
