@@ -59,7 +59,8 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
                                    IndData *indData,
                                    centromere *centro,
                                    bool USE_GL,
-                                   double variantDensity)
+                                   double variantDensity,
+                                   const vector<ChrRole> *chrRole)
 {
     PopResult res;
     res.status = POP_OK;
@@ -114,7 +115,8 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         kdeResult = selectWinsizeFromList(hapDataByChr, freqDataByChr, mapDataByChr,
                                           indData, centro, &multiWinsizes, winsize, error,
                                           GLDataByChr, USE_GL,
-                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, KDE_THIN_STEP);
+                                          MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, KDE_THIN_STEP,
+                                          chrRole);
     }
     else if (WINSIZE_EXPLORE)
     {
@@ -128,7 +130,8 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         exploreWinsizes(hapDataByChr, freqDataByChr, mapDataByChr,
                         indData, centro, multiWinsizes, error,
                         GLDataByChr, genoFreqDataByChr, USE_GL,
-                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, KDE_THIN_STEP, LD_SUBSAMPLE);
+                        MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, M, mu, numThreads, PHASED, KDE_THIN_STEP, LD_SUBSAMPLE,
+                        chrRole);
 
         freeRNG();
 
@@ -159,7 +162,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
                                           indData, centro, winsize, AUTO_WINSIZE_STEP, error,
                                           GLDataByChr, USE_GL,
                                           MAX_GAP, KDE_SUBSAMPLE, outfile, WEIGHTED, genoFreqDataByChr, PHASED, KDE_THIN_STEP,
-                                          MAX_WINSIZE);
+                                          MAX_WINSIZE, chrRole);
             }
             catch (...){
                 logCurrentException("automatic window size selection");
@@ -201,6 +204,16 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     if (freqDataByChr != NULL) releaseFreqData(freqDataByChr);
     if (USE_GL) releaseGLData(GLDataByChr);
 
+    //A heterogametic individual's windows on the shared sex chromosome are
+    //sums of lod() over genotypes it does not have, which is exactly 0 rather
+    //than MISSING -- so without this they would be a spike at zero in the
+    //density and would be CALLED under any negative cutoff.  Masked before
+    //--raw-lod writes, so that file says missing rather than zero too.
+    {
+        long long nMasked = maskIneligibleWindows(winDataByChr, indData, chrRole);
+        if (nMasked > 0) LOG.log("Windows excluded as not diploid in the individual:", nMasked);
+    }
+
     if (RAW_LOD){
         //Output raw windows
         try { writeWinData(winDataByChr, indData, mapDataByChr, outfile); }
@@ -212,7 +225,8 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         bool cutoffOK = true;
         if(kdeResult == NULL)
         {
-            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK);
+            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK,
+                                         chrRole, CHR_AUTOSOME);
         }
         else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize, cutoffOK);
 
@@ -225,6 +239,12 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         }
 
         LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
+        //Estimated on the autosomes and applied to the sex chromosome, which
+        //is what Cotter et al. (2024) did and for the same reason.  Report
+        //what the sex chromosome alone would have given, so the assumption is
+        //visible rather than implicit.
+        reportSexChrLODCutoff(winDataByChr, indData, chrRole,
+                              (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, LOD_CUTOFF);
     }
     else cout << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
 
@@ -232,7 +252,8 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     //Assemble ROH for each individual in each pop
     ROHLength *rohLength;
     vector< ROHData * > *rohDataByInd = assembleROHWindows(winDataByChr, mapDataByChr, indData,
-                                        centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC, CM);
+                                        centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC, CM,
+                                        chrRole);
 
     releaseWinData(winDataByChr);
     
@@ -602,22 +623,22 @@ int main(int argc, char *argv[])
     //homozygosity to anybody, and keeping them would only feed the LOD score
     //density windows that are not evidence of anything.
     //
-    //The shared sex chromosome is dropped too AT THIS COMMIT: calling it in
-    //the homogametic individuals only, with allele frequencies from everyone,
-    //is the next step, and analysing it as an autosome in the meantime is the
-    //thing this whole change exists to prevent.
+    //The SHARED sex chromosome is kept unless --autosomes-only asked for it
+    //to go: it is diploid in the homogametic sex, which can be autozygous on
+    //it, and the individuals who cannot are handled per individual rather
+    //than by dropping the chromosome for everybody.
     {
         vector<string> keepNames;
         int nDropped[5] = {0, 0, 0, 0, 0};
         for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
         {
             ChrRole r = sexModel.role[chr];
-            if (r == CHR_AUTOSOME) { keepNames.push_back(mapDataByChr->at(chr)->chr); continue; }
+            bool keep = (r == CHR_AUTOSOME) || (r == CHR_SEX_SHARED && !AUTOSOMES_ONLY);
+            if (keep) { keepNames.push_back(mapDataByChr->at(chr)->chr); continue; }
             nDropped[int(r)]++;
             LOG.log("Dropping", mapDataByChr->at(chr)->chr, false);
             if (r == CHR_SEX_SHARED)
-                LOG.log(AUTOSOMES_ONLY ? ": shared sex chromosome."
-                                       : ": shared sex chromosome; calling it is not implemented yet.");
+                LOG.log(": shared sex chromosome.");
             else if (r == CHR_SEX_DEGENERATE)
                 LOG.log(": carried only by the heterogametic sex, so no individual can be autozygous on it.");
             else if (r == CHR_HAPLOID)
@@ -631,8 +652,8 @@ int main(int argc, char *argv[])
         {
             if (keepNames.empty())
             {
-                LOG.err("ERROR: no autosomes left to analyse: every chromosome in the data is a sex");
-                LOG.err("\tchromosome, haploid or pseudoautosomal.");
+                LOG.err("ERROR: nothing left to analyse: no chromosome in the data can carry a run");
+                LOG.err("\tof homozygosity in any individual.");
                 return 1;
             }
             int nkept = filterChromosomes(keepNames, &mapDataByChr, &hapDataByChr,
@@ -640,18 +661,61 @@ int main(int argc, char *argv[])
             if (nkept < 0) return 1;
             LOG.log("Chromosomes dropped:", ndrop, false);
             LOG.log(", analysed:", nkept);
-            sexModel.role.assign(nkept, CHR_AUTOSOME);
-            if (!PHASED && WEIGHTED)
-            {
-                releaseGenoFreq(genoFreqDataByChr);
-                genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
-            }
+            //Rebuilt from the keyed copy rather than re-derived: filtering
+            //moves the positional vector, and a role must not be able to come
+            //out differently after a filter than it did before one.
+            sexModel.rebuild(mapDataByChr);
         }
         else if (AUTOSOMES_ONLY)
         {
             LOG.log("--autosomes-only: every chromosome in the data is an autosome, nothing to drop.");
         }
     }
+
+    //---- who is diploid on the shared sex chromosome -----------------------
+    //
+    //Runs on every dataset that has one, because it is one pass over that
+    //chromosome and it is the only thing that can check a declared sex, infer
+    //an unrecorded one, and find the genotypes that the answer makes
+    //impossible.  It also does the recode, which has to happen before allele
+    //frequencies are touched: a hemizygous call becomes a half call, which
+    //contributes its one observed allele and no genotype, and that is what
+    //makes the frequency come out as "the heterogametic sex contributes one
+    //allele and the homogametic two" with no change to the frequency code.
+    if (sexModel.anyOfRole(CHR_SEX_SHARED))
+    {
+        double HET_RATE_LO = 0.02, HET_RATE_HI = 0.10;
+        if (params->isFlagSet(ARG_HET_RATE_BOUNDS))
+        {
+            vector<double> b = params->getDoubleListFlag(ARG_HET_RATE_BOUNDS);
+            if (b.size() != 2 || b[0] < 0 || b[1] > 1 || b[0] > b[1])
+            {
+                LOG.err("ERROR:", ARG_HET_RATE_BOUNDS, false);
+                LOG.err(" takes two rates, <lo> <hi>, with 0 <= lo <= hi <= 1.");
+                return 1;
+            }
+            HET_RATE_LO = b[0]; HET_RATE_HI = b[1];
+        }
+
+        if (runSexCheck(hapDataByChr, mapDataByChr, indData, sexModel,
+                        HET_RATE_LO, HET_RATE_HI, outfile, false) < 0) return 1;
+
+        //Only the chromosomes whose genotypes just changed.  The readers
+        //compute frequencies while reading, before anything knows what a
+        //chromosome is, so the sex chromosome's are wrong and every autosome's
+        //is right -- and --resample draws random numbers, so recomputing an
+        //autosome would not even be a no-op.
+        recomputeFreqForRole(hapDataByChr, freqDataByChr, sexModel, CHR_SEX_SHARED, nresample);
+
+        if (!AUTO_FREQ)
+        {
+            LOG.err("WARNING: --freq-file supplies the allele frequencies of the shared sex");
+            LOG.err("\tchromosome as well. They must already be computed with the heterogametic");
+            LOG.err("\tsex contributing one allele and the homogametic sex two; garlic cannot");
+            LOG.err("\ttell from the file whether they were.");
+        }
+    }
+
 
 //++++++++++Allele frequencies++++++++++
     if (AUTO_FREQ)
@@ -735,6 +799,7 @@ int main(int argc, char *argv[])
         int nkept = filterChromosomes(keepChr, &mapDataByChr, &hapDataByChr,
                                       &freqDataByChr, &GLDataByChr, USE_GL);
         if (nkept < 0) return 1;
+        sexModel.rebuild(mapDataByChr);
         LOG.loga("Restricted to chromosomes:", &(keepChr[0]), int(keepChr.size()));
         LOG.log("Chromosomes analysed:", nkept);
         if (!PHASED && WEIGHTED)
@@ -867,7 +932,8 @@ int main(int argc, char *argv[])
                                           singlePop ? string("") : popName,
                                           pHap, pFreq, pMap,
                                           pGL, pGF,
-                                          pInd, centro, USE_GL, variantDensity);
+                                          pInd, centro, USE_GL, variantDensity,
+                                          &(sexModel.role));
         //analyzePopulation has released pHap/pFreq/pGL/pGF by now; the map and
         //the per-population IndData are the caller's.
         if (!singlePop) { releaseIndData(pInd); releaseMapData(pMap); }

@@ -1,6 +1,7 @@
 #include "garlic-data.h"
 #include <cmath>
 #include <random>
+#include <iomanip>
 
 static GarlicRNG *GARLIC_RNG = NULL;
 
@@ -300,7 +301,7 @@ int buildSexModel(SexModel &model,
 
     //--sex-system none: nothing is anything but an autosome, and the detector
     //stays quiet.  That is what the flag is for.
-    if (system == SEX_SYSTEM_NONE) return 0;
+    if (system == SEX_SYSTEM_NONE) { model.byKey.clear(); return 0; }
 
     vector<bool> declared(nchr, false);
     if (applyDeclaredRole(model, keys, names, sexChr, "--sex-chr",
@@ -339,7 +340,16 @@ int buildSexModel(SexModel &model,
         else if (isAmbiguousNumericChrKey(keys[chr])) unresolvedNumeric.push_back(names[chr]);
     }
 
-    if (unresolvedName.empty() && unresolvedNumeric.empty()) return 0;
+    if (unresolvedName.empty() && unresolvedNumeric.empty())
+    {
+        //Keyed as well as positional: chromosome filtering moves the vector
+        //but not the key, so rebuild() can restore one from the other rather
+        //than re-deriving a role that might come out differently.
+        model.byKey.clear();
+        for (unsigned int chr = 0; chr < nchr; chr++)
+            model.byKey[keys[chr]] = model.role[chr];
+        return 0;
+    }
 
     string listName, listNumeric;
     for (unsigned int i = 0; i < unresolvedName.size(); i++)
@@ -412,6 +422,246 @@ int buildSexModel(SexModel &model,
     }
 
     return -1;
+}
+
+void SexModel::rebuild(vector< MapData * > *mapDataByChr)
+{
+    role.assign(mapDataByChr->size(), CHR_AUTOSOME);
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+    {
+        map<string, ChrRole>::const_iterator it = byKey.find(canonChrKey(mapDataByChr->at(chr)->chr));
+        if (it != byKey.end()) role[chr] = it->second;
+    }
+}
+
+int zygosityForSex(int system, int sex)
+{
+    //PLINK coding: 1 male, 2 female, anything else unknown.
+    if (sex != 1 && sex != 2) return ZYG_UNKNOWN;
+    if (system == SEX_SYSTEM_XY) return (sex == 1) ? ZYG_HETEROGAMETIC : ZYG_HOMOGAMETIC;
+    if (system == SEX_SYSTEM_ZW) return (sex == 2) ? ZYG_HETEROGAMETIC : ZYG_HOMOGAMETIC;
+    return ZYG_UNKNOWN;
+}
+
+bool eligibleForCalling(ChrRole role, int zygo)
+{
+    if (role == CHR_AUTOSOME) return true;
+    if (role == CHR_SEX_SHARED) return (zygo == ZYG_HOMOGAMETIC);
+    return false;
+}
+
+static string zygoName(int z)
+{
+    if (z == ZYG_HOMOGAMETIC)   return "homogametic";
+    if (z == ZYG_HETEROGAMETIC) return "heterogametic";
+    return "unknown";
+}
+
+int runSexCheck(vector< HapData * > *hapDataByChr,
+                vector< MapData * > *mapDataByChr,
+                IndData *indData,
+                const SexModel &model,
+                double hetLo, double hetHi,
+                const string &outfile,
+                bool quietCheck)
+{
+    const int nind = indData->nind;
+    vector<long long> nCalled(nind, 0), nHet(nind, 0);
+
+    for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
+    {
+        if (model.role[chr] != CHR_SEX_SHARED) continue;
+        HapData *hap = hapDataByChr->at(chr);
+        for (int locus = 0; locus < hap->nloci; locus++)
+            for (int ind = 0; ind < nind; ind++)
+            {
+                geno_t g = hap->data[locus][ind];
+                if (!genoIsCalled(g)) continue;
+                nCalled[ind]++;
+                if (g == 1) nHet[ind]++;
+            }
+    }
+
+    //Classify, then compare against what the metadata said.  Fixed bounds
+    //rather than a two-component fit: an all-homogametic cohort has no
+    //bimodality to find, and a clustering rule would invent a split there.
+    //Fixed bounds fail the same way for every dataset and say so.
+    vector<double> hetRate(nind, 0.0);
+    vector<int> evidence(nind, ZYG_UNKNOWN);
+    for (int i = 0; i < nind; i++)
+    {
+        if (nCalled[i] == 0) continue;
+        hetRate[i] = double(nHet[i]) / double(nCalled[i]);
+        if (hetRate[i] < hetLo)      evidence[i] = ZYG_HETEROGAMETIC;
+        else if (hetRate[i] > hetHi) evidence[i] = ZYG_HOMOGAMETIC;
+    }
+
+    int nDeclared = 0, nConflict = 0, nInferred = 0, nAmbiguous = 0, nNoData = 0;
+    vector<string> source(nind, "declared");
+    indData->zygo.assign(nind, ZYG_UNKNOWN);
+
+    for (int i = 0; i < nind; i++)
+    {
+        int fromSex = zygosityForSex(model.system, indData->sex[i]);
+        if (fromSex != ZYG_UNKNOWN)
+        {
+            nDeclared++;
+            indData->zygo[i] = fromSex;
+            if (evidence[i] != ZYG_UNKNOWN && evidence[i] != fromSex)
+            {
+                nConflict++;
+                source[i] = "declared(conflict)";
+            }
+        }
+        else if (evidence[i] != ZYG_UNKNOWN)
+        {
+            //Sex is optional in a TFAM and in a --pop file, so this is the
+            //normal path for a cohort that simply did not record it.
+            nInferred++;
+            indData->zygo[i] = evidence[i];
+            source[i] = "inferred";
+        }
+        else
+        {
+            if (nCalled[i] == 0) { nNoData++; source[i] = "no_data"; }
+            else { nAmbiguous++; source[i] = "ambiguous"; }
+        }
+    }
+
+    //An inverted --sex-system is the one failure mode the flag introduces,
+    //and it produces a complete, plausible, entirely wrong result set.  It is
+    //also trivially visible here: nearly every sexed individual disagrees
+    //with its own genotypes.
+    if (nDeclared > 0 && nConflict * 2 > nDeclared)
+    {
+        //A std::string, not a string literal: LOG.err(string, const char *,
+        //bool) picks the (string, bool, bool) overload by pointer-to-bool
+        //conversion and prints "FALSE".
+        string hemiCode = (model.system == SEX_SYSTEM_XY ? string(" 1 (male)")
+                                                         : string(" 2 (female)"));
+        LOG.err("ERROR:", nConflict, false);
+        LOG.err(" of", nDeclared, false);
+        LOG.err(" individuals with a recorded sex have heterozygosity on the shared");
+        LOG.err("\tsex chromosome that contradicts it. Two things do this:");
+        LOG.err("\t  --sex-system", sexSystemName(model.system), false);
+        LOG.err(" is inverted -- it makes the sex coded", false);
+        LOG.err(hemiCode, false);
+        LOG.err(" hemizygous;");
+        LOG.err("\t  the genotypes were CALLED as diploid there, which many pipelines do by");
+        LOG.err("\t  default, so the heterozygous calls are artefacts rather than evidence.");
+        LOG.err("\tgarlic stops either way: it would otherwise discard every one of those");
+        LOG.err("\tcalls as impossible, which is a large silent change to the data.");
+        LOG.err("\tHeterozygosity below", hetLo, false);
+        LOG.err(" reads as hemizygous and above", hetHi, false);
+        LOG.err(" as diploid; see --het-rate-bounds.");
+        return -1;
+    }
+
+    //Recode.  Everything above read the genotypes as they came in; from here
+    //they are what the zygosity says they can be.
+    long long nHetRecoded = 0, nHemizygous = 0, nBlanked = 0;
+    vector<long long> hetRecodedBy(nind, 0);
+    for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
+    {
+        if (model.role[chr] != CHR_SEX_SHARED) continue;
+        HapData *hap = hapDataByChr->at(chr);
+        for (int locus = 0; locus < hap->nloci; locus++)
+            for (int ind = 0; ind < nind; ind++)
+            {
+                geno_t g = hap->data[locus][ind];
+                if (indData->zygo[ind] == ZYG_HOMOGAMETIC) continue;
+                if (indData->zygo[ind] == ZYG_UNKNOWN)
+                {
+                    //Not "assume hemizygous": an individual who might be
+                    //diploid would contribute an unknown number of alleles to
+                    //the frequency, and a frequency is not a place to guess.
+                    if (g != GENO_MISSING) { hap->data[locus][ind] = GENO_MISSING; nBlanked++; }
+                    continue;
+                }
+                if (g == 0)      { hap->data[locus][ind] = GENO_HALF_OTHER;   nHemizygous++; }
+                else if (g == 2) { hap->data[locus][ind] = GENO_HALF_COUNTED; nHemizygous++; }
+                else if (g == 1)
+                {
+                    hap->data[locus][ind] = GENO_MISSING;
+                    nHetRecoded++; hetRecodedBy[ind]++;
+                }
+            }
+    }
+
+    if (!quietCheck)
+    {
+        LOG.log("Sex check on the shared sex chromosome:");
+        LOG.log("\tzygosity from the recorded sex:", nDeclared);
+        LOG.log("\tinferred from heterozygosity:", nInferred);
+        LOG.log("\tambiguous, so not called there:", nAmbiguous);
+        if (nNoData > 0) LOG.log("\tno called genotypes there:", nNoData);
+        LOG.log("\themizygous genotypes recoded:", (long long)nHemizygous);
+        LOG.log("\theterozygous calls in hemizygous individuals discarded:", (long long)nHetRecoded);
+        if (nBlanked > 0)
+            LOG.log("\tgenotypes discarded for unknown zygosity:", (long long)nBlanked);
+        if (nConflict > 0)
+        {
+            LOG.err("WARNING:", nConflict, false);
+            LOG.err(" individuals have heterozygosity that contradicts their recorded sex.");
+            LOG.err("WARNING: the recorded sex was used. See", outfile, false);
+            LOG.err(".sexcheck.tsv.");
+        }
+    }
+
+    string fn = outfile + ".sexcheck.tsv";
+    ofstream out;
+    //ios::binary for the same reason every other writer uses it: a text
+    //output that differs by platform is one users cannot checksum.
+    out.open(fn.c_str(), ios::binary);
+    if (out.fail())
+    {
+        LOG.err("ERROR: Failed to open", fn);
+        return -1;
+    }
+    out << "## garlic sex check\n";
+    out << "## sex_system\t" << sexSystemName(model.system) << "\n";
+    out << "## het_rate_bounds\t" << hetLo << "\t" << hetHi << "\n";
+    out << "## sex_chromosomes";
+    for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+        if (model.role[chr] == CHR_SEX_SHARED) out << "\t" << mapDataByChr->at(chr)->chr;
+    out << "\n";
+    out << "ind\tpop\tsex_declared\tn_called\tn_het\thet_rate\tzygosity_used\tzygosity_source\tn_het_recoded\n";
+    for (int i = 0; i < nind; i++)
+    {
+        out << indData->indID[i] << "\t" << indData->pop[i] << "\t" << indData->sex[i] << "\t"
+            << nCalled[i] << "\t" << nHet[i] << "\t";
+        if (nCalled[i] == 0) out << "NA";
+        else out << fixed << setprecision(6) << hetRate[i] << defaultfloat;
+        out << "\t" << zygoName(indData->zygo[i]) << "\t" << source[i] << "\t"
+            << hetRecodedBy[i] << "\n";
+    }
+    out.close();
+    LOG.log("Sex check:", fn);
+
+    return 0;
+}
+
+void recomputeFreqForRole(vector< HapData * > *hapDataByChr,
+                          vector< FreqData * > *freqDataByChr,
+                          const SexModel &model,
+                          ChrRole role,
+                          int nresample)
+{
+    if (freqDataByChr == NULL) return;   //--freq-file: the user's numbers, untouched
+    GarlicRNG *r = getRNG();
+    for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
+    {
+        if (model.role[chr] != role) continue;
+        HapData *hap = hapDataByChr->at(chr);
+        FreqData *fd = freqDataByChr->at(chr);
+        for (int locus = 0; locus < hap->nloci; locus++)
+        {
+            double nalleles = 0, total = 0;
+            for (int ind = 0; ind < hap->nind; ind++)
+                addAlleleCounts(hap->data[locus][ind], nalleles, total);
+            fd->freq[locus] = alleleFrequency(nalleles, total, nresample, r);
+        }
+    }
 }
 
 int filterChromosomes(vector<string> &keep,
@@ -3843,6 +4093,7 @@ IndData *initIndData(int nind)
     data->indID.assign(nind, "--");
     data->pop.resize(nind);
     data->sex.assign(nind, 0);
+    data->zygo.assign(nind, ZYG_UNKNOWN);
 
     return data;
 }
@@ -3857,7 +4108,8 @@ DoubleData *initDoubleData(int n)
     return data;
 }
 
-DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int step)
+DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int step,
+                                      const vector<ChrRole> *role, ChrRole keep)
 {
     //int nmiss = 0;
     //int ncols = 0;
@@ -3866,6 +4118,10 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
     DoubleData *rawWinData;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
+        //Estimated on the autosomes and applied to the sex chromosome, so a
+        //chromosome can be absent from the density while its windows are
+        //still called.
+        if (role != NULL && chr < role->size() && role->at(chr) != keep) continue;
         for (int ind = 0; ind < winDataByChr->at(chr)->nind; ind++)
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
@@ -3892,6 +4148,10 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
     int i = 0;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
+        //Estimated on the autosomes and applied to the sex chromosome, so a
+        //chromosome can be absent from the density while its windows are
+        //still called.
+        if (role != NULL && chr < role->size() && role->at(chr) != keep) continue;
         for (int ind = 0; ind < winDataByChr->at(chr)->nind; ind++)
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
@@ -3909,7 +4169,8 @@ DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int ste
     return rawWinData;
 }
 
-DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample, int step)
+DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample, int step,
+                                            const vector<ChrRole> *role, ChrRole keep)
 {
     GarlicRNG *r = getRNG();
 
@@ -3944,6 +4205,10 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
     int size = 0;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
+        //Estimated on the autosomes and applied to the sex chromosome, so a
+        //chromosome can be absent from the density while its windows are
+        //still called.
+        if (role != NULL && chr < role->size() && role->at(chr) != keep) continue;
         for (int ind = 0; ind < nind; ind++)
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
@@ -3963,6 +4228,10 @@ DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, I
     int i = 0;
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
+        //Estimated on the autosomes and applied to the sex chromosome, so a
+        //chromosome can be absent from the density while its windows are
+        //still called.
+        if (role != NULL && chr < role->size() && role->at(chr) != keep) continue;
         for (int ind = 0; ind < nind; ind++)
         {
             for (int locus = 0; locus < winDataByChr->at(chr)->nloci; locus+=step)
@@ -4034,6 +4303,10 @@ void subsetDataByIndex(vector< HapData * > *hapDataByChr,
         newIndData->indID[ind] = indData->indID[keepInd[ind]];
         newIndData->pop[ind]   = indData->pop[keepInd[ind]];
         newIndData->sex[ind]   = indData->sex[keepInd[ind]];
+        //Carried, not re-derived: the sex check may have INFERRED this from
+        //heterozygosity for an individual whose sex was never recorded, and
+        //re-deriving it from sex alone inside a population would lose that.
+        newIndData->zygo[ind]  = indData->zygo[keepInd[ind]];
     }
 
     vector< HapData * > *newHapDataByChr = new vector< HapData * >;

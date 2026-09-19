@@ -143,7 +143,15 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         int winSize,
                                         int MAX_GAP,
                                         double OVERLAP_FRAC,
-                                        bool CM);
+                                        bool CM,
+                                        //Tracts from these chromosomes, and only
+                                        //these, feed the size-class GMM.  Every
+                                        //tract is still written; what a 5 Mb run
+                                        //means differs between an autosome and a
+                                        //sex chromosome, and one chromosome's
+                                        //worth of tracts cannot support a
+                                        //three-component fit anyway.
+                                        const vector<ChrRole> *role = NULL);
 
 ROHLength *initROHLength(int size);
 void releaseROHLength(ROHLength *rohLength);
@@ -163,7 +171,29 @@ string sizeClassLabel(int k);
 vector<string> makeClassColors(int nclass);
 
 double selectLODCutoff(KDEResult *kdeResult, int wisize, bool &ok);
-double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wisize, bool &ok);
+double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wisize, bool &ok,
+                       const vector<ChrRole> *role = NULL, ChrRole keep = CHR_AUTOSOME);
+
+//The cutoff the SEX CHROMOSOME's own windows would have given, logged and not
+//used.  Cotter et al. (2024) reused the autosomal cutoff on the X for want of
+//enough X tracts to locate a second minimum, and noted that doing so may
+//inflate X ROH; this reports how far apart the two are for the data in hand.
+//Returns false, quietly, when there is no minimum between modes to find --
+//which is the normal outcome on one chromosome and is not an error.
+bool reportSexChrLODCutoff(vector< WinData * > *winDataByChr, IndData *indData,
+                           const vector<ChrRole> *role, int step, int wsize,
+                           double autosomalCutoff);
+
+//Sets MISSING on every window of an individual that cannot carry a run of
+//homozygosity on that chromosome.  convertWinData2DoubleData already skips
+//MISSING and parallelAssembleROH's `>= cutoff` test already fails it, so this
+//removes those windows from both the density and the calls without either
+//having to know why.  Necessary rather than incidental: a hemizygous window
+//scores exactly 0, not MISSING, because lod() returns log10(1/1) for a
+//genotype outside {0,1,2} -- so left alone it would pile a spike at zero into
+//the density and would be CALLED outright under any negative cutoff.
+long long maskIneligibleWindows(vector< WinData * > *winDataByChr, IndData *indData,
+                                const vector<ChrRole> *role);
 
 void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< FreqData * > *freqDataByChr,
@@ -175,7 +205,8 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< GenoLikeData * > *GLDataByChr,
                      vector< GenoFreqData * > *genoFreqDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, int thinStep, int LD_SUBSAMPLE);
+                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, int thinStep, int LD_SUBSAMPLE,
+                     const vector<ChrRole> *role = NULL);
 
 KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector< FreqData * > *freqDataByChr,
@@ -184,7 +215,8 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector<int> *multiWinsizes, int &winsize, double error,
                                  vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, int thinStep);
+                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, int thinStep,
+                                 const vector<ChrRole> *role = NULL);
 
 KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          vector< FreqData * > *freqDataByChr,
@@ -194,7 +226,8 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
                          bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, int thinStep,
-                         int MAX_WINSIZE);
+                         int MAX_WINSIZE,
+                         const vector<ChrRole> *role = NULL);
 
 //int selectWinsize(KDEWinsizeReport *winsizeReport, double AUTO_WINSIZE_THRESHOLD);
 

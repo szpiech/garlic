@@ -1,4 +1,5 @@
 #include "garlic-cli.h"
+#include "garlic-data.h"   //MISSING: the sentinel a --lod-cutoff must stay above
 #include <iostream>
 #include <fstream>
 #include <utility>
@@ -313,6 +314,16 @@ const string HELP_SEX_CHR_DEGENERATE = "The chromosome carried only by the heter
 \tsex and absent in the other -- so it is dropped before calling.\n\
 \tDefault: the conventional name for --sex-system";
 
+const string ARG_HET_RATE_BOUNDS = "--het-rate-bounds";
+const string HELP_HET_RATE_BOUNDS = "<lo> <hi>: heterozygosity rates on the shared sex chromosome below which an\n\
+\tindividual reads as hemizygous and above which it reads as diploid. Between\n\
+\tthem it is ambiguous, and garlic neither calls ROH there for that individual\n\
+\tnor counts its alleles. Used to check every recorded sex and to infer the\n\
+\tones that were not recorded.\n\
+\tFixed bounds rather than a two-component fit on purpose: a cohort that is\n\
+\tentirely one sex has no bimodality to find, and a clustering rule would\n\
+\tinvent a split there. These fail the same way for every dataset.";
+
 const string ARG_HAPLOID_CHR = "--haploid-chr";
 const string HELP_HAPLOID_CHR = "Chromosomes haploid in every individual: mitochondrion, chloroplast. Dropped\n\
 \tbefore calling, since a run of homozygosity on them is not a meaningful\n\
@@ -489,6 +500,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addListFlag(ARG_SEX_CHR, "_NONE", "", HELP_SEX_CHR);
 	params->addListFlag(ARG_SEX_CHR_DEGENERATE, "_NONE", "", HELP_SEX_CHR_DEGENERATE);
 	params->addListFlag(ARG_HAPLOID_CHR, "_NONE", "", HELP_HAPLOID_CHR);
+	params->addListFlag(ARG_HET_RATE_BOUNDS, 0.02, "", HELP_HET_RATE_BOUNDS);
 	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
 	params->addFlag(ARG_OUTDIR, DEFAULT_OUTDIR, "", HELP_OUTDIR);
 	params->addFlag(ARG_POOL, DEFAULT_POOL, "", HELP_POOL);
@@ -757,9 +769,21 @@ bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE)
 bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF, bool wasSet)
 {
 	//Was keyed on LOD_CUTOFF != -999999, so -999999 was an unusable value.
-	(void)LOD_CUTOFF;
 	if (wasSet) {
 		AUTO_CUTOFF = false;
+		//A window that must not be called carries MISSING (-9999), and the
+		//assembler decides by `window >= cutoff`.  A cutoff at or below that
+		//sentinel therefore calls the windows whose whole purpose is to be
+		//uncallable: the tails of every chromosome, the windows spanning an
+		//assembly gap, and -- since the sex-chromosome work -- every window
+		//of an individual that is not diploid there.  No real LOD score is
+		//anywhere near it.
+		if (LOD_CUTOFF <= double(MISSING)) {
+			LOG.err("ERROR:", ARG_LOD_CUTOFF, false);
+			LOG.err(" must be greater than", MISSING, false);
+			LOG.err(", which is the value that marks a window as uncallable.");
+			return true;
+		}
 	}
 	return false;
 }

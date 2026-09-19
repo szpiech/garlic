@@ -1535,6 +1535,21 @@ sex_chromosomes() {
     # Two spellings of one chromosome: 21 and chr21.
     { gz "$EX/chr21.tped.gz"; gz "$EX/chr21.tped.gz" | sed 's/^21/chr21/'; } | gzip > "$WORK/sxcoll.tped.gz"
 
+    # A hemizygous fixture: the same genotypes with every heterozygous call in an
+    # individual coded male collapsed to a homozygote, which is what a hemizygous
+    # call looks like in a TPED.
+    gz "$EX/chr21.tfam.gz" | awk '{print NR"\t"$5}' > "$WORK/sxsex.txt"
+    gz "$WORK/sxX.tped.gz" | awk 'NR==FNR{sex[$1]=$2; next}{
+            printf "%s\t%s\t%s\t%s", $1, $2, $3, $4
+            for (i = 5; i <= NF; i += 2) {
+                j = (i - 3) / 2; a = $i; b = $(i+1)
+                if (sex[j] == 1 && a != b) b = a
+                printf "\t%s\t%s", a, b
+            }
+            printf "\n"
+        }' "$WORK/sxsex.txt" - | gzip > "$WORK/sxXhemi.tped.gz"
+    { gz "$EX/chr21.tped.gz"; gz "$WORK/sxXhemi.tped.gz"; } | gzip > "$WORK/sxmixhemi.tped.gz"
+
     sxrun() {   # $1 = out prefix, rest = extra flags; sets $sxst
         p=$1; shift
         # shellcheck disable=SC2086
@@ -1590,11 +1605,22 @@ sex_chromosomes() {
         --sex-system none --out "$WORK/sx4b" --force >/dev/null 2>&1
     if [ -s "$WORK/sx4b.roh.bed" ]; then ok
     else bad "--sex-system none did not accept chr23 as an autosome"; fi
-    # With a human build it is PLINK's X, and dropping it leaves nothing.
-    "$GARLIC" --tped "$WORK/sx23.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
-        --sex-system xy --out "$WORK/sx4c" --force >/dev/null 2>"$WORK/sx4c.stderr"
-    if [ $? -eq 1 ] && grep -q "no autosomes left" "$WORK/sx4c.stderr"; then ok
+    # With a human build it is PLINK's X: analysed, but as a sex chromosome.
+    # The fixture has to be the hemizygous one -- chr21's genotypes relabelled
+    # 23 have ordinary heterozygosity in the individuals coded male, and the
+    # sex check is right to refuse that (case 9d).
+    gz "$WORK/sxXhemi.tped.gz" | sed 's/^chrX/23/' | gzip > "$WORK/sx23hemi.tped.gz"
+    "$GARLIC" --tped "$WORK/sx23hemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --sex-system xy --out "$WORK/sx4c" --force >/dev/null 2>&1
+    if grep -q "^## sex_chromosomes.chr23" "$WORK/sx4c.sexcheck.tsv" 2>/dev/null; then ok
     else bad "chr23 under a human build was not treated as the X"; fi
+
+    # Diploid calls on a chromosome declared hemizygous stop the run too: the
+    # alternative is discarding every one of them as impossible, silently.
+    "$GARLIC" --tped "$WORK/sx23.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --sex-system xy --out "$WORK/sx4d" --force >/dev/null 2>"$WORK/sx4d.stderr"
+    if [ $? -eq 1 ] && grep -q "CALLED as diploid there" "$WORK/sx4d.stderr"; then ok
+    else bad "diploid genotypes on a hemizygous chromosome were not caught"; fi
 
     # 5. ZW is the same code path with the other sex heterogametic, so chrZ
     #    must behave exactly as chrX does -- including being refused when the
@@ -1638,6 +1664,112 @@ sex_chromosomes() {
     if [ "$sxst" -eq 1 ] && grep -q "must be xy, zw or none" "$WORK/sx8c.stderr"; then ok
     else bad "an unknown --sex-system value was not refused"; fi
 
+    # --- calling on the shared sex chromosome -------------------------------
+    # A hemizygous fixture: the same chr21 genotypes relabelled chrX, with
+    # every heterozygous call in an individual coded male collapsed to a
+    # homozygote, which is what a hemizygous call looks like in a TPED.
+
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --sex-system xy --out "$WORK/sx9" --force >/dev/null 2>&1
+    # 9a. The headline invariant: nobody hemizygous has a call there.  A
+    #     heterogametic individual's windows are sums of lod() over genotypes
+    #     it does not have, which is exactly 0 and would be called under any
+    #     negative cutoff if they were not masked.
+    if [ -f "$WORK/sx9.roh.bed" ] && [ -f "$WORK/sx9.sexcheck.tsv" ]; then
+        bycls=$(awk '
+            FNR==NR { if (FNR > 5) zyg[$1] = $7; next }
+            /^track/ { l = $0; sub(/.*Ind: /, "", l); sub(/ Pop:.*/, "", l); ind = l; next }
+            $1 == "chrX" { n[zyg[ind]]++ }
+            END { for (k in n) printf "%s=%d ", k, n[k] }
+        ' "$WORK/sx9.sexcheck.tsv" "$WORK/sx9.roh.bed")
+        case "$bycls" in
+            *heterogametic*) bad "a hemizygous individual was called on the shared sex chromosome: $bycls";;
+            *homogametic*)   ok;;
+            *)               bad "no chrX calls at all in the homogametic individuals";;
+        esac
+    else bad "the sex-chromosome run produced no output"; fi
+
+    # 9b. Adding the sex chromosome must not move a single autosomal call.
+    #     The cutoff and the window size are estimated from the autosomes, so
+    #     this holds whether or not they are chosen automatically -- and the
+    #     automatic case is the one that would break if the sex chromosome's
+    #     windows reached the density.
+    "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --out "$WORK/sx9ref" --force >/dev/null 2>&1
+    awk '$1 == "chr21" || /^track/' "$WORK/sx9.roh.bed" > "$WORK/sx9.auto.bed"
+    if [ "$(sum "$WORK/sx9.auto.bed")" = "$(sum "$WORK/sx9ref.roh.bed")" ]; then ok
+    else bad "adding a sex chromosome changed the autosomal calls"; fi
+
+    AUTOBASE="--build hg18 --winsize 60 --error 0.001 --size-bounds 500000 1000000"
+    "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $AUTOBASE \
+        --out "$WORK/sx10ref" --force >/dev/null 2>&1
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $AUTOBASE \
+        --sex-system xy --out "$WORK/sx10" --force >/dev/null 2>&1
+    awk '$1 == "chr21" || /^track/' "$WORK/sx10.roh.bed" > "$WORK/sx10.auto.bed"
+    if [ "$(sum "$WORK/sx10.auto.bed")" = "$(sum "$WORK/sx10ref.roh.bed")" ]; then ok
+    else bad "the sex chromosome's windows reached the LOD score density"; fi
+    # ...and the diagnostic reports what the sex chromosome alone would have
+    # given, so reusing the autosomal cutoff is visible rather than implicit.
+    if grep -q "Sex chromosome: its own windows would give" "$WORK/sx10.log"; then ok
+    else bad "the sex-chromosome cutoff diagnostic was not reported"; fi
+
+    # 9c. The allele frequency is the point of the half-call recode: the
+    #     heterogametic sex contributes ONE allele and the homogametic sex two,
+    #     computed over everyone, and only then is calling restricted.
+    #     Recomputed here from the TPED and the TFAM with no reference to how
+    #     garlic does it.
+    gz "$WORK/sx9.freq.gz" | awk 'NR > 1 && $1 == "chrX" { print $2"\t"$4"\t"$5 }' > "$WORK/sx9.fx"
+    nbad=$(gz "$WORK/sxXhemi.tped.gz" | awk -v sexf="$WORK/sxsex.txt" -v freqf="$WORK/sx9.fx" '
+        BEGIN {
+            while ((getline l < sexf) > 0)  { split(l, f, "\t"); sex[f[1]] = f[2] }
+            while ((getline l < freqf) > 0) { split(l, f, "\t"); want[f[1]] = f[2]; fq[f[1]] = f[3] }
+        }
+        {
+            snp = $2
+            if (!(snp in want)) next
+            a1 = want[snp]; num = 0; den = 0
+            for (i = 5; i <= NF; i += 2) {
+                j = (i - 3) / 2; a = $i; b = $(i+1)
+                if (sex[j] == 1) { if (a == "0") continue; den += 1; if (a == a1) num += 1 }
+                else { if (a == "0" || b == "0") continue; den += 2
+                       if (a == a1) num += 1; if (b == a1) num += 1 }
+            }
+            e = (den > 0 ? num / den : 0)
+            d = e - fq[snp]; if (d < 0) d = -d
+            if (d > 1e-6) n++
+            seen++
+        }
+        END { if (seen == 0) print "no-loci-compared"; else print n + 0 }
+    ')
+    if [ "$nbad" = "0" ]; then ok
+    else bad "$nbad sex-chromosome allele frequencies do not weight the heterogametic sex as one allele"; fi
+
+    # 9d. The sex check reports, and an inverted --sex-system is caught: every
+    #     individual then contradicts its own genotypes, which is the one
+    #     failure mode the flag introduces.
+    if grep -q "Sex check on the shared sex chromosome" "$WORK/sx9.log" && \
+       [ "$(awk 'END{print NR}' "$WORK/sx9.sexcheck.tsv")" -eq 50 ]; then ok
+    else bad "the sex check did not write a row per individual"; fi
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --sex-system zw --sex-chr chrX --out "$WORK/sx11" --force >/dev/null 2>"$WORK/sx11.stderr"
+    if [ $? -eq 1 ] && grep -q "is inverted" "$WORK/sx11.stderr"; then ok
+    else bad "an inverted --sex-system was not caught by the sex check"; fi
+
+    # 9e. Sex is optional in a TFAM.  With none recorded, zygosity is inferred
+    #     from heterozygosity, and the calls must match the run that was told.
+    gz "$EX/chr21.tfam.gz" | awk '{print $1"\t"$2}' > "$WORK/sxnosex.tfam"
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$WORK/sxnosex.tfam" $SEXBASE \
+        --sex-system xy --out "$WORK/sx12" --force >/dev/null 2>&1
+    if grep -q "inferred from heterozygosity: 45" "$WORK/sx12.log" && \
+       [ "$(sum "$WORK/sx12.roh.bed")" = "$(sum "$WORK/sx9.roh.bed")" ]; then ok
+    else bad "zygosity inferred from heterozygosity did not reproduce the declared run"; fi
+
+    # 9f. A cutoff at or below the uncallable-window sentinel would call every
+    #     window that exists to be uncallable, including these.
+    expect_exit 1 "--lod-cutoff below the MISSING sentinel" \
+        "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 \
+        --winsize 60 --error 0.001 --lod-cutoff -9999 --size-bounds 500000 1000000 \
+        --out "$WORK/sx13" --force
 }
 
 params_roundtrip() {

@@ -152,6 +152,13 @@ struct IndData
   //TFAM column 5, PLINK coding: 1 male, 2 female, 0 or -9 unknown.  What the
   //metadata SAYS; nothing conditions a calculation on it directly.
   vector<int> sex;
+  //What the individual IS, on a shared sex chromosome: one of the Zygo
+  //values.  Derived from sex and --sex-system, checked against observed
+  //heterozygosity, and inferred from it when sex was not recorded -- so it is
+  //a separate field rather than a reading of the one above.  ZYG_UNKNOWN
+  //everywhere until the sex check runs, and on a run with no shared sex
+  //chromosome it stays that way, because nothing needs it.
+  vector<int> zygo;
   int nind;
 };
 
@@ -303,6 +310,16 @@ enum ChrRole
     CHR_PAR = 4
 };
 
+//What an individual is on a shared sex chromosome.  Two copies, one copy, or
+//not established -- which is a real third state, because sex is optional in a
+//TFAM and in a --pop file and heterozygosity does not always resolve it.
+enum Zygo
+{
+    ZYG_UNKNOWN = 0,
+    ZYG_HOMOGAMETIC = 1,
+    ZYG_HETEROGAMETIC = 2
+};
+
 //PLINK sex coding is 1 male / 2 female whatever the species' system is, so in
 //a ZW species the HOMOGAMETIC sex is the one coded 1.  Which code is
 //heterogametic is the one bit of this that no amount of data can supply, and
@@ -333,7 +350,8 @@ bool isHumanBuild(const string &build);
 struct SexModel
 {
     int system;
-    vector<ChrRole> role;   //parallel to mapDataByChr
+    vector<ChrRole> role;          //parallel to mapDataByChr
+    map<string, ChrRole> byKey;    //survives chromosome filtering; see rebuild()
     SexModel() : system(SEX_SYSTEM_UNSET) {}
 
     bool anyOfRole(ChrRole r) const
@@ -341,7 +359,59 @@ struct SexModel
         for (unsigned int i = 0; i < role.size(); i++) if (role[i] == r) return true;
         return false;
     }
+
+    //role is positional, so any filtering of mapDataByChr invalidates it.
+    //byKey does not move, so the vector is rebuilt from it rather than
+    //recomputed -- which also means a role can never be re-derived
+    //differently after a filter than it was before one.
+    void rebuild(vector< MapData * > *mapDataByChr);
 };
+
+//Which zygosity a recorded sex implies under a declared system.  This is the
+//ONLY place the xy/zw distinction has any consequence: PLINK codes 1 male and
+//2 female whatever the species does, so the system decides which of those two
+//codes is the heterogametic one and nothing else about the analysis differs.
+int zygosityForSex(int system, int sex);
+
+//May this individual carry a run of homozygosity on this chromosome?  An
+//autosome, yes; the shared sex chromosome, only if homogametic; anything else
+//has expected ploidy of at most one in everybody and never reaches here.
+bool eligibleForCalling(ChrRole role, int zygo);
+
+//Per-individual heterozygosity on the shared sex chromosome(s), used to check
+//the recorded sex and to infer it where it was not recorded, then to recode
+//the genotypes that the resulting zygosity makes impossible:
+//
+//  heterogametic  0 -> GENO_HALF_OTHER, 2 -> GENO_HALF_COUNTED, 1 -> MISSING
+//  unknown        everything -> MISSING
+//
+//The half codes are what make the allele frequency come out right with no
+//change to the frequency code: a hemizygous call contributes its one observed
+//allele and no genotype, which is exactly what it is.  A heterozygous call
+//where the individual has one copy of the chromosome is impossible by
+//construction, so it is counted and discarded rather than believed.
+//
+//Writes <outfile>.sexcheck.tsv.  Returns 0, or -1 after logging.
+int runSexCheck(vector< HapData * > *hapDataByChr,
+                vector< MapData * > *mapDataByChr,
+                IndData *indData,
+                const SexModel &model,
+                double hetLo, double hetHi,
+                const string &outfile,
+                bool quietCheck);
+
+//Recomputes the allele frequency of the shared sex chromosome(s) after the
+//recode above, and of nothing else.  The readers compute frequencies while
+//reading, before anything knows what a chromosome is, so the sex chromosome's
+//are counted as though every individual were diploid.  Recomputing only the
+//chromosomes whose genotypes actually changed keeps every autosome's
+//frequency bit-for-bit what it was -- which matters because --resample draws
+//random numbers, so a recomputation is not a no-op there.
+void recomputeFreqForRole(vector< HapData * > *hapDataByChr,
+                          vector< FreqData * > *freqDataByChr,
+                          const SexModel &model,
+                          ChrRole role,
+                          int nresample);
 
 //Fills model.role from the declarations, applying the conventional names for
 //the declared system, and refuses (returns -1, having logged) when a detected
@@ -626,8 +696,21 @@ void writeWinData(vector< WinData * > *winDataByChr,
                   string outfile);
 
 DoubleData *initDoubleData(int n);
-DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int step);
-DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData, int subsample, int step);
+//The LOD score cutoff and the window size are estimated from the AUTOSOMES
+//and applied to the sex chromosome, so the density these build has to be able
+//to exclude a chromosome while the calling step still uses its windows.  That
+//cannot be done by writing MISSING into them, which is how ineligible
+//INDIVIDUALS are excluded -- hence a filter here rather than another mask.
+//
+//role may be NULL, which includes every chromosome and is what every caller
+//did before there was such a thing as a role.
+DoubleData *convertWinData2DoubleData(vector< WinData * > *winDataByChr, int step,
+                                      const vector<ChrRole> *role = NULL,
+                                      ChrRole keep = CHR_AUTOSOME);
+DoubleData *convertSubsetWinData2DoubleData(vector< WinData * > *winDataByChr, IndData *indData,
+                                            int subsample, int step,
+                                            const vector<ChrRole> *role = NULL,
+                                            ChrRole keep = CHR_AUTOSOME);
 void releaseDoubleData(DoubleData *data);
 void writeDoubleData(vector < DoubleData * > *rawWinDataByPop, vector< MapData * > *mapDataByChr, vector< IndData * > *indDataByPop);
 

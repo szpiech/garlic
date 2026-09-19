@@ -381,6 +381,9 @@ With --tgls (legacy; the format holds ONE value per genotype): GQ As above.  The
 --help <bool>: Prints this help dialog.
 	Default: false
 
+--het-rate-bounds <double1> ... <doubleN>: <lo> <hi>: heterozygosity rates on the shared sex chromosome below which an individual reads as hemizygous and above which it reads as diploid. Between them it is ambiguous, and garlic neither calls ROH there for that individual nor counts its alleles. Used to check every recorded sex and to infer the ones that were not recorded. Fixed bounds rather than a two-component fit on purpose: a cohort that is entirely one sex has no bimodality to find, and a clustering rule would invent a split there. These fail the same way for every dataset.
+	Default: 0.020000
+
 --kde-cut <double>: Extend the density grid this many bandwidths beyond the range of the data.
 	Default: 3
 

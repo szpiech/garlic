@@ -510,6 +510,7 @@ struct ROH_work_order_t
     int MAX_GAP;
     double OVERLAP_THRESHOLD;
     bool CM;
+    const vector<ChrRole> *role;
     vector< ROHData * > *rohDataByInd;
     //Per-thread so there is no shared push_back; concatenated in thread order
     //below, which reproduces the serial order exactly because each thread owns
@@ -530,6 +531,7 @@ static void parallelAssembleROH(ROH_work_order_t *p)
     const int MAX_GAP = p->MAX_GAP;
     const double OVERLAP_THRESHOLD = p->OVERLAP_THRESHOLD;
     const bool CM = p->CM;
+    const vector<ChrRole> *role = p->role;
     vector< ROHData * > *rohDataByInd = p->rohDataByInd;
     vector<double> &lengths = p->lengths;
 
@@ -540,6 +542,13 @@ static void parallelAssembleROH(ROH_work_order_t *p)
 
         for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
         {
+            //Every tract this chromosome yields is written; only an autosome's
+            //feeds the size-class GMM.  With role == NULL -- every caller
+            //before roles existed, and every run with no sex chromosome --
+            //this is true everywhere and the behaviour is unchanged.
+            const bool sizeClassChr = (role == NULL || chr >= role->size() ||
+                                       role->at(chr) == CHR_AUTOSOME);
+
             WinData *winData = winDataByChr->at(chr);
             MapData *mapData = mapDataByChr->at(chr);
             pos_t *pos;
@@ -605,7 +614,7 @@ static void parallelAssembleROH(ROH_work_order_t *p)
                     winStopIndex = w - 1;
                     if(winStopIndex - winStartIndex + 1 >= OVERLAP_THRESHOLD){
                         double size = CM ? gwinStop - gwinStart : winStop - winStart + 1;
-                        lengths.push_back(size);
+                        if (sizeClassChr) lengths.push_back(size);
                         rohData->length.push_back(size);
                         rohData->chr.push_back(chr);
                         rohData->start.push_back(winStart);
@@ -625,7 +634,7 @@ static void parallelAssembleROH(ROH_work_order_t *p)
                     winStopIndex = w - 1;
                     if(winStopIndex - winStartIndex + 1 >= OVERLAP_THRESHOLD){
                         double size = CM ? gwinStop - gwinStart : winStop - winStart + 1;
-                        lengths.push_back(size);
+                        if (sizeClassChr) lengths.push_back(size);
                         rohData->length.push_back(size);
                         rohData->chr.push_back(chr);
                         rohData->start.push_back(winStart);
@@ -645,7 +654,7 @@ static void parallelAssembleROH(ROH_work_order_t *p)
                     winStopIndex = w;
                     if(winStopIndex - winStartIndex + 1 >= OVERLAP_THRESHOLD){
                         double size = CM ? gwinStop - gwinStart : winStop - winStart + 1;
-                        lengths.push_back(size);
+                        if (sizeClassChr) lengths.push_back(size);
                         rohData->length.push_back(size);
                         rohData->chr.push_back(chr);
                         rohData->start.push_back(winStart);
@@ -673,7 +682,8 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         ROHLength **rohLength,
                                         int winSize,
                                         int MAX_GAP,
-                                        double OVERLAP_FRAC, bool CM)
+                                        double OVERLAP_FRAC, bool CM,
+                                        const vector<ChrRole> *role)
 {
     vector< ROHData * > *rohDataByInd = initROHData(indData);
 
@@ -701,6 +711,7 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
         orders[i].MAX_GAP = MAX_GAP;
         orders[i].OVERLAP_THRESHOLD = OVERLAP_THRESHOLD;
         orders[i].CM = CM;
+        orders[i].role = role;
         orders[i].rohDataByInd = rohDataByInd;
         orders[i].indStart = at;
         at += per + (i < extra ? 1 : 0);
@@ -1032,7 +1043,74 @@ double selectLODCutoff(KDEResult *kdeResult, int wsize, bool &ok)
 }
 
 
-double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wsize, bool &ok)
+long long maskIneligibleWindows(vector< WinData * > *winDataByChr, IndData *indData,
+                                const vector<ChrRole> *role)
+{
+    if (role == NULL) return 0;
+    long long n = 0;
+    for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
+    {
+        if (chr >= role->size() || role->at(chr) == CHR_AUTOSOME) continue;
+        WinData *win = winDataByChr->at(chr);
+        for (int ind = 0; ind < win->nind; ind++)
+        {
+            if (eligibleForCalling(role->at(chr), indData->zygo[ind])) continue;
+            for (int locus = 0; locus < win->nloci; locus++)
+            {
+                if (win->data[ind][locus] == MISSING) continue;
+                win->data[ind][locus] = MISSING;
+                n++;
+            }
+        }
+    }
+    return n;
+}
+
+bool reportSexChrLODCutoff(vector< WinData * > *winDataByChr, IndData *indData,
+                           const vector<ChrRole> *role, int step, int wsize,
+                           double autosomalCutoff)
+{
+    if (role == NULL) return false;
+    bool haveSexChr = false;
+    for (unsigned int chr = 0; chr < role->size(); chr++)
+        if (role->at(chr) == CHR_SEX_SHARED) haveSexChr = true;
+    if (!haveSexChr) return false;
+
+    //Subsampling is deliberately not applied: there is little enough of this
+    //chromosome as it is, and this costs one KDE on a fraction of the genome.
+    DoubleData *raw = convertWinData2DoubleData(winDataByChr, step, role, CHR_SEX_SHARED);
+    if (raw == NULL || raw->size < 2) { if (raw) releaseDoubleData(raw); return false; }
+
+    bool found = false;
+    double cutoff = 0;
+    try
+    {
+        KDEResult *kde = computeKDE(raw->data.data(), raw->size);
+        try { cutoff = get_min_btw_modes(kde->x.data(), kde->y.data(), kde->size, wsize); found = true; }
+        catch (...) { found = false; }
+        releaseKDEResult(kde);
+    }
+    catch (...) { found = false; }
+    releaseDoubleData(raw);
+
+    if (!found)
+    {
+        //Expected, not a failure: one chromosome's windows from part of the
+        //cohort often have no second mode to find.  That is the reason the
+        //autosomal cutoff is the one used.
+        LOG.log("Sex chromosome: no separate LOD score cutoff could be estimated from its own");
+        LOG.log("\twindows; the autosomal cutoff is the one applied.");
+        return false;
+    }
+
+    LOG.log("Sex chromosome: its own windows would give a LOD score cutoff of", cutoff, false);
+    LOG.log("; the autosomal cutoff", autosomalCutoff, false);
+    LOG.log(" is the one applied.");
+    return true;
+}
+
+double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wsize, bool &ok,
+                       const vector<ChrRole> *role, ChrRole keep)
 {
     ok = true;
     //Format the LOD window data into a single array per pop with no missing data
@@ -1040,8 +1118,8 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
     DoubleData *rawWinData;
     double LOD_CUTOFF;
 
-    if (KDE_SUBSAMPLE <= 0) rawWinData = convertWinData2DoubleData(winDataByChr, step);
-    else rawWinData = convertSubsetWinData2DoubleData(winDataByChr, indData, KDE_SUBSAMPLE, step);
+    if (KDE_SUBSAMPLE <= 0) rawWinData = convertWinData2DoubleData(winDataByChr, step, role, keep);
+    else rawWinData = convertSubsetWinData2DoubleData(winDataByChr, indData, KDE_SUBSAMPLE, step, role, keep);
 
     //Compute KDE of LOD score distribution
     if (!LOG.isQuiet()) cerr << "Estimating distribution of raw LOD score windows:\n";
@@ -1077,7 +1155,8 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                      vector< GenoLikeData * > *GLDataByChr,
                      vector< GenoFreqData * > *genoFreqDataByChr, bool USE_GL,
                      int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, int thinStep, int LD_SUBSAMPLE)
+                     bool WEIGHTED, int M, double mu, int numThreads, bool PHASED, int thinStep, int LD_SUBSAMPLE,
+                     const vector<ChrRole> *role)
 {
     //--winsize-multi values come straight from the command line and were never
     //checked against the data; a size >= the shortest chromosome indexes the
@@ -1128,7 +1207,7 @@ void exploreWinsizes(vector< HapData * > *hapDataByChr,
                                           centro, multiWinsizes[i],
                                           error, MAX_GAP, USE_GL);
         }
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : multiWinsizes[i]));
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : multiWinsizes[i]), role, CHR_AUTOSOME);
         releaseWinData(winDataByChr);
 
         KDEResult *kdeResult = computeKDE(rawWinData->data.data(), rawWinData->size);
@@ -1160,7 +1239,8 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                          vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                          int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
                          bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, int thinStep,
-                         int MAX_WINSIZE)
+                         int MAX_WINSIZE,
+                         const vector<ChrRole> *role)
 {
     double AUTO_WINSIZE_THRESHOLD = AUTO_WINSIZE_THRESHOLD_G;
     vector< WinData * > *winDataByChr = NULL;
@@ -1222,7 +1302,7 @@ KDEResult *selectWinsize(vector< HapData * > *hapDataByChr,
                                           centro, winsizeQuery,
                                           error, MAX_GAP, USE_GL);
         }
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : winsizeQuery));
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : winsizeQuery), role, CHR_AUTOSOME);
         releaseWinData(winDataByChr);
 
         KDEResult *kdeResult = computeKDE(rawWinData->data.data(), rawWinData->size);
@@ -1264,7 +1344,8 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                  vector<int> *multiWinsizes, int &winsize, double error,
                                  vector< GenoLikeData * > *GLDataByChr, bool USE_GL,
                                  int MAX_GAP, int KDE_SUBSAMPLE, string outfile,
-                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, int thinStep)
+                                 bool WEIGHTED, vector< GenoFreqData * > *genoFreqDataByChr, bool PHASED, int thinStep,
+                                 const vector<ChrRole> *role)
 {
     //--winsize-multi values are taken verbatim from the command line and were
     //never checked against the data; a size >= the shortest chromosome indexes
@@ -1321,7 +1402,7 @@ KDEResult *selectWinsizeFromList(vector< HapData * > *hapDataByChr,
                                           centro, multiWinsizes->at(i),
                                           error, MAX_GAP, USE_GL);
         }
-        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : multiWinsizes->at(i)));
+        DoubleData *rawWinData = convertWinData2DoubleData(winDataByChr, (thinStep > 0 ? thinStep : multiWinsizes->at(i)), role, CHR_AUTOSOME);
         releaseWinData(winDataByChr);
 
         KDEResult *kdeResult = computeKDE(rawWinData->data.data(), rawWinData->size);

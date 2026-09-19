@@ -210,6 +210,9 @@ extern const string HELP_SEX_CHR_DEGENERATE;
 extern const string ARG_HAPLOID_CHR;
 extern const string HELP_HAPLOID_CHR;
 
+extern const string ARG_HET_RATE_BOUNDS;
+extern const string HELP_HET_RATE_BOUNDS;
+
 extern const string ARG_CHR;
 extern const string HELP_CHR;
 
