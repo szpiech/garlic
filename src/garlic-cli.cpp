@@ -276,12 +276,47 @@ const string HELP_NO_CENTROMERE = "Treat every chromosome as having no assembled
 
 const string ARG_AUTOSOMES_ONLY = "--autosomes-only";
 const bool DEFAULT_AUTOSOMES_ONLY = false;
-const string HELP_AUTOSOMES_ONLY = "Drop sex chromosomes (X, Y, 23, 24) before calling. A hemizygous male\n\
-\tgenotype is written as a homozygous call in a TPED and is indistinguishable\n\
-\tfrom true autozygosity, so a male X chromosome is called as one run spanning\n\
-\tthe whole chromosome. garlic warns when sex chromosomes are present; this\n\
-\tremoves them. Not the default, because it would change results for anyone\n\
-\talready analysing them deliberately.";
+const string HELP_AUTOSOMES_ONLY = "Drop every chromosome that is not an autosome before calling: X, Y, Z, W and\n\
+\tthe mitochondrion, recognised by name, plus 23, 24, 25 and 26 when --build\n\
+\tnames a human assembly. A hemizygous genotype is written as a homozygous\n\
+\tcall and is indistinguishable from true autozygosity, so a hemizygous\n\
+\tchromosome is otherwise called as one run spanning its whole length.\n\
+\tDoes not resolve bare 23-26 without a human --build: dropping them is right\n\
+\tif they are PLINK's human codes and destroys real autosomes if they are not,\n\
+\tso garlic refuses instead. See --sex-system.";
+
+const string ARG_SEX_SYSTEM = "--sex-system";
+const string DEFAULT_SEX_SYSTEM = "unset";
+const string HELP_SEX_SYSTEM = "Which sex is heterogametic, and therefore which individuals are hemizygous\n\
+\ton the shared sex chromosome:\n\
+\t  xy    individuals coded 1 (male) in the TFAM or --pop are heterogametic\n\
+\t  zw    individuals coded 2 (female) are heterogametic\n\
+\t  none  assert that every chromosome is diploid in every individual, and\n\
+\t        stop reporting sex chromosomes entirely\n\
+\tPLINK sex coding is 1 male and 2 female whatever the species' sex\n\
+\tdetermination system is, so in a ZW species the HOMOGAMETIC sex is coded 1.\n\
+\tThis is the one thing no amount of genotype data can supply, which is why\n\
+\tit is a flag. It is not an analysis path: it fills in a per-chromosome,\n\
+\tper-individual expected ploidy that one code path then reads.\n\
+\tLeaving it unset is NOT the same as 'none'. If a sex chromosome is present\n\
+\tand this is unset, garlic stops rather than analysing it as an autosome.";
+
+const string ARG_SEX_CHR = "--sex-chr";
+const string HELP_SEX_CHR = "The chromosome diploid in the homogametic sex and hemizygous in the\n\
+\theterogametic one: X under xy, Z under zw. Only needed when the name is not\n\
+\tthe conventional one, e.g. --sex-system zw --sex-chr LG12. Requires\n\
+\t--sex-system.\n\tDefault: the conventional name for --sex-system";
+
+const string ARG_SEX_CHR_DEGENERATE = "--sex-chr-degenerate";
+const string HELP_SEX_CHR_DEGENERATE = "The chromosome carried only by the heterogametic sex: Y under xy, W under\n\
+\tzw. No individual can carry a run of homozygosity on it -- hemizygous in one\n\
+\tsex and absent in the other -- so it is dropped before calling.\n\
+\tDefault: the conventional name for --sex-system";
+
+const string ARG_HAPLOID_CHR = "--haploid-chr";
+const string HELP_HAPLOID_CHR = "Chromosomes haploid in every individual: mitochondrion, chloroplast. Dropped\n\
+\tbefore calling, since a run of homozygosity on them is not a meaningful\n\
+\tquantity.\n\tDefault: names matching M or MT, plus 26 under a human --build";
 
 const string ARG_CHR = "--chr";
 const string HELP_CHR = "Analyse only these chromosomes, e.g. --chr chr1 chr2 chrX. Names are matched\n\
@@ -450,6 +485,10 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_VERBOSE, DEFAULT_VERBOSE, "", HELP_VERBOSE);
 	params->addFlag(ARG_NO_CENTROMERE, DEFAULT_NO_CENTROMERE, "", HELP_NO_CENTROMERE);
 	params->addFlag(ARG_AUTOSOMES_ONLY, DEFAULT_AUTOSOMES_ONLY, "", HELP_AUTOSOMES_ONLY);
+	params->addFlag(ARG_SEX_SYSTEM, DEFAULT_SEX_SYSTEM, "", HELP_SEX_SYSTEM);
+	params->addListFlag(ARG_SEX_CHR, "_NONE", "", HELP_SEX_CHR);
+	params->addListFlag(ARG_SEX_CHR_DEGENERATE, "_NONE", "", HELP_SEX_CHR_DEGENERATE);
+	params->addListFlag(ARG_HAPLOID_CHR, "_NONE", "", HELP_HAPLOID_CHR);
 	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
 	params->addFlag(ARG_OUTDIR, DEFAULT_OUTDIR, "", HELP_OUTDIR);
 	params->addFlag(ARG_POOL, DEFAULT_POOL, "", HELP_POOL);

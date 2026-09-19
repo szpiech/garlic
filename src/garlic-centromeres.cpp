@@ -25,6 +25,24 @@ centromere::centromere(string arg, string file, string defaultFileName) {
 		gapEnd.clear();
 		makeWarning();
 	}
+	canonicaliseKeys();
+	return;
+}
+
+//The built-in tables are written as gapStart["chr1"] and a custom file may
+//spell the same chromosome "1", "chr1" or "CHR1".  Rather than touch 164
+//table entries, rekey the whole map once here; lookups canonicalise their
+//argument the same way.  Without this a data file using bare numbers matched
+//nothing in --build hg19 and every chromosome warned about a missing
+//centromere.
+void centromere::canonicaliseKeys() {
+	map <string, pos_t> s, e;
+	for (map<string, pos_t>::iterator it = gapStart.begin(); it != gapStart.end(); ++it)
+		s[canonChrKey(it->first)] = it->second;
+	for (map<string, pos_t>::iterator it = gapEnd.begin(); it != gapEnd.end(); ++it)
+		e[canonChrKey(it->first)] = it->second;
+	gapStart.swap(s);
+	gapEnd.swap(e);
 	return;
 }
 
@@ -41,31 +59,36 @@ void centromere::suppressMissingWarnings() {
 }
 
 pos_t centromere::centromereStart(string chr) {
-	if (gapStart.count(chr) == 0) {
-		if (!quietMissing && chrWarning[chr] == 0) {
+	//Looked up by key, reported by the name the caller used: the table is
+	//keyed canonically so "21", "chr21" and "CHR21" all find it, but a
+	//warning has to name the chromosome the way the data file spells it.
+	string key = canonChrKey(chr);
+	if (gapStart.count(key) == 0) {
+		if (!quietMissing && chrWarning[key] == 0) {
 			LOG.err("WARNING: No centromere start information for chr:", chr);
 			LOG.err("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
 			//LOG.log("WARNING: No centromere start information for chr:", chr);
 			//LOG.log("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
-			chrWarning[chr]++;
+			chrWarning[key]++;
 		}
 		return 0;
 	}
-	return gapStart[chr];
+	return gapStart[key];
 }
 
 pos_t centromere::centromereEnd(string chr) {
-	if (gapEnd.count(chr) == 0) {
-		if (!quietMissing && chrWarning[chr] == 0) {
+	string key = canonChrKey(chr);
+	if (gapEnd.count(key) == 0) {
+		if (!quietMissing && chrWarning[key] == 0) {
 			LOG.err("WARNING: No centromere end information for chr:", chr);
 			LOG.err("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
 			//LOG.log("WARNING: No centromere end information for chr:", chr);
 			//LOG.log("WARNING: If you provided custom centromeres check that chromosome names match between data files.");
-			chrWarning[chr]++;
+			chrWarning[key]++;
 		}
 		return 0;
 	}
-	return gapEnd[chr];
+	return gapEnd[key];
 }
 
 /*

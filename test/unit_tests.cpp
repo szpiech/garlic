@@ -44,6 +44,24 @@ static void ckd(double got, double want, double tol, const char *what)
     }
 }
 
+// Several cases below exercise paths whose whole job is to report and refuse.
+// Those messages are asserted in test/run_tests.sh, where the wording is what
+// the user sees; here they are noise that buries the one line that matters.
+// Swapping cerr's buffer is the portable way to mute them -- freopen("/dev/null")
+// is spelled differently on Windows.
+static streambuf *savedCerrBuf = NULL;
+static ostringstream cerrSink;
+static void quietErrors(bool on)
+{
+    if (on && savedCerrBuf == NULL) savedCerrBuf = cerr.rdbuf(cerrSink.rdbuf());
+    else if (!on && savedCerrBuf != NULL)
+    {
+        cerr.rdbuf(savedCerrBuf);
+        savedCerrBuf = NULL;
+        cerrSink.str("");
+    }
+}
+
 static void cks(const string &got, const string &want, const char *what)
 {
     checks++;
@@ -461,6 +479,218 @@ static void test_chr_names()
     // 'Chr1' against a TPED using 'chr1' would not match.
     cks(checkChrName("ctg7"), "ctg7", "checkChrName passes through names starting with c");
     cks(checkChrName("Chr1"), "chrChr1", "checkChrName is case sensitive (documented wart)");
+}
+
+// ----------------------------------------------------- canonChrKey() ------
+// The MATCH key, as distinct from the display name above.  Everything that
+// compares one chromosome name against another goes through this: --chr, the
+// --build centromere table, the frequency file, the sex-chromosome detector.
+// Display names are untouched, which is what keeps existing output
+// byte-identical.
+static void test_canonChrKey()
+{
+    // Case and the chr prefix are both ignored, in every combination.
+    cks(canonChrKey("chrX"), "x", "canonChrKey chrX");
+    cks(canonChrKey("chrx"), "x", "canonChrKey chrx");
+    cks(canonChrKey("CHRX"), "x", "canonChrKey CHRX");
+    cks(canonChrKey("ChrX"), "x", "canonChrKey ChrX");
+    cks(canonChrKey("X"),    "x", "canonChrKey X");
+    cks(canonChrKey("x"),    "x", "canonChrKey x");
+
+    // Leading zeros go only when what is left is all digits: 01 and 1 are the
+    // same chromosome in any file, scaffold_007 is not scaffold_7.
+    cks(canonChrKey("chr1"),  "1", "canonChrKey chr1");
+    cks(canonChrKey("01"),    "1", "canonChrKey 01");
+    cks(canonChrKey("chr01"), "1", "canonChrKey chr01");
+    cks(canonChrKey("0"),     "0", "canonChrKey 0 does not become empty");
+    cks(canonChrKey("00"),    "0", "canonChrKey 00");
+    cks(canonChrKey("scaffold_007"), "scaffold_007", "canonChrKey keeps zeros in a non-numeric name");
+
+    // Non-standard but real names: chicken 4A, chimp 2A, linkage groups.
+    cks(canonChrKey("chr4a"), "4a", "canonChrKey chr4a");
+    cks(canonChrKey("4a"),    "4a", "canonChrKey 4a");
+    cks(canonChrKey("Chr4A"), "4a", "canonChrKey Chr4A");
+    cks(canonChrKey("LG12"),  "lg12", "canonChrKey LG12");
+    cks(canonChrKey("NC_000023.11"), "nc_000023.11", "canonChrKey leaves an accession alone");
+
+    // Only ONE leading prefix is stripped, and only when something follows:
+    // a chromosome named "chr" keeps its name rather than becoming empty.
+    cks(canonChrKey("chr"),       "chr",  "canonChrKey chr stays chr");
+    cks(canonChrKey("chrchr1"),   "chr1", "canonChrKey strips one prefix only");
+    cks(canonChrKey("contig7"),   "contig7", "canonChrKey does not eat a c that is not chr");
+
+    // The lowercasing is an explicit 'A'..'Z' test rather than tolower(),
+    // which is locale dependent, or std::tolower(char), which is undefined
+    // for negative char values.  Every byte of a UTF-8 name above 0x7F is
+    // negative on a signed-char platform; it must pass through untouched.
+    string utf8 = "chr\xc3\xa9";           // "chré"
+    string wantUtf8 = "\xc3\xa9";
+    cks(canonChrKey(utf8), wantUtf8, "canonChrKey passes high bytes through unchanged");
+}
+
+// ------------------------------------------------------- SexModel --------
+// What a chromosome IS.  The role is independent of the sex determination
+// system -- a chromosome named X or Z is the shared one either way -- and the
+// system contributes only which sex CODE is heterogametic, which matters to
+// the calling step rather than to this table.
+static void test_sex_model()
+{
+    ck(parseSexSystem("xy") == SEX_SYSTEM_XY,     "parseSexSystem xy");
+    ck(parseSexSystem("zw") == SEX_SYSTEM_ZW,     "parseSexSystem zw");
+    ck(parseSexSystem("none") == SEX_SYSTEM_NONE, "parseSexSystem none");
+    ck(parseSexSystem("XY") < 0,                  "parseSexSystem rejects XY (lower case only)");
+    ck(parseSexSystem("xo") < 0,                  "parseSexSystem rejects an unknown system");
+
+    ck(isDetectedSexChrKey("x") && isDetectedSexChrKey("y"), "detector fires on x and y");
+    ck(isDetectedSexChrKey("z") && isDetectedSexChrKey("w"), "detector fires on z and w");
+    ck(isDetectedSexChrKey("m") && isDetectedSexChrKey("mt"), "detector fires on m and mt");
+    ck(!isDetectedSexChrKey("23"), "detector does not fire on a bare number");
+    ck(!isDetectedSexChrKey("4a") && !isDetectedSexChrKey("lg12"),
+       "detector does not fire on an ordinary chromosome name");
+
+    // The numbers are AMBIGUOUS, not autosomal: sex-linked under PLINK's
+    // human coding, ordinary autosomes in a species with that many
+    // chromosomes.  This is the distinction that keeps chicken chr24 safe.
+    ck(isAmbiguousNumericChrKey("23") && isAmbiguousNumericChrKey("26"),
+       "23 and 26 are ambiguous");
+    ck(!isAmbiguousNumericChrKey("22") && !isAmbiguousNumericChrKey("27"),
+       "22 and 27 are not ambiguous");
+    ck(isHumanBuild("hg19") && isHumanBuild("t2t-chm13"), "human builds recognised");
+    ck(!isHumanBuild("none"), "no build is not a human build");
+
+    // A 3-chromosome fixture: one autosome, one X, one Y.
+    const char *names[3] = {"chr1", "chrX", "chrY"};
+    vector< MapData * > map3;
+    for (int i = 0; i < 3; i++)
+    {
+        MapData *md = initMapData(1);
+        md->chr = names[i];
+        md->physicalPos[0] = 1000;
+        map3.push_back(md);
+    }
+    IndData *ind = initIndData(2);
+    ind->indID[0] = "a"; ind->pop[0] = "P"; ind->sex[0] = 1;
+    ind->indID[1] = "b"; ind->pop[1] = "P"; ind->sex[1] = 2;
+
+    vector<string> none;
+    SexModel m;
+    quietErrors(true);   //every refusal below logs; the wording is asserted in run_tests.sh
+
+    // Unset system with a sex chromosome present: refuses rather than
+    // guessing.  This is the whole point of the flag being unset by default.
+    ck(buildSexModel(m, &map3, ind, SEX_SYSTEM_UNSET, none, none, none, false, false) < 0,
+       "unset system refuses when chrX is present");
+
+    // Declared XY: conventional names resolve, and nothing else moves.
+    ck(buildSexModel(m, &map3, ind, SEX_SYSTEM_XY, none, none, none, false, false) == 0,
+       "xy resolves chrX and chrY");
+    ck(m.role[0] == CHR_AUTOSOME,       "chr1 is an autosome under xy");
+    ck(m.role[1] == CHR_SEX_SHARED,     "chrX is the shared sex chromosome under xy");
+    ck(m.role[2] == CHR_SEX_DEGENERATE, "chrY is the degenerate sex chromosome under xy");
+
+    // Declared ZW against X/Y data: the conventional ZW names are z and w, so
+    // chrX and chrY are left unaccounted for and the run stops.  A silent
+    // reinterpretation here would invert who is hemizygous.
+    ck(buildSexModel(m, &map3, ind, SEX_SYSTEM_ZW, none, none, none, false, false) < 0,
+       "zw refuses X/Y data rather than reinterpreting it");
+
+    // none asserts everything is diploid, and says so about every chromosome.
+    ck(buildSexModel(m, &map3, ind, SEX_SYSTEM_NONE, none, none, none, false, false) == 0,
+       "none accepts chrX");
+    ck(m.role[1] == CHR_AUTOSOME, "none makes chrX an autosome");
+
+    // --autosomes-only drops what is not an autosome, so it can use the
+    // conventional names of both systems without knowing which sex is
+    // heterogametic -- it is not calling anything on them.
+    ck(buildSexModel(m, &map3, ind, SEX_SYSTEM_UNSET, none, none, none, false, true) == 0,
+       "--autosomes-only resolves conventional names with no system");
+    ck(m.role[1] == CHR_SEX_SHARED && m.role[2] == CHR_SEX_DEGENERATE,
+       "--autosomes-only assigns both sex-chromosome roles");
+
+    // A declaration cannot be made without the system, because the system is
+    // the part the data cannot supply.
+    vector<string> justX; justX.push_back("chrX");
+    ck(buildSexModel(m, &map3, ind, SEX_SYSTEM_UNSET, justX, none, none, false, false) < 0,
+       "--sex-chr without --sex-system is refused");
+    // ...and naming something absent is an error, as with --chr.
+    vector<string> absent; absent.push_back("chrQ");
+    ck(buildSexModel(m, &map3, ind, SEX_SYSTEM_XY, absent, none, none, false, false) < 0,
+       "--sex-chr naming a chromosome not in the data is refused");
+
+    for (int i = 0; i < 3; i++) releaseMapData(map3[i]);
+    releaseIndData(ind);
+
+    // Numbers: ambiguous without a human build, PLINK's human codes with one.
+    const char *nums[4] = {"chr23", "chr24", "chr25", "chr26"};
+    vector< MapData * > map4;
+    for (int i = 0; i < 4; i++)
+    {
+        MapData *md = initMapData(1);
+        md->chr = nums[i];
+        md->physicalPos[0] = 1000;
+        map4.push_back(md);
+    }
+    IndData *ind2 = initIndData(1);
+    ind2->indID[0] = "a"; ind2->pop[0] = "P"; ind2->sex[0] = 1;
+
+    ck(buildSexModel(m, &map4, ind2, SEX_SYSTEM_XY, none, none, none, false, false) < 0,
+       "bare 23-26 are refused without a human build");
+    ck(buildSexModel(m, &map4, ind2, SEX_SYSTEM_XY, none, none, none, true, false) == 0,
+       "a human build licenses PLINK's numbering");
+    ck(m.role[0] == CHR_SEX_SHARED,     "23 is X under a human build");
+    ck(m.role[1] == CHR_SEX_DEGENERATE, "24 is Y under a human build");
+    ck(m.role[2] == CHR_PAR,            "25 is the PAR under a human build");
+    ck(m.role[3] == CHR_HAPLOID,        "26 is the mitochondrion under a human build");
+
+    // Same numbers in a species that simply has 26 chromosomes: the user says
+    // so, and they stay autosomes.
+    ck(buildSexModel(m, &map4, ind2, SEX_SYSTEM_NONE, none, none, none, false, false) == 0,
+       "--sex-system none accepts 23-26 as autosomes");
+    ck(m.role[0] == CHR_AUTOSOME && m.role[3] == CHR_AUTOSOME,
+       "23 and 26 stay autosomes under none");
+
+    // A non-conventional name, declared explicitly: the ZW species whose Z is
+    // called LG12.  Nothing about the role depends on the system.
+    map4[0]->chr = "LG12";
+    vector<string> lg; lg.push_back("lg12");     // matched by key, any spelling
+    ck(buildSexModel(m, &map4, ind2, SEX_SYSTEM_ZW, lg, none, none, false, false) < 0,
+       "declaring LG12 does not excuse the other ambiguous numbers");
+    ck(m.role[0] == CHR_SEX_SHARED, "LG12 is declared the shared sex chromosome");
+
+    quietErrors(false);
+    for (int i = 0; i < 4; i++) releaseMapData(map4[i]);
+    releaseIndData(ind2);
+}
+
+// ------------------------------------------- checkChrKeyCollisions() ------
+// Two display names that differ only by case or a chr prefix are two
+// independent MapData entries, and every matcher now treats them as one name.
+// The same display name twice means one chromosome whose rows are not
+// contiguous, which the readers split silently.
+static void test_chr_key_collisions()
+{
+    vector< MapData * > m;
+    const char *ok[2] = {"chr1", "chr2"};
+    for (int i = 0; i < 2; i++)
+    {
+        MapData *md = initMapData(1);
+        md->chr = ok[i];
+        m.push_back(md);
+    }
+    ck(checkChrKeyCollisions(&m) == 0, "distinct chromosomes pass the collision check");
+
+    quietErrors(true);
+    m[1]->chr = "CHR1";
+    ck(checkChrKeyCollisions(&m) < 0, "chr1 and CHR1 collide");
+
+    m[1]->chr = "chr1";
+    ck(checkChrKeyCollisions(&m) < 0, "the same name twice is a non-contiguous chromosome");
+
+    m[1]->chr = "chr01";
+    ck(checkChrKeyCollisions(&m) < 0, "chr1 and chr01 collide");
+    quietErrors(false);
+
+    for (unsigned int i = 0; i < m.size(); i++) releaseMapData(m[i]);
 }
 
 // ------------------------------------------------------- glToError() ------
@@ -886,6 +1116,9 @@ int main()
     test_auto_fits();
     test_class_labels();
     test_chr_names();
+    test_canonChrKey();
+    test_sex_model();
+    test_chr_key_collisions();
     test_glToError();
     test_plToError();
     test_kde_helpers();

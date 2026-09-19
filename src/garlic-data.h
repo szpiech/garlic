@@ -149,9 +149,8 @@ struct IndData
   //copies and the bug cannot be written.
   vector<string> pop;
   vector<string> indID;
-  //TFAM column 5, PLINK coding: 1 male, 2 female, 0 or -9 unknown.  Only used
-  //to make the sex-chromosome warning specific about how many individuals
-  //would be affected; garlic does not condition any calculation on it.
+  //TFAM column 5, PLINK coding: 1 male, 2 female, 0 or -9 unknown.  What the
+  //metadata SAYS; nothing conditions a calculation on it directly.
   vector<int> sex;
   int nind;
 };
@@ -253,16 +252,115 @@ void setAutoOverlapCoef(double slope, double intercept);
 //is consumed positionally against the TPED, so dropping TPED rows at read time
 //would desynchronise it.  Peak memory is therefore unchanged; runtime after
 //the read is not.
-//True for X, Y, chrX, chrY, 23, 24, chr23, chr24 (PLINK numbers X as 23 and
-//Y as 24).  Names arrive already normalised by checkChrName.
-bool isSexChromosome(const string &chr);
+//---- chromosome identity ----------------------------------------------------
+//
+//Case- and prefix-insensitive key for MATCHING one chromosome name against
+//another, against a --build table, against a --chr list or against the
+//sex-chromosome detector.  It is NOT a display name: output keeps whatever
+//checkChrName produced, so existing files are byte-identical.
+//
+//  chrX  chrx  CHRX  ChrX  X  x      -> x
+//  chr1  1  01  chr01              -> 1
+//  chr4a  4a  Chr4A               -> 4a
+//  contig7  Contig7               -> contig7
+//
+//Lowercasing is done by hand over 'A'..'Z' rather than with tolower(), which
+//is locale-dependent, or std::tolower(char), which is undefined for negative
+//char values -- and every byte of a UTF-8 scaffold name above 0x7F is one.
+string canonChrKey(const string &name);
 
-//Hemizygous male genotypes on chrX are written as homozygous calls in a TPED
-//and are indistinguishable from true autozygosity, so a male X chromosome
-//looks like one chromosome-length run.  Warns, and reports how many
-//individuals are coded male if the TFAM said.  Returns true if any sex
-//chromosome is present.
-bool warnSexChromosomes(vector< MapData * > *mapDataByChr, IndData *indData);
+//Refuses when two DISTINCT display names in the data share a key ("X" and
+//"chrX", or "1" and "01").  Those are two independent MapData entries today,
+//and matching them permissively without saying so would silently merge or
+//silently pick one.  This also catches a chromosome whose rows are not
+//contiguous in the input, because the reader closes a chromosome whenever
+//column 1 changes and so produces two entries with the same name.
+//Returns 0, or -1 after logging.
+int checkChrKeyCollisions(vector< MapData * > *mapDataByChr);
+
+//---- sex chromosomes --------------------------------------------------------
+//
+//garlic does not decide what a chromosome is.  The user declares it, and one
+//table drives every path: there is no XY code path and no ZW code path.  The
+//role says what a chromosome is; the zygosity says what an individual is; the
+//expected ploidy of an individual at a locus is the product of the two.
+//
+//  role \ zygosity   homogametic   heterogametic
+//  AUTOSOME               2             2
+//  SEX_SHARED             2             1        (X under XY, Z under ZW)
+//  SEX_DEGENERATE         0             1        (Y under XY, W under ZW)
+//  HAPLOID                1             1        (mitochondrion, chloroplast)
+//  PAR                    2             2        (diploid in both, not called)
+//
+//Only AUTOSOME and SEX_SHARED can carry a run of homozygosity in anyone, so
+//the other three are dropped before the pipeline starts.
+enum ChrRole
+{
+    CHR_AUTOSOME = 0,
+    CHR_SEX_SHARED = 1,
+    CHR_SEX_DEGENERATE = 2,
+    CHR_HAPLOID = 3,
+    CHR_PAR = 4
+};
+
+//PLINK sex coding is 1 male / 2 female whatever the species' system is, so in
+//a ZW species the HOMOGAMETIC sex is the one coded 1.  Which code is
+//heterogametic is the one bit of this that no amount of data can supply, and
+//--sex-system is how the user supplies it.
+const int SEX_SYSTEM_UNSET = 0;   //nothing said: detection refuses rather than guessing
+const int SEX_SYSTEM_XY    = 1;   //code 1 (male) is heterogametic
+const int SEX_SYSTEM_ZW    = 2;   //code 2 (female) is heterogametic
+const int SEX_SYSTEM_NONE  = 3;   //asserted: every chromosome diploid in everyone
+
+//-1 if the string is not one of xy / zw / none.
+int parseSexSystem(const string &s);
+string sexSystemName(int system);
+
+//Does this key name something that is probably not an autosome?
+//
+//  always              x y z w m mt
+//  human --build only  23 24 25 26   (PLINK's human codes for X, Y, PAR, MT)
+//
+//The gate on the numbers is the whole answer to "chr24 is a real autosome in
+//most species": a bare number means a sex chromosome only under PLINK's human
+//convention, and a human --build is the user asserting human coordinates.
+//Without it the numbers are AMBIGUOUS rather than autosomal -- see
+//isAmbiguousNumericChrKey -- and garlic refuses instead of picking a reading.
+bool isDetectedSexChrKey(const string &key);
+bool isAmbiguousNumericChrKey(const string &key);
+bool isHumanBuild(const string &build);
+
+struct SexModel
+{
+    int system;
+    vector<ChrRole> role;   //parallel to mapDataByChr
+    SexModel() : system(SEX_SYSTEM_UNSET) {}
+
+    bool anyOfRole(ChrRole r) const
+    {
+        for (unsigned int i = 0; i < role.size(); i++) if (role[i] == r) return true;
+        return false;
+    }
+};
+
+//Fills model.role from the declarations, applying the conventional names for
+//the declared system, and refuses (returns -1, having logged) when a detected
+//chromosome is left with no role -- which is the "detected but undeclared is
+//an error" rule.  humanBuild licenses the numeric codes.  Explicit names that
+//are not in the data are an error, as with --chr.
+int buildSexModel(SexModel &model,
+                  vector< MapData * > *mapDataByChr,
+                  IndData *indData,
+                  int system,
+                  const vector<string> &sexChr,
+                  const vector<string> &degenerateChr,
+                  const vector<string> &haploidChr,
+                  bool humanBuild,
+                  bool autosomesOnly);
+
+//How many individuals each sex code covers, for messages that would otherwise
+//state a number the metadata cannot support.
+void countSexCodes(IndData *indData, int &males, int &females, int &unknown);
 
 int filterChromosomes(vector<string> &keep,
                       vector< MapData * > **mapDataByChr,

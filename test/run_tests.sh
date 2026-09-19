@@ -457,27 +457,34 @@ ind_metadata() {
             2>&1 | grep -q "Found multiple population IDs"; then
         bad "a single-population TFAM produced the pooled-population warning"
     else ok; fi
-    # The sex-chromosome warning must never state a number of affected
-    # individuals the metadata cannot support.  Sex is optional in a TFAM, so
-    # all three coverage cases are reachable.  The partial case used to print
-    # only the male count: 3 of 45 coded male with 42 unknown printed
-    # "individuals coded male in the TFAM: 3", and 3 reads as the answer.
+    # An undeclared sex chromosome stops the run, and the message reports what
+    # the sex metadata actually says.  It must never state a number of
+    # AFFECTED individuals the metadata cannot support: sex is optional in a
+    # TFAM, so all three coverage cases are reachable, and the partial case
+    # used to print only the male count -- 3 of 45 coded male with 42 unknown
+    # printed "individuals coded male in the TFAM: 3", and 3 reads as the
+    # answer when up to 45 could be affected.  The counts below are raw
+    # metadata, which is the only thing that can be stated without a claim.
     gz "$EX/chr21.tped.gz" | sed 's/^21/chrX/' | gzip > "$WORK/chrX.tped.gz"
     gz "$EX/chr21.tfam.gz" | awk '{print $1"\t"$2}' > "$WORK/nosex.tfam"
     gz "$EX/chr21.tfam.gz" | awk 'NR<=3{print $1"\t"$2"\t0\t0\t1\t0"} NR>3{print $1"\t"$2}' > "$WORK/partial.tfam"
     sexwarn() {   # $1 = tfam, $2 = pattern that must appear
-        if "$GARLIC" --tped "$WORK/chrX.tped.gz" --tfam "$1" --build hg18 --winsize 60 \
+        out=$("$GARLIC" --tped "$WORK/chrX.tped.gz" --tfam "$1" --build hg18 --winsize 60 \
                 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
-                --out "$WORK/sx" --force 2>&1 | grep -q "$2"; then ok
-        else bad "sex warning on $(basename "$1"): expected /$2/"; fi
+                --out "$WORK/sx" --force 2>&1)
+        st=$?
+        if [ "$st" -ne 1 ]; then
+            bad "undeclared chrX on $(basename "$1") exited $st, expected 1"
+        elif printf '%s\n' "$out" | grep -q "$2"; then ok
+        else bad "sex report on $(basename "$1"): expected /$2/"; fi
     }
-    sexwarn "$WORK/nosex.tfam"  "sex is not recorded for any of the 45"
+    sexwarn "$WORK/nosex.tfam"  "Sex is not recorded for any of the 45"
     sexwarn "$WORK/partial.tfam" "3 male, 0 female, 42 unknown"
-    sexwarn "$WORK/partial.tfam" "may be as high as 45"
     sexwarn "$EX/chr21.tfam.gz" "26 male, 19 female"
-    sexwarn "$EX/chr21.tfam.gz" "affected individuals: 26"
-    # ... and a partial-coverage run must NOT print a bare affected count, which
-    # is the misleading form it used to print.
+    sexwarn "$EX/chr21.tfam.gz" "has not been told how to treat: chrX"
+    # ... and no run may state a bare affected count, which is the misleading
+    # form this used to print.  Nothing can be said about how many individuals
+    # are affected while any of them has no recorded sex.
     if "$GARLIC" --tped "$WORK/chrX.tped.gz" --tfam "$WORK/partial.tfam" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/sx" --force 2>&1 \
             | grep -q "affected individuals:"; then
@@ -1508,6 +1515,131 @@ multi_population() {
 # ---------------------------------------------------------------------------
 # 5. Round trip through --load-params
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 4m. Sex chromosomes
+# ---------------------------------------------------------------------------
+# No shipped file exercises any of this -- the bundled example is chromosomes
+# 1-22 -- so every fixture is derived here from chr21 by relabelling column 1.
+# The genotypes are unchanged, which is what makes the --sex-system none case
+# a byte-for-byte comparison against the ordinary chr21 run.
+sex_chromosomes() {
+    echo "== sex chromosomes =="
+    SEXBASE="--build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000"
+
+    gz "$EX/chr21.tped.gz" | sed 's/^21/chrX/'  | gzip > "$WORK/sxX.tped.gz"
+    gz "$EX/chr21.tped.gz" | sed 's/^21/chrZ/'  | gzip > "$WORK/sxZ.tped.gz"
+    gz "$EX/chr21.tped.gz" | sed 's/^21/23/'    | gzip > "$WORK/sx23.tped.gz"
+    gz "$EX/chr21.tped.gz" | sed 's/^21/chrM/'  | gzip > "$WORK/sxM.tped.gz"
+    # Mixed autosome + chrX, in that order.
+    { gz "$EX/chr21.tped.gz"; gz "$WORK/sxX.tped.gz"; } | gzip > "$WORK/sxmix.tped.gz"
+    # Two spellings of one chromosome: 21 and chr21.
+    { gz "$EX/chr21.tped.gz"; gz "$EX/chr21.tped.gz" | sed 's/^21/chr21/'; } | gzip > "$WORK/sxcoll.tped.gz"
+
+    sxrun() {   # $1 = out prefix, rest = extra flags; sets $sxst
+        p=$1; shift
+        # shellcheck disable=SC2086
+        "$GARLIC" --tped "$WORK/sxX.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+            --out "$WORK/$p" --force "$@" >/dev/null 2>"$WORK/$p.stderr"
+        sxst=$?
+    }
+
+    # 1. Detected and undeclared is a hard error, naming the chromosome and
+    #    every way out.  A warning here would be a warning attached to an
+    #    inflated FROH that the run still produces.
+    sxrun sx1
+    if [ "$sxst" -eq 1 ] && grep -q "has not been told how to treat: chrX" "$WORK/sx1.stderr"; then ok
+    else bad "undeclared chrX did not stop the run"; fi
+    for opt in "--sex-system xy" "--autosomes-only" "--sex-system none"; do
+        if grep -q -- "$opt" "$WORK/sx1.stderr"; then ok
+        else bad "the refusal does not offer $opt"; fi
+    done
+
+    # 2. --sex-system none is a true no-op: the same genotypes under a
+    #    chromosome named chrX give the same calls as chr21, at the same
+    #    positions, differing only in the name.  Byte-identical after
+    #    substituting the name back.
+    sxrun sx2 --sex-system none
+    "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --out "$WORK/sx2ref" --force >/dev/null 2>&1
+    if [ -f "$WORK/sx2.roh.bed" ]; then
+        sed 's/chrX/chr21/g' "$WORK/sx2.roh.bed" > "$WORK/sx2.renamed.bed"
+    fi
+    if [ "$sxst" -eq 0 ] && [ -f "$WORK/sx2.renamed.bed" ] && [ -f "$WORK/sx2ref.roh.bed" ] && \
+       [ "$(sum "$WORK/sx2.renamed.bed")" = "$(sum "$WORK/sx2ref.roh.bed")" ]; then ok
+    else bad "--sex-system none did not reproduce the autosomal run exactly"; fi
+
+    # 3. Roles are dropped, and the log says which and why.  Y/W and the
+    #    mitochondrion can carry no run of homozygosity for anybody.
+    { gz "$EX/chr21.tped.gz"; gz "$WORK/sxM.tped.gz"; } | gzip > "$WORK/sxmixm.tped.gz"
+    "$GARLIC" --tped "$WORK/sxmixm.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --sex-system xy --out "$WORK/sx3" --force >/dev/null 2>&1
+    if grep -q "Dropping chrM: haploid in every individual" "$WORK/sx3.log"; then ok
+    else bad "the mitochondrion was not dropped as haploid"; fi
+
+    # 4. A bare 23 is ambiguous, not sex-linked: PLINK's human code for X, and
+    #    an ordinary autosome in any species with 23 or more chromosomes.
+    #    Refused without a human --build, resolved with one.
+    "$GARLIC" --tped "$WORK/sx23.tped.gz" --tfam "$EX/chr21.tfam.gz" --no-centromere \
+        --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+        --out "$WORK/sx4" --force >/dev/null 2>"$WORK/sx4.stderr"
+    if [ $? -eq 1 ] && grep -q "cannot tell what these chromosomes are" "$WORK/sx4.stderr"; then ok
+    else bad "a bare chr23 without a human build was not refused"; fi
+    # The same file, declared to be an autosome, runs.
+    "$GARLIC" --tped "$WORK/sx23.tped.gz" --tfam "$EX/chr21.tfam.gz" --no-centromere \
+        --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+        --sex-system none --out "$WORK/sx4b" --force >/dev/null 2>&1
+    if [ -s "$WORK/sx4b.roh.bed" ]; then ok
+    else bad "--sex-system none did not accept chr23 as an autosome"; fi
+    # With a human build it is PLINK's X, and dropping it leaves nothing.
+    "$GARLIC" --tped "$WORK/sx23.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --sex-system xy --out "$WORK/sx4c" --force >/dev/null 2>"$WORK/sx4c.stderr"
+    if [ $? -eq 1 ] && grep -q "no autosomes left" "$WORK/sx4c.stderr"; then ok
+    else bad "chr23 under a human build was not treated as the X"; fi
+
+    # 5. ZW is the same code path with the other sex heterogametic, so chrZ
+    #    must behave exactly as chrX does -- including being refused when the
+    #    declared system is the other one.
+    "$GARLIC" --tped "$WORK/sxZ.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --sex-system xy --out "$WORK/sx5" --force >/dev/null 2>"$WORK/sx5.stderr"
+    if [ $? -eq 1 ] && grep -q "has not been told how to treat: chrZ" "$WORK/sx5.stderr"; then ok
+    else bad "chrZ under --sex-system xy was not refused"; fi
+    "$GARLIC" --tped "$WORK/sxmix.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --autosomes-only --out "$WORK/sx5b" --force >/dev/null 2>&1
+    if grep -q "Dropping chrX" "$WORK/sx5b.log"; then ok
+    else bad "--autosomes-only did not drop chrX"; fi
+
+    # 6. Matching ignores case and a chr prefix, so every spelling of a name
+    #    reaches the same chromosome.  It used to be a prefix-only rule, under
+    #    which --chr x matched nothing.
+    for spelling in x X chrx chrX CHRX; do
+        "$GARLIC" --tped "$WORK/sxmix.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+            --sex-system none --chr "$spelling" --out "$WORK/sx6" --force >/dev/null 2>&1
+        if [ -s "$WORK/sx6.roh.bed" ]; then ok
+        else bad "--chr $spelling did not match chrX"; fi
+    done
+
+    # 7. Two names that differ only by that matching is a collision, and so is
+    #    the same name twice -- which is one chromosome whose rows are not
+    #    contiguous, silently analysed as two.
+    "$GARLIC" --tped "$WORK/sxcoll.tped.gz" --tfam "$EX/chr21.tfam.gz" $SEXBASE \
+        --sex-system none --out "$WORK/sx7" --force >/dev/null 2>"$WORK/sx7.stderr"
+    if [ $? -eq 1 ] && grep -q "have the same name once case and a" "$WORK/sx7.stderr"; then ok
+    else bad "a chromosome-name collision was not refused"; fi
+
+    # 8. The declarations need the system, because which sex CODE is
+    #    heterogametic is the part no genotype supplies.
+    sxrun sx8 --sex-chr chrX
+    if [ "$sxst" -eq 1 ] && grep -q "need --sex-system" "$WORK/sx8.stderr"; then ok
+    else bad "--sex-chr without --sex-system was not refused"; fi
+    sxrun sx8b --sex-system xy --sex-chr chrQ
+    if [ "$sxst" -eq 1 ] && grep -q "is not present in the data" "$WORK/sx8b.stderr"; then ok
+    else bad "--sex-chr naming an absent chromosome was not refused"; fi
+    sxrun sx8c --sex-system marsupial
+    if [ "$sxst" -eq 1 ] && grep -q "must be xy, zw or none" "$WORK/sx8c.stderr"; then ok
+    else bad "an unknown --sex-system value was not refused"; fi
+
+}
+
 params_roundtrip() {
     echo "== params round trip =="
     $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --map "$EX/chr21.map.gz" \
@@ -1566,6 +1698,7 @@ threads
 freq_file_format
 half_calls
 multi_population
+sex_chromosomes
 outdir_paths
 exit_codes
 params_roundtrip

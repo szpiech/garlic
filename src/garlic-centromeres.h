@@ -9,6 +9,12 @@
 
 using namespace std;
 
+//Defined in garlic-data.cpp.  Declared again here rather than included from
+//garlic-data.h, which includes THIS header: chromosome-name canonicalisation
+//has to be available on both sides of that dependency, and a repeated
+//declaration is the smaller price.
+string canonChrKey(const string &name);
+
 class centromere {
 
 public:
@@ -40,6 +46,10 @@ private:
 	int countFields(const string &str);
 	map <string, int> chrWarning;
 	string checkChrName(string chr);
+
+	//Rekeys gapStart/gapEnd by canonChrKey once the table is built, so a
+	//lookup matches whatever spelling the data file uses.
+	void canonicaliseKeys();
 };
 
 #endif

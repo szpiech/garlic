@@ -553,6 +553,106 @@ int main(int argc, char *argv[])
             if (indData->pop[i].compare(populations[k].first) == 0)
             { popIndex[k].push_back(i); break; }
 
+    //Chromosome names are matched case-insensitively and ignoring a "chr"
+    //prefix from here on, so two names that differ only that way would be
+    //indistinguishable.  Checked against the data as read, before --chr can
+    //hide one of them.
+    if (checkChrKeyCollisions(mapDataByChr) < 0) return 1;
+
+    //---- what each chromosome is ------------------------------------------
+    //
+    //garlic does not decide this from a name.  --sex-system supplies the one
+    //bit the data cannot (which sex code is heterogametic), the conventional
+    //names follow from it, and anything that looks sex-linked but has not
+    //been accounted for stops the run.  A hemizygous genotype is written as a
+    //homozygous call, so the alternative to stopping is a plausible FROH that
+    //is wrong, and a warning does not prevent that number being published.
+    bool AUTOSOMES_ONLY = params->getBoolFlag(ARG_AUTOSOMES_ONLY);
+    string sexSystemArg = params->getStringFlag(ARG_SEX_SYSTEM);
+    int sexSystem = SEX_SYSTEM_UNSET;
+    if (sexSystemArg.compare(DEFAULT_SEX_SYSTEM) != 0)
+    {
+        sexSystem = parseSexSystem(sexSystemArg);
+        if (sexSystem < 0)
+        {
+            LOG.err("ERROR:", ARG_SEX_SYSTEM, false);
+            LOG.err(" must be xy, zw or none, not", sexSystemArg, false);
+            LOG.err(".");
+            return 1;
+        }
+    }
+
+    vector<string> sexChrNames, degenerateChrNames, haploidChrNames;
+    if (params->isFlagSet(ARG_SEX_CHR)) sexChrNames = params->getStringListFlag(ARG_SEX_CHR);
+    if (params->isFlagSet(ARG_SEX_CHR_DEGENERATE)) degenerateChrNames = params->getStringListFlag(ARG_SEX_CHR_DEGENERATE);
+    if (params->isFlagSet(ARG_HAPLOID_CHR)) haploidChrNames = params->getStringListFlag(ARG_HAPLOID_CHR);
+
+    SexModel sexModel;
+    if (buildSexModel(sexModel, mapDataByChr, indData, sexSystem,
+                      sexChrNames, degenerateChrNames, haploidChrNames,
+                      isHumanBuild(BUILD), AUTOSOMES_ONLY) < 0) return 1;
+
+    if (sexSystem != SEX_SYSTEM_UNSET)
+        LOG.log("Sex determination system:", sexSystemName(sexSystem));
+
+    //Every role other than an autosome is dropped here.  A degenerate sex
+    //chromosome is hemizygous in one sex and absent in the other, a haploid
+    //chromosome is hemizygous in everyone, and a pseudoautosomal region is
+    //not called by choice -- so none of them can contribute a run of
+    //homozygosity to anybody, and keeping them would only feed the LOD score
+    //density windows that are not evidence of anything.
+    //
+    //The shared sex chromosome is dropped too AT THIS COMMIT: calling it in
+    //the homogametic individuals only, with allele frequencies from everyone,
+    //is the next step, and analysing it as an autosome in the meantime is the
+    //thing this whole change exists to prevent.
+    {
+        vector<string> keepNames;
+        int nDropped[5] = {0, 0, 0, 0, 0};
+        for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+        {
+            ChrRole r = sexModel.role[chr];
+            if (r == CHR_AUTOSOME) { keepNames.push_back(mapDataByChr->at(chr)->chr); continue; }
+            nDropped[int(r)]++;
+            LOG.log("Dropping", mapDataByChr->at(chr)->chr, false);
+            if (r == CHR_SEX_SHARED)
+                LOG.log(AUTOSOMES_ONLY ? ": shared sex chromosome."
+                                       : ": shared sex chromosome; calling it is not implemented yet.");
+            else if (r == CHR_SEX_DEGENERATE)
+                LOG.log(": carried only by the heterogametic sex, so no individual can be autozygous on it.");
+            else if (r == CHR_HAPLOID)
+                LOG.log(": haploid in every individual.");
+            else
+                LOG.log(": pseudoautosomal under PLINK's human coding; see --par.");
+        }
+
+        int ndrop = nDropped[1] + nDropped[2] + nDropped[3] + nDropped[4];
+        if (ndrop > 0)
+        {
+            if (keepNames.empty())
+            {
+                LOG.err("ERROR: no autosomes left to analyse: every chromosome in the data is a sex");
+                LOG.err("\tchromosome, haploid or pseudoautosomal.");
+                return 1;
+            }
+            int nkept = filterChromosomes(keepNames, &mapDataByChr, &hapDataByChr,
+                                          &freqDataByChr, &GLDataByChr, USE_GL);
+            if (nkept < 0) return 1;
+            LOG.log("Chromosomes dropped:", ndrop, false);
+            LOG.log(", analysed:", nkept);
+            sexModel.role.assign(nkept, CHR_AUTOSOME);
+            if (!PHASED && WEIGHTED)
+            {
+                releaseGenoFreq(genoFreqDataByChr);
+                genoFreqDataByChr = calculateGenoFreq(hapDataByChr);
+            }
+        }
+        else if (AUTOSOMES_ONLY)
+        {
+            LOG.log("--autosomes-only: every chromosome in the data is an autosome, nothing to drop.");
+        }
+    }
+
 //++++++++++Allele frequencies++++++++++
     if (AUTO_FREQ)
     {
@@ -628,34 +728,6 @@ int main(int argc, char *argv[])
 
     //chrCoordList->clear();
     //delete chrCoordList;
-
-    //A hemizygous male genotype is indistinguishable from a homozygous call,
-    //so warn whenever a sex chromosome is present and offer to drop it.
-    bool haveSexChr = warnSexChromosomes(mapDataByChr, indData);
-
-    if (params->getBoolFlag(ARG_AUTOSOMES_ONLY))
-    {
-        if (!haveSexChr)
-        {
-            LOG.log("--autosomes-only: no sex chromosomes in the data, nothing to drop.");
-        }
-        else
-        {
-            vector<string> autosomes;
-            for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
-                if (!isSexChromosome(mapDataByChr->at(chr)->chr))
-                    autosomes.push_back(mapDataByChr->at(chr)->chr);
-            if (autosomes.empty())
-            {
-                LOG.err("ERROR: --autosomes-only leaves no data: every chromosome is a sex chromosome.");
-                return 1;
-            }
-            int nkept = filterChromosomes(autosomes, &mapDataByChr, &hapDataByChr,
-                                          &freqDataByChr, &GLDataByChr, USE_GL);
-            LOG.log("--autosomes-only: kept", nkept);
-            LOG.log("chromosomes after dropping sex chromosomes:", int(mapDataByChr->size()));
-        }
-    }
 
     vector<string> keepChr = params->getStringListFlag(ARG_CHR);
     if (params->isFlagSet(ARG_CHR))

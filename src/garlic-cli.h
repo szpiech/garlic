@@ -197,6 +197,19 @@ extern const string ARG_AUTOSOMES_ONLY;
 extern const bool DEFAULT_AUTOSOMES_ONLY;
 extern const string HELP_AUTOSOMES_ONLY;
 
+extern const string ARG_SEX_SYSTEM;
+extern const string DEFAULT_SEX_SYSTEM;
+extern const string HELP_SEX_SYSTEM;
+
+extern const string ARG_SEX_CHR;
+extern const string HELP_SEX_CHR;
+
+extern const string ARG_SEX_CHR_DEGENERATE;
+extern const string HELP_SEX_CHR_DEGENERATE;
+
+extern const string ARG_HAPLOID_CHR;
+extern const string HELP_HAPLOID_CHR;
+
 extern const string ARG_CHR;
 extern const string HELP_CHR;
 

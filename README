@@ -331,7 +331,7 @@ strings. Do not edit by hand.
 --auto-winsize-threshold <double>: Smoothness criterion at which the --auto-winsize search stops. Lower values demand a smoother LOD score density and therefore a larger window.
 	Default: 0.5
 
---autosomes-only <bool>: Drop sex chromosomes (X, Y, 23, 24) before calling. A hemizygous male genotype is written as a homozygous call in a TPED and is indistinguishable from true autozygosity, so a male X chromosome is called as one run spanning the whole chromosome. garlic warns when sex chromosomes are present; this removes them. Not the default, because it would change results for anyone already analysing them deliberately.
+--autosomes-only <bool>: Drop every chromosome that is not an autosome before calling: X, Y, Z, W and the mitochondrion, recognised by name, plus 23, 24, 25 and 26 when --build names a human assembly. A hemizygous genotype is written as a homozygous call and is indistinguishable from true autozygosity, so a hemizygous chromosome is otherwise called as one run spanning its whole length. Does not resolve bare 23-26 without a human --build: dropping them is right if they are PLINK's human codes and destroys real autosomes if they are not, so garlic refuses instead. See --sex-system.
 	Default: false
 
 --build <string>: Choose which genome build to use for centromere locations: hg18, hg19, hg38 or t2t-chm13 (T2T-CHM13v2.0, UCSC hs1).
@@ -374,6 +374,9 @@ With --tgls (legacy; the format holds ONE value per genotype): GQ As above.  The
 
 --gmm-tol <double>: Convergence tolerance for the ROH size-class EM fit.
 	Default: 1e-05
+
+--haploid-chr <string1> ... <stringN>: Chromosomes haploid in every individual: mitochondrion, chloroplast. Dropped before calling, since a run of homozygosity on them is not a meaningful quantity.
+	Default: names matching M or MT, plus 26 under a human --build
 
 --help <bool>: Prints this help dialog.
 	Default: false
@@ -455,6 +458,15 @@ Rows are matched by sample ID, never by file order. Every sample in the data mus
 
 --seed <int>: Random seed, for reproducible runs. Affects --kde-subsample, --ld-subsample and --resample. If 0 (default), a nondeterministic seed is drawn and written to the log file so the run can be repeated exactly.
 	Default: 0
+
+--sex-chr <string1> ... <stringN>: The chromosome diploid in the homogametic sex and hemizygous in the heterogametic one: X under xy, Z under zw. Only needed when the name is not the conventional one, e.g. --sex-system zw --sex-chr LG12. Requires --sex-system.
+	Default: the conventional name for --sex-system
+
+--sex-chr-degenerate <string1> ... <stringN>: The chromosome carried only by the heterogametic sex: Y under xy, W under zw. No individual can carry a run of homozygosity on it -- hemizygous in one sex and absent in the other -- so it is dropped before calling.
+	Default: the conventional name for --sex-system
+
+--sex-system <string>: Which sex is heterogametic, and therefore which individuals are hemizygous on the shared sex chromosome:   xy    individuals coded 1 (male) in the TFAM or --pop are heterogametic   zw    individuals coded 2 (female) are heterogametic   none  assert that every chromosome is diploid in every individual, and         stop reporting sex chromosomes entirely PLINK sex coding is 1 male and 2 female whatever the species' sex determination system is, so in a ZW species the HOMOGAMETIC sex is coded 1. This is the one thing no amount of genotype data can supply, which is why it is a flag. It is not an analysis path: it fills in a per-chromosome, per-individual expected ploidy that one code path then reads. Leaving it unset is NOT the same as 'none'. If a sex chromosome is present and this is unset, garlic stops rather than analysing it as an autosome.
+	Default: unset
 
 --size-bounds <double1> ... <doubleN>: Specify the size class boundaries ROH boundaries.  By default, this is chosen automatically with a 3-component GMM.  Must provide numbers in increasing order.
 	Default: -1.000000

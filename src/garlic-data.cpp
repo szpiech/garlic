@@ -64,78 +64,354 @@ static double AUTO_OVERLAP_INTERCEPT = 63.888;
 
 void setAutoOverlapCoef(double slope, double intercept) { AUTO_OVERLAP_SLOPE = slope; AUTO_OVERLAP_INTERCEPT = intercept; }
 
-bool isSexChromosome(const string &chr)
+string canonChrKey(const string &name)
 {
-    return (chr == "chrX" || chr == "chrY" || chr == "chr23" || chr == "chr24");
+    string s;
+    s.reserve(name.size());
+    for (unsigned int i = 0; i < name.size(); i++)
+    {
+        char c = name[i];
+        if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+        s.push_back(c);
+    }
+
+    //"> 3", not ">= 3": a chromosome literally named "chr" keeps its name
+    //rather than becoming the empty key.
+    if (s.size() > 3 && s.compare(0, 3, "chr") == 0) s.erase(0, 3);
+
+    //Leading zeros only when what remains is all digits.  01 and 1 are the
+    //same chromosome in any file; scaffold_007 is not scaffold_7.
+    bool allDigits = !s.empty();
+    for (unsigned int i = 0; i < s.size() && allDigits; i++)
+        if (s[i] < '0' || s[i] > '9') allDigits = false;
+    if (allDigits)
+    {
+        unsigned int i = 0;
+        while (i + 1 < s.size() && s[i] == '0') i++;
+        s.erase(0, i);
+    }
+
+    return s;
 }
 
-bool warnSexChromosomes(vector< MapData * > *mapDataByChr, IndData *indData)
+int checkChrKeyCollisions(vector< MapData * > *mapDataByChr)
 {
-    vector<string> found;
+    map<string, string> seen;   //key -> the first display name that produced it
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
-        if (isSexChromosome(mapDataByChr->at(chr)->chr))
-            found.push_back(mapDataByChr->at(chr)->chr);
+    {
+        const string &have = mapDataByChr->at(chr)->chr;
+        string key = canonChrKey(have);
+        map<string, string>::iterator it = seen.find(key);
+        if (it == seen.end()) { seen[key] = have; continue; }
 
-    if (found.empty()) return false;
+        LOG.err("ERROR: two chromosomes in the data have the same name once case and a");
+        LOG.err("\t'chr' prefix are ignored:", it->second, false);
+        LOG.err(" and", have, false);
+        LOG.err(".");
+        if (it->second.compare(have) == 0)
+        {
+            //Same display name twice: the readers close a chromosome whenever
+            //column 1 changes, so this is one chromosome whose rows are not
+            //contiguous, silently analysed as two.
+            LOG.err("\tThis is one chromosome whose rows are not contiguous in the input.");
+            LOG.err("\tgarlic starts a new chromosome whenever the chromosome COLUMN changes,");
+            LOG.err("\tcomparing it literally, so the rows would be analysed as two separate");
+            LOG.err("\tchromosomes. Sort the input by chromosome and position, and spell each");
+            LOG.err("\tchromosome the same way on every row -- '21' and 'chr21' split a");
+            LOG.err("\tchromosome in two even when they are adjacent.");
+        }
+        else
+        {
+            LOG.err("\tgarlic matches chromosome names case-insensitively and ignoring a 'chr'");
+            LOG.err("\tprefix, so it cannot tell these apart. Rename one of them.");
+        }
+        return -1;
+    }
+    return 0;
+}
 
-    int males = 0, females = 0, unknown = 0;
+int parseSexSystem(const string &s)
+{
+    if (s.compare("xy") == 0)   return SEX_SYSTEM_XY;
+    if (s.compare("zw") == 0)   return SEX_SYSTEM_ZW;
+    if (s.compare("none") == 0) return SEX_SYSTEM_NONE;
+    return -1;
+}
+
+string sexSystemName(int system)
+{
+    if (system == SEX_SYSTEM_XY)   return "xy";
+    if (system == SEX_SYSTEM_ZW)   return "zw";
+    if (system == SEX_SYSTEM_NONE) return "none";
+    return "unset";
+}
+
+bool isDetectedSexChrKey(const string &key)
+{
+    return (key == "x" || key == "y" || key == "z" || key == "w" ||
+            key == "m" || key == "mt");
+}
+
+bool isAmbiguousNumericChrKey(const string &key)
+{
+    return (key == "23" || key == "24" || key == "25" || key == "26");
+}
+
+bool isHumanBuild(const string &build)
+{
+    return (build.compare("hg18") == 0 || build.compare("hg19") == 0 ||
+            build.compare("hg38") == 0 || build.compare("t2t-chm13") == 0);
+}
+
+void countSexCodes(IndData *indData, int &males, int &females, int &unknown)
+{
+    males = 0; females = 0; unknown = 0;
     for (int i = 0; i < indData->nind; i++)
     {
         if (indData->sex[i] == 1) males++;
         else if (indData->sex[i] == 2) females++;
         else unknown++;
     }
+}
 
-    string list;
-    for (unsigned int i = 0; i < found.size(); i++)
+//A chromosome's ROLE does not depend on the sex determination system: a
+//chromosome named X or Z is the one shared between the sexes whichever system
+//it belongs to, and Y or W is the one only the heterogametic sex carries.
+//The system supplies something else entirely -- which sex CODE is
+//heterogametic -- so it is used here only to decide which conventional names
+//may be assumed, not to pick a different mapping.  Returns false when the key
+//has no default under this system.
+static bool defaultRoleForKey(const string &key, int system, bool humanBuild,
+                              bool anySystem, ChrRole &role)
+{
+    bool xy = anySystem || (system == SEX_SYSTEM_XY);
+    bool zw = anySystem || (system == SEX_SYSTEM_ZW);
+
+    if (xy && key == "x") { role = CHR_SEX_SHARED;     return true; }
+    if (xy && key == "y") { role = CHR_SEX_DEGENERATE; return true; }
+    if (zw && key == "z") { role = CHR_SEX_SHARED;     return true; }
+    if (zw && key == "w") { role = CHR_SEX_DEGENERATE; return true; }
+    if (key == "m" || key == "mt") { role = CHR_HAPLOID; return true; }
+
+    //PLINK's human numbering, licensed by a human --build and by nothing else.
+    //ZW is not a human system, so the numbers get no default there.
+    if (humanBuild && (xy || anySystem))
     {
-        if (i) list += ", ";
-        list += found[i];
+        if (key == "23") { role = CHR_SEX_SHARED;     return true; }
+        if (key == "24") { role = CHR_SEX_DEGENERATE; return true; }
+        if (key == "25") { role = CHR_PAR;            return true; }
+        if (key == "26") { role = CHR_HAPLOID;        return true; }
     }
 
-    LOG.err("WARNING: the data contains sex chromosomes:", list);
-    LOG.err("WARNING: a hemizygous male genotype is written as a homozygous call in a TPED, so");
-    LOG.err("WARNING: it is indistinguishable from true autozygosity. Male X chromosomes will");
-    LOG.err("WARNING: therefore be called as one run spanning the whole chromosome, and any");
-    LOG.err("WARNING: FROH computed from that will be inflated. Use --autosomes-only to drop");
-    LOG.err("WARNING: these chromosomes, or restrict to females using the sex column of the");
-    LOG.err("WARNING: TFAM or of --pop.");
+    return false;
+}
 
-    //Reporting only the male count was misleading whenever sex was recorded
-    //for PART of the cohort: 3 of 45 coded male with 42 unknown printed
-    //"individuals coded male: 3", and 3 reads as the answer when up to 45
-    //could be affected.  Sex is optional in a TFAM and in a --pop file, so
-    //partial coverage is normal.  Report all three counts, and never state a
-    //number of affected individuals that the metadata cannot support.
-    if (males + females == 0)
+static string roleName(ChrRole r)
+{
+    switch (r)
     {
-        LOG.err("WARNING: sex is not recorded for any of the", indData->nind, false);
-        LOG.err(" individuals, so the number affected cannot be determined.");
+    case CHR_SEX_SHARED:     return "shared sex chromosome";
+    case CHR_SEX_DEGENERATE: return "degenerate sex chromosome";
+    case CHR_HAPLOID:        return "haploid";
+    case CHR_PAR:            return "pseudoautosomal";
+    default:                 return "autosome";
     }
-    else if (unknown == 0)
+}
+
+//Applies one --sex-chr / --sex-chr-degenerate / --haploid-chr list.
+static int applyDeclaredRole(SexModel &model,
+                             const vector<string> &keys,
+                             const vector<string> &names,
+                             const vector<string> &want,
+                             const string &flag,
+                             ChrRole role,
+                             vector<bool> &declared)
+{
+    for (unsigned int w = 0; w < want.size(); w++)
     {
-        LOG.err("WARNING: sex recorded for all", indData->nind, false);
-        LOG.err(" individuals:", males, false);
-        LOG.err(" male,", females, false);
-        LOG.err(" female.");
-        LOG.err("WARNING: affected individuals:", males);
+        string key = canonChrKey(want[w]);
+        bool found = false;
+        for (unsigned int chr = 0; chr < keys.size(); chr++)
+        {
+            if (keys[chr].compare(key) != 0) continue;
+            found = true;
+            if (declared[chr] && model.role[chr] != role)
+            {
+                //Not .c_str(): LOG.err(string, const char *, bool) would
+                //resolve to the (string, bool, bool) overload by pointer-to-
+                //bool conversion and print "1".
+                LOG.err("ERROR:", names[chr], false);
+                LOG.err(" is declared both", roleName(model.role[chr]), false);
+                LOG.err(" and", roleName(role), false);
+                LOG.err(".");
+                return -1;
+            }
+            model.role[chr] = role;
+            declared[chr] = true;
+        }
+        if (!found)
+        {
+            LOG.err("ERROR:", flag, false);
+            LOG.err(" ", want[w], false);
+            LOG.err(" is not present in the data.");
+            return -1;
+        }
     }
-    else
+    return 0;
+}
+
+int buildSexModel(SexModel &model,
+                  vector< MapData * > *mapDataByChr,
+                  IndData *indData,
+                  int system,
+                  const vector<string> &sexChr,
+                  const vector<string> &degenerateChr,
+                  const vector<string> &haploidChr,
+                  bool humanBuild,
+                  bool autosomesOnly)
+{
+    const unsigned int nchr = mapDataByChr->size();
+    model.system = system;
+    model.role.assign(nchr, CHR_AUTOSOME);
+
+    vector<string> names(nchr), keys(nchr);
+    for (unsigned int chr = 0; chr < nchr; chr++)
     {
-        LOG.err("WARNING: sex recorded for", males + females, false);
-        LOG.err(" of", indData->nind, false);
-        LOG.err(" individuals:", males, false);
-        LOG.err(" male,", females, false);
-        LOG.err(" female,", unknown, false);
-        LOG.err(" unknown.");
-        LOG.err("WARNING: at least", males, false);
-        LOG.err(" individuals are affected; with", unknown, false);
-        LOG.err(" of unknown sex the true number");
-        LOG.err("WARNING: cannot be determined and may be as high as", males + unknown, false);
-        LOG.err(".");
+        names[chr] = mapDataByChr->at(chr)->chr;
+        keys[chr] = canonChrKey(names[chr]);
     }
 
-    return true;
+    bool anyDeclared = !sexChr.empty() || !degenerateChr.empty() || !haploidChr.empty();
+
+    if (anyDeclared && system == SEX_SYSTEM_UNSET)
+    {
+        LOG.err("ERROR: --sex-chr, --sex-chr-degenerate and --haploid-chr need --sex-system,");
+        LOG.err("\twhich says which sex code is heterogametic. No amount of genotype data");
+        LOG.err("\tsupplies that: PLINK codes 1 male and 2 female whatever the species' sex");
+        LOG.err("\tdetermination system is, so in a ZW species the HOMOGAMETIC sex is coded 1.");
+        return -1;
+    }
+    if (anyDeclared && system == SEX_SYSTEM_NONE)
+    {
+        LOG.err("ERROR: --sex-system none asserts that every chromosome is diploid in every");
+        LOG.err("\tindividual, which contradicts declaring a sex chromosome.");
+        return -1;
+    }
+
+    //--sex-system none: nothing is anything but an autosome, and the detector
+    //stays quiet.  That is what the flag is for.
+    if (system == SEX_SYSTEM_NONE) return 0;
+
+    vector<bool> declared(nchr, false);
+    if (applyDeclaredRole(model, keys, names, sexChr, "--sex-chr",
+                          CHR_SEX_SHARED, declared) < 0) return -1;
+    if (applyDeclaredRole(model, keys, names, degenerateChr, "--sex-chr-degenerate",
+                          CHR_SEX_DEGENERATE, declared) < 0) return -1;
+    if (applyDeclaredRole(model, keys, names, haploidChr, "--haploid-chr",
+                          CHR_HAPLOID, declared) < 0) return -1;
+
+    //--autosomes-only drops whatever is not an autosome, so it does not need
+    //to know which sex is heterogametic and may assume the conventional names
+    //of BOTH systems.  It still does not resolve the ambiguous numbers below:
+    //dropping chr23 is right under one reading and destroys an autosome under
+    //the other.
+    bool anySystem = (system == SEX_SYSTEM_UNSET && autosomesOnly);
+
+    if (system != SEX_SYSTEM_UNSET || autosomesOnly)
+    {
+        for (unsigned int chr = 0; chr < nchr; chr++)
+        {
+            if (declared[chr]) continue;
+            ChrRole r;
+            if (defaultRoleForKey(keys[chr], system, humanBuild, anySystem, r))
+                model.role[chr] = r;
+        }
+    }
+
+    //Anything that looks sex-linked and still has no role is the case this
+    //refuses on.  A warning here would be a warning attached to a number that
+    //is wrong, and the run would still produce it.
+    vector<string> unresolvedName, unresolvedNumeric;
+    for (unsigned int chr = 0; chr < nchr; chr++)
+    {
+        if (model.role[chr] != CHR_AUTOSOME) continue;
+        if (isDetectedSexChrKey(keys[chr]))        unresolvedName.push_back(names[chr]);
+        else if (isAmbiguousNumericChrKey(keys[chr])) unresolvedNumeric.push_back(names[chr]);
+    }
+
+    if (unresolvedName.empty() && unresolvedNumeric.empty()) return 0;
+
+    string listName, listNumeric;
+    for (unsigned int i = 0; i < unresolvedName.size(); i++)
+    { if (i) listName += ", "; listName += unresolvedName[i]; }
+    for (unsigned int i = 0; i < unresolvedNumeric.size(); i++)
+    { if (i) listNumeric += ", "; listNumeric += unresolvedNumeric[i]; }
+
+    if (!unresolvedName.empty())
+    {
+        LOG.err("ERROR: garlic has not been told how to treat:", listName);
+        LOG.err("\tA hemizygous genotype is written as a homozygous call, so analysing one of");
+        LOG.err("\tthese as an autosome calls the whole chromosome as a single run in every");
+        LOG.err("\theterogametic individual and inflates FROH.");
+        if (system != SEX_SYSTEM_UNSET)
+        {
+            LOG.err("\tThe conventional names of --sex-system", sexSystemName(system), false);
+            LOG.err(" have been applied; name these explicitly:");
+            LOG.err("\t  --sex-chr <name>              diploid in the homogametic sex (X or Z)");
+            LOG.err("\t  --sex-chr-degenerate <name>   only in the heterogametic sex (Y or W)");
+            LOG.err("\t  --haploid-chr <name>          haploid in everyone (mitochondrion)");
+        }
+        else
+        {
+            LOG.err("\tChoose one:");
+            LOG.err("\t  --sex-system xy      the sex coded 1 (male) is the heterogametic one");
+            LOG.err("\t  --sex-system zw      the sex coded 2 (female) is the heterogametic one");
+            LOG.err("\t  --autosomes-only     drop them");
+            LOG.err("\t  --sex-system none    assert that they are diploid in every individual");
+        }
+
+        int males, females, unknown;
+        countSexCodes(indData, males, females, unknown);
+        //Never state a number of affected individuals that the metadata
+        //cannot support: sex is optional in a TFAM and in a --pop file, so
+        //partial coverage is normal and reporting only the male count reads
+        //as the answer when many more could be affected.
+        if (males + females == 0)
+        {
+            LOG.err("\tSex is not recorded for any of the", indData->nind, false);
+            LOG.err(" individuals.");
+        }
+        else if (unknown == 0)
+        {
+            LOG.err("\tSex recorded for all", indData->nind, false);
+            LOG.err(" individuals:", males, false);
+            LOG.err(" male,", females, false);
+            LOG.err(" female.");
+        }
+        else
+        {
+            LOG.err("\tSex recorded for", males + females, false);
+            LOG.err(" of", indData->nind, false);
+            LOG.err(" individuals:", males, false);
+            LOG.err(" male,", females, false);
+            LOG.err(" female,", unknown, false);
+            LOG.err(" unknown.");
+        }
+    }
+
+    if (!unresolvedNumeric.empty())
+    {
+        LOG.err("ERROR: garlic cannot tell what these chromosomes are:", listNumeric);
+        LOG.err("\tUnder PLINK's coding of HUMAN data 23, 24, 25 and 26 are X, Y, the");
+        LOG.err("\tpseudoautosomal region and the mitochondrion. In most other species they");
+        LOG.err("\tare ordinary autosomes -- chickens have 39 pairs -- so garlic will not");
+        LOG.err("\tassume either reading. Choose one:");
+        LOG.err("\t  --build hg18|hg19|hg38|t2t-chm13   human coordinates, so PLINK's numbering");
+        LOG.err("\t  --sex-chr / --sex-chr-degenerate / --haploid-chr   name them explicitly");
+        LOG.err("\t  --sex-system none                  assert that they are autosomes");
+    }
+
+    return -1;
 }
 
 int filterChromosomes(vector<string> &keep,
@@ -145,8 +421,12 @@ int filterChromosomes(vector<string> &keep,
                       vector< GenoLikeData * > **GLDataByChr,
                       bool USE_GL)
 {
+    //Matched on canonChrKey, not on the display name: --chr x, --chr X and
+    //--chr chrX all name the same chromosome, and the data may spell it any
+    //of those ways.  checkChrName only ever prefixed "chr", so "X" against a
+    //file spelling it "chrX" used to match but "x" did not.
     vector<string> want;
-    for (unsigned int i = 0; i < keep.size(); i++) want.push_back(checkChrName(keep[i]));
+    for (unsigned int i = 0; i < keep.size(); i++) want.push_back(canonChrKey(keep[i]));
 
     vector< MapData * > *newMap = new vector< MapData * >;
     vector< HapData * > *newHap = new vector< HapData * >;
@@ -157,7 +437,7 @@ int filterChromosomes(vector<string> &keep,
 
     for (unsigned int chr = 0; chr < (*mapDataByChr)->size(); chr++)
     {
-        string have = checkChrName((*mapDataByChr)->at(chr)->chr);
+        string have = canonChrKey((*mapDataByChr)->at(chr)->chr);
         int match = -1;
         for (unsigned int w = 0; w < want.size(); w++)
             if (want[w].compare(have) == 0) { match = int(w); break; }
@@ -183,7 +463,10 @@ int filterChromosomes(vector<string> &keep,
     {
         if (!found[w])
         {
-            LOG.err("ERROR: --chr", want[w], false);
+            //The user's spelling, not the key: "--chr chrX is not present" is
+            //what they can act on; "--chr x is not present" is not what they
+            //typed.
+            LOG.err("ERROR: --chr", keep[w], false);
             LOG.err(" is not present in the data.");
             return -1;
         }
@@ -2931,8 +3214,11 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                 LOG.err(" at", site, false);
                 LOG.err(" has ploidy", ploidy, false);
                 LOG.err("; garlic calls ROH from diploid genotypes only.");
-                if (isSexChromosome(checkChrName(chr)))
-                    LOG.err("\tThis is a sex chromosome: see --autosomes-only.");
+                //Advice only, and the only thing available this early: the
+                //chromosome role table is built after the whole file is read,
+                //so all this can do is recognise a conventional name.
+                if (isDetectedSexChrKey(canonChrKey(chr)) || isAmbiguousNumericChrKey(canonChrKey(chr)))
+                    LOG.err("\tThis name is conventionally a sex chromosome: see --sex-system and --autosomes-only.");
                 throw 0;
             }
             if (PHASED && !isPhased)
