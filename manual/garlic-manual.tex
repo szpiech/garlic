@@ -483,6 +483,17 @@ accepted -- and to miss every flag added since.
 \section{Change Log}
 
 \begin{lstlisting}
+A sex chromosome is no longer analysed as an autosome; a run containing one stops until
+--sex-system says which sex code is heterogametic. See "Sex chromosomes" under Program Options.
+Frequencies there come from everyone with the heterogametic sex contributing one allele, calling
+is restricted to the individuals who are diploid, the cutoff and size classes are estimated on
+the autosomes, and FROH is reported for the two regions separately with NA where an individual
+cannot be autozygous. The FROH table is now one row per individual. --autosomes-only drops every
+non-autosomal role rather than four names, and 23-26 are resolved only under a human --build.
+--par excludes pseudoautosomal regions by coordinate, any number of them. A hemizygous VCF is
+readable on a declared sex chromosome. Chromosome names match case-insensitively and ignoring a
+chr prefix.
+
 UNRELEASED - Input with more than one population label is now analysed one population at a
 time; see "Multiple populations" under Program Options. Each population gets allele frequencies from its own individuals, its
 own site filtering, its own automatically selected window size, LOD cutoff and size-class

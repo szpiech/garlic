@@ -102,6 +102,60 @@ building on a cluster.
 ---CHANGES---
 UNRELEASED - Correctness, performance, and command line work.
 
+*** BEHAVIOUR CHANGE: a sex chromosome is no longer analysed as an autosome, and a run that
+contains one stops until it is told what to do with it. ***  A hemizygous genotype is written
+as a homozygous call, so analysing a sex chromosome as an autosome calls it as one run
+spanning its whole length in every heterogametic individual and inflates FROH.  Earlier
+versions warned and carried on, which is how such a number reaches a figure.
+
+--sex-system takes xy, zw or none and supplies the one thing no amount of genotype data can:
+which sex CODE is heterogametic.  PLINK codes 1 male and 2 female whatever the species' sex
+determination system is, so in a ZW species the HOMOGAMETIC sex is coded 1.  Leaving the flag
+unset is not the same as none -- unset means nothing has been said, and none asserts that
+every chromosome is diploid in every individual.  The conventional names follow from the
+system; --sex-chr, --sex-chr-degenerate and --haploid-chr name anything else.  A chromosome's
+role does not depend on the system: X and Z are both the shared chromosome, Y and W both the
+degenerate one.  Only the shared chromosome is analysed; the others, and the mitochondrion,
+cannot carry a run of homozygosity in anybody and are dropped.
+
+The numbers 23, 24, 25 and 26 are X, Y, the pseudoautosomal region and the mitochondrion under
+PLINK's coding of HUMAN data, and ordinary autosomes in any species with that many chromosomes
+-- chickens have 39 pairs.  garlic resolves them only when --build names a human assembly, and
+otherwise refuses rather than picking a reading.  --autosomes-only now drops every
+non-autosomal role rather than the four names X, Y, 23 and 24.
+
+On the shared sex chromosome, allele frequencies are computed over everyone with the
+heterogametic sex contributing one allele and the homogametic sex two, and runs of homozygosity
+are called only in the individuals who are diploid there.  The LOD score cutoff, the window
+size and the size-class boundaries are estimated on the autosomes and applied to it; garlic
+reports what its own windows would have given, so the assumption is visible.  Adding a sex
+chromosome to a run does not move a single autosomal call.
+
+A check that always runs establishes who is diploid there, from heterozygosity
+(--het-rate-bounds) or from haploid calls where the file provides them.  It verifies a recorded
+sex, infers an unrecorded one, and writes <out>.sexcheck.tsv.  Heterozygous calls in an
+individual with one copy of the chromosome are impossible and are discarded and counted; if
+more than half the individuals with a recorded sex contradict it, garlic stops, because that
+means either --sex-system is inverted or the chromosome was called as diploid.
+
+A VCF may write hemizygous genotypes as one allele.  On a declared sex chromosome that is now
+read as a hemizygous call rather than rejected; elsewhere it is still an error.
+
+FROH is reported for the autosomes and for the sex chromosome separately, each with its own
+denominator, and is NA rather than zero for an individual that cannot be autozygous there.
+The two are not summed.  The table also changes shape: one row per individual with the metrics
+across columns, replacing one row per individual per size class.
+
+--par and --par-file exclude pseudoautosomal regions, any number of them per chromosome, given
+as coordinates rather than by a chromosome code.  garlic ships no built-in table: the
+coordinates differ between assemblies and a wrong one silently drops the wrong part of a
+chromosome.
+
+Chromosome names are matched case-insensitively and ignoring a leading chr, so --chr x finds
+chrX and a --build table matches a file that spells its chromosomes as bare numbers.  Two
+chromosomes whose names differ only that way are an error, and so is the same name appearing
+twice, which means one chromosome whose rows are not contiguous.
+
 *** BEHAVIOUR CHANGE: input with more than one population label is now analysed one
 population at a time, and the output file names change accordingly. ***  The LOD score is
 parameterised by population allele frequency, so pooling distinct populations inflates
