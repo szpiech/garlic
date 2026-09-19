@@ -368,6 +368,108 @@ and stops, rather than writing a partial set of results that looks complete.
 Supplying {\tt --size-bounds} or {\tt --lod-cutoff} avoids the automatic step
 that failed.
 
+\subsection{Sex chromosomes}
+\label{sec:sexchr}
+
+A hemizygous genotype is written as a homozygous call, so a sex chromosome
+analysed as an autosome is called as one run spanning its whole length in
+every heterogametic individual, and any $F_{ROH}$ computed from that is
+inflated.  {\tt garlic} therefore refuses to analyse a chromosome that looks
+sex-linked until it is told what to do with it.
+
+\subsubsection{Declaring the system}
+
+{\tt --sex-system} takes {\tt xy}, {\tt zw} or {\tt none}.  It supplies the one
+thing no amount of genotype data can: which sex \emph{code} is heterogametic.
+PLINK codes 1 male and 2 female whatever the species' sex determination system
+is, so in a ZW species the \emph{homogametic} sex is the one coded 1.  Leaving
+the flag unset is not the same as {\tt none}: unset means nothing has been said
+and the run stops, while {\tt none} asserts that every chromosome is diploid in
+every individual.
+
+The conventional names follow from the system --- X and Y under {\tt xy}, Z and
+W under {\tt zw}, plus M or MT for the mitochondrion.  A chromosome named
+anything else is declared explicitly with {\tt --sex-chr} (diploid in the
+homogametic sex), {\tt --sex-chr-degenerate} (carried only by the heterogametic
+sex) or {\tt --haploid-chr}.  A chromosome's role does not depend on the system:
+X and Z are both the shared chromosome, Y and W both the degenerate one.  Only
+the shared chromosome is analysed; the others cannot carry a run of homozygosity
+in anybody and are dropped with a log line.
+
+The numbers 23, 24, 25 and 26 are X, Y, the pseudoautosomal region and the
+mitochondrion under PLINK's coding of \emph{human} data, and ordinary autosomes
+in any species with that many chromosomes.  {\tt garlic} resolves them only when
+{\tt --build} names a human assembly, which is already the user asserting human
+coordinates; without one it refuses rather than picking a reading.
+
+\subsubsection{What the analysis does}
+
+Allele frequencies on the shared sex chromosome are computed over
+\emph{everyone}, with the heterogametic sex contributing one allele and the
+homogametic sex two.  Runs of homozygosity are then called only in the
+individuals who are diploid there.  The LOD score cutoff, the window size and
+the size-class boundaries are estimated on the autosomes and applied to the sex
+chromosome; {\tt garlic} reports what the sex chromosome's own windows would
+have given, so the assumption is visible.  This follows
+\citet{CotterEtAl24} and, for the cutoff, the reason they give: one chromosome's
+windows from part of a cohort usually cannot locate a second minimum in the
+density.
+
+Who is diploid there is established by a check that always runs.  Each
+individual's heterozygosity on that chromosome is compared against
+{\tt --het-rate-bounds} (0.02 and 0.10 by default): below the first it reads as
+hemizygous, above the second as diploid, and between them as ambiguous, in which
+case the individual is neither called there nor counted towards the allele
+frequency.  A recorded sex is checked against this and an unrecorded one is
+inferred from it.  The per-individual result is written to
+{\tt <out>.sexcheck.tsv}.  Heterozygous calls in an individual with one copy of
+the chromosome are impossible by construction, so they are counted and
+discarded; if more than half the individuals with a recorded sex contradict it,
+{\tt garlic} stops, because that means either {\tt --sex-system} is inverted or
+the chromosome was called as diploid --- and the alternative is discarding every
+one of those calls silently.
+
+$F_{ROH}$ is reported separately for the autosomes and for the sex chromosome,
+each with its own denominator, and is {\tt NA} rather than zero for an
+individual that cannot be autozygous there.  The two are not summed: the X
+coalesces faster than the autosomes and carries more homozygosity at the same
+level of consanguinity, so they are quantities to compare rather than to pool.
+
+\subsubsection{Pseudoautosomal regions}
+
+A pseudoautosomal region is diploid in both sexes.  {\tt --par} takes one or
+more {\tt <chr>:<start>-<end>} intervals and {\tt --par-file} reads them from a
+file; both accept any number of regions per chromosome --- humans have two ---
+and the two flags accumulate.  Unlike {\tt --centromere}, repeated rows for one
+chromosome add a region rather than replacing one.  The loci inside are dropped,
+each region's count is reported separately, and a region that matches no locus
+warns by name.
+
+They are identified by coordinates on a declared sex chromosome and never by a
+chromosome code, because PLINK's 25 is an ordinary autosome in most species.
+{\tt garlic} ships no built-in table: the coordinates differ between assemblies
+and a wrong one silently drops the wrong part of a chromosome.
+
+Running without them has a bounded cost, which is worth knowing rather than
+discovering.  The heterogametic sex's genotypes in the pseudoautosomal region
+are recoded as hemizygous along with the rest of the chromosome, so their real
+heterozygous calls there are counted as impossible and discarded --- inflating
+{\tt n\_het\_recoded} by roughly that region's share of the markers, about 1--2\%
+of the human X --- and their contribution to the allele frequency in it is
+biased, because dropping heterozygotes while keeping homozygotes is not a random
+thinning.  Both are bounded by the total pseudoautosomal share of the
+chromosome, which is the quantity that grows in a species that has several.
+
+\subsubsection{Chromosome names}
+
+Names are matched case-insensitively and ignoring a leading {\tt chr}, so
+{\tt chrX}, {\tt chrx}, {\tt CHRX}, {\tt X} and {\tt x} are one chromosome, and
+so are {\tt 1}, {\tt 01} and {\tt chr1}.  Output keeps whatever the input said.
+Two chromosomes in one file whose names differ only that way are an error, and
+so is the same name appearing twice, which means one chromosome whose rows are
+not contiguous --- {\tt garlic} starts a new chromosome whenever the chromosome
+column changes and would otherwise analyse it as two.
+
 \subsection{Controlling GARLIC}
 
 \noindent The remaining flags control window construction, LOD score
