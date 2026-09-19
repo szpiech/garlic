@@ -1784,6 +1784,72 @@ sex_chromosomes() {
     if [ "$(grep -vc '^##' "$WORK/sx14.froh.tsv")" -eq 46 ]; then ok
     else bad "FROH is not one row per individual plus a header"; fi
 
+    # 10. Pseudoautosomal regions.  There is always a SET of them -- humans
+    #     have two -- so the cases that matter are the ones a single-interval
+    #     implementation would pass: two regions on one chromosome, given
+    #     through both flags, in either order.
+    parbase="$SEXBASE --sex-system xy --froh"
+    printf 'chrX\t20000000\t21000000\n' > "$WORK/sxpar.txt"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $parbase \
+        --par chrX:13560000-14500000 --par-file "$WORK/sxpar.txt" \
+        --out "$WORK/sx15" --force >/dev/null 2>&1
+    # 10a. Each region reports its OWN dropped-locus count.  A total is
+    #      diagnostic enough for one region; with several it is the individual
+    #      counts that show a coordinate given in the wrong assembly.
+    n1=$(awk '/Excluded region chrX:13560000-14500000 dropped/{print $(NF-1)}' "$WORK/sx15.log")
+    n2=$(awk '/Excluded region chrX:20000000-21000000 dropped/{print $(NF-1)}' "$WORK/sx15.log")
+    want1=$(gz "$WORK/sxXhemi.tped.gz" | awk '$4>=13560000 && $4<=14500000' | wc -l | tr -d ' ')
+    want2=$(gz "$WORK/sxXhemi.tped.gz" | awk '$4>=20000000 && $4<=21000000' | wc -l | tr -d ' ')
+    if [ "$n1" = "$want1" ] && [ "$n2" = "$want2" ] && [ "$n1" != "$n2" ]; then ok
+    else bad "per-region locus counts wrong: got $n1/$n2, expected $want1/$want2"; fi
+    # 10b. No call may overlap either region.
+    inpar=$(awk '$1 == "chrX" && (($2 <= 14500000 && $3 >= 13560000) ||
+                                  ($2 <= 21000000 && $3 >= 20000000)) { n++ }
+                 END { print n + 0 }' "$WORK/sx15.roh.bed")
+    if [ "$inpar" = "0" ]; then ok
+    else bad "$inpar calls overlap an excluded region"; fi
+    # 10c. The order the regions are given in cannot matter -- this is the
+    #      regression test against a container that overwrites on repeat.
+    printf 'chrX\t13560000\t14500000\n' > "$WORK/sxpar2.txt"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $parbase \
+        --par chrX:20000000-21000000 --par-file "$WORK/sxpar2.txt" \
+        --out "$WORK/sx16" --force >/dev/null 2>&1
+    if [ "$(sum "$WORK/sx16.roh.bed")" = "$(sum "$WORK/sx15.roh.bed")" ] && \
+       [ "$(grep -c '^##' "$WORK/sx16.froh.tsv")" -gt 0 ] && \
+       [ "$(grep '^## sexchr_denominator' "$WORK/sx16.froh.tsv")" = \
+         "$(grep '^## sexchr_denominator' "$WORK/sx15.froh.tsv")" ]; then ok
+    else bad "the order the excluded regions are given in changed the result"; fi
+    # 10d. An INTERIOR region has to come off the denominator: a terminal one
+    #      does so by itself, because dropping its loci moves the first or last
+    #      marker inward.  Warned about for the same reason.
+    d0=$("$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $parbase \
+            --out "$WORK/sx17" --force >/dev/null 2>&1;
+         awk -F'\t' '/^## sexchr_denominator/{print $2}' "$WORK/sx17.froh.tsv")
+    d1=$("$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $parbase \
+            --par chrX:20000000-21000000 --out "$WORK/sx18" --force >/dev/null 2>&1;
+         awk -F'\t' '/^## sexchr_denominator/{print $2}' "$WORK/sx18.froh.tsv")
+    if [ "$((d0 - d1))" -eq 1000001 ]; then ok
+    else bad "an interior excluded region was not subtracted from the denominator: $d0 -> $d1"; fi
+    if grep -q "This region is interior" "$WORK/sx18.log"; then ok
+    else bad "an interior excluded region was not reported as interior"; fi
+
+    # 10e. Refusals: a region on something that is not a shared sex
+    #      chromosome, an inverted one, and one that matches nothing.
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $parbase \
+        --par chr21:1-100 --out "$WORK/sx19" --force >/dev/null 2>"$WORK/sx19.stderr"
+    if [ $? -eq 1 ] && grep -q "not a shared sex chromosome" "$WORK/sx19.stderr"; then ok
+    else bad "an excluded region on an autosome was not refused"; fi
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $parbase \
+        --par chrX:500-100 --out "$WORK/sx20" --force >/dev/null 2>"$WORK/sx20.stderr"
+    if [ $? -eq 1 ] && grep -q "ends before it starts" "$WORK/sx20.stderr"; then ok
+    else bad "an inverted excluded region was not refused"; fi
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $parbase \
+        --par chrX:99000000-99100000 --out "$WORK/sx21" --force >/dev/null 2>"$WORK/sx21.stderr"
+    if grep -q "contains no loci" "$WORK/sx21.stderr"; then ok
+    else bad "an excluded region matching no locus did not warn"; fi
+
     # 9f. A cutoff at or below the uncallable-window sentinel would call every
     #     window that exists to be uncallable, including these.
     expect_exit 1 "--lod-cutoff below the MISSING sentinel" \

@@ -314,6 +314,26 @@ const string HELP_SEX_CHR_DEGENERATE = "The chromosome carried only by the heter
 \tsex and absent in the other -- so it is dropped before calling.\n\
 \tDefault: the conventional name for --sex-system";
 
+const string ARG_PAR = "--par";
+const string HELP_PAR = "Pseudoautosomal regions on the shared sex chromosome, as <chr>:<start>-<end>,\n\
+\tcomma or space separated. They are diploid in both sexes and too short to\n\
+\tcall at a useful window size, so the loci inside them are dropped.\n\
+\tANY NUMBER of regions per chromosome: humans have two, other species have\n\
+\tmore, and a system with several shared sex chromosomes can have them on\n\
+\teach. Coordinates are read in the assembly the input uses; there is\n\
+\tdeliberately no way to name a pseudoautosomal region by chromosome code,\n\
+\tbecause PLINK's 25 is an ordinary autosome in most species.\n\
+\tgarlic ships no built-in table: the coordinates differ between assemblies,\n\
+\tand a wrong one silently drops the wrong part of a chromosome.\n\
+\tDefault: none, and see the manual for what that costs";
+
+const string ARG_PAR_FILE = "--par-file";
+const string DEFAULT_PAR_FILE = "none";
+const string HELP_PAR_FILE = "The same regions from a file, one per line, <chr> <start> <end>. '#' comments\n\
+\tand blank lines are ignored and .gz is accepted. Unlike --centromere,\n\
+\trepeated rows for a chromosome ADD a region rather than replacing one.\n\
+\tMay be given together with --par; the regions accumulate.";
+
 const string ARG_HET_RATE_BOUNDS = "--het-rate-bounds";
 const string HELP_HET_RATE_BOUNDS = "<lo> <hi>: heterozygosity rates on the shared sex chromosome below which an\n\
 \tindividual reads as hemizygous and above which it reads as diploid. Between\n\
@@ -501,6 +521,8 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addListFlag(ARG_SEX_CHR_DEGENERATE, "_NONE", "", HELP_SEX_CHR_DEGENERATE);
 	params->addListFlag(ARG_HAPLOID_CHR, "_NONE", "", HELP_HAPLOID_CHR);
 	params->addListFlag(ARG_HET_RATE_BOUNDS, 0.02, "", HELP_HET_RATE_BOUNDS);
+	params->addListFlag(ARG_PAR, "_NONE", "", HELP_PAR);
+	params->addFlag(ARG_PAR_FILE, DEFAULT_PAR_FILE, "", HELP_PAR_FILE);
 	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
 	params->addFlag(ARG_OUTDIR, DEFAULT_OUTDIR, "", HELP_OUTDIR);
 	params->addFlag(ARG_POOL, DEFAULT_POOL, "", HELP_POOL);

@@ -60,7 +60,8 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
                                    centromere *centro,
                                    bool USE_GL,
                                    double variantDensity,
-                                   const vector<ChrRole> *chrRole)
+                                   const vector<ChrRole> *chrRole,
+                                   const ExcludedRegions *parRegions)
 {
     PopResult res;
     res.status = POP_OK;
@@ -310,7 +311,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         if (params->getBoolFlag(ARG_FROH))
         {
             writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
-                  indData, centro, CM, popLabel, opt.POOLED, chrRole);
+                  indData, centro, CM, popLabel, opt.POOLED, chrRole, parRegions);
         }
     }
     catch (...) { logCurrentException("writing the ROH calls"); writeStatus = 2; }
@@ -672,6 +673,41 @@ int main(int argc, char *argv[])
         }
     }
 
+    //---- pseudoautosomal regions -------------------------------------------
+    //
+    //Dropped before anything reads the genotypes: they are diploid in both
+    //sexes, so a heterozygous call there is real rather than impossible, and
+    //leaving them in would both inflate the sex check's count of impossible
+    //calls and bias the allele frequency of the heterogametic sex -- dropping
+    //heterozygotes while keeping homozygotes is not a random thinning.
+    ExcludedRegions par;
+    {
+        bool any = false;
+        if (params->isFlagSet(ARG_PAR))
+        {
+            if (parsePARSpecs(params->getStringListFlag(ARG_PAR), par) < 0) return 1;
+            any = true;
+        }
+        string parFile = params->getStringFlag(ARG_PAR_FILE);
+        if (parFile.compare(DEFAULT_PAR_FILE) != 0)
+        {
+            if (readPARFile(parFile, par) < 0) return 1;
+            any = true;
+        }
+        if (any)
+        {
+            if (par.finalise() < 0) return 1;
+            if (!sexModel.anyOfRole(CHR_SEX_SHARED))
+            {
+                LOG.err("ERROR: there is no shared sex chromosome to hold a pseudoautosomal region.");
+                LOG.err("\tSee --sex-system and --sex-chr.");
+                return 1;
+            }
+            if (dropExcludedSites(&mapDataByChr, &hapDataByChr, &freqDataByChr,
+                                  &GLDataByChr, par, sexModel, USE_GL, PHASED) < 0) return 1;
+        }
+    }
+
     //---- who is diploid on the shared sex chromosome -----------------------
     //
     //Runs on every dataset that has one, because it is one pass over that
@@ -933,7 +969,7 @@ int main(int argc, char *argv[])
                                           pHap, pFreq, pMap,
                                           pGL, pGF,
                                           pInd, centro, USE_GL, variantDensity,
-                                          &(sexModel.role));
+                                          &(sexModel.role), &par);
         //analyzePopulation has released pHap/pFreq/pGL/pGF by now; the map and
         //the per-population IndData are the caller's.
         if (!singlePop) { releaseIndData(pInd); releaseMapData(pMap); }

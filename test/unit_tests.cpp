@@ -662,6 +662,78 @@ static void test_sex_model()
     releaseIndData(ind2);
 }
 
+// ------------------------------------------- ExcludedRegions -------------
+// A chromosome has a SET of excluded regions, not one.  Humans already have
+// two pseudoautosomal regions; the container the centromere table uses is one
+// interval per chromosome and would silently keep only the last.
+static void test_excluded_regions()
+{
+    ExcludedRegions e;
+    e.add("chrX", 100, 200);
+    e.add("X",    500, 600);          // same chromosome, any spelling
+    ck(e.finalise() == 0, "two disjoint regions on one chromosome are accepted");
+    const vector<Interval> *v = e.get("chrx");
+    ck(v != NULL && v->size() == 2, "both regions survive; neither overwrites the other");
+    ck(v != NULL && v->size() == 2 && v->at(0).start == 100 && v->at(1).start == 500,
+       "regions come back sorted by start");
+
+    ck(e.contains("chrX", 100) && e.contains("chrX", 200),
+       "contains() is inclusive at both ends of a region");
+    ck(!e.contains("chrX", 99) && !e.contains("chrX", 201),
+       "contains() excludes the bases either side");
+    ck(!e.contains("chrX", 350), "contains() is false in the gap between two regions");
+    ck(!e.contains("chr1", 150), "regions do not leak to another chromosome");
+
+    // Overlap is what the FROH denominator subtracts, so it must be clipped
+    // and must not double-count.
+    ck(e.overlap("chrX", 1, 1000) == 202, "overlap sums both regions");
+    ck(e.overlap("chrX", 150, 1000) == 152, "overlap clips to the query start");
+    ck(e.overlap("chrX", 1, 150) == 51, "overlap clips to the query end");
+    ck(e.overlap("chrX", 250, 400) == 0, "overlap is zero between the regions");
+    ck(e.overlap("chr1", 1, 1000) == 0, "overlap is zero on another chromosome");
+
+    // Overlapping and abutting regions merge, so nothing is subtracted twice.
+    ExcludedRegions m;
+    m.add("chrX", 100, 200);
+    m.add("chrX", 150, 300);
+    m.add("chrX", 301, 400);
+    ck(m.finalise() == 0, "overlapping regions are accepted");
+    const vector<Interval> *mv = m.get("chrX");
+    ck(mv != NULL && mv->size() == 1, "overlapping and abutting regions merge into one");
+    ck(mv != NULL && mv->size() == 1 && mv->at(0).start == 100 && mv->at(0).end == 400,
+       "the merged region spans all three");
+    ck(m.overlap("chrX", 1, 1000) == 301, "a merged region is counted once");
+
+    ExcludedRegions bad;
+    bad.add("chrX", 500, 100);
+    quietErrors(true);
+    ck(bad.finalise() < 0, "a region that ends before it starts is refused");
+    quietErrors(false);
+
+    // Both input spellings reach the same place.
+    ExcludedRegions p;
+    vector<string> specs;
+    specs.push_back("chrX:60001-2699520,chrX:154931044-155260560");   // one token
+    ck(parsePARSpecs(specs, p) == 0 && p.finalise() == 0, "a comma-separated list parses");
+    const vector<Interval> *pv = p.get("chrX");
+    ck(pv != NULL && pv->size() == 2, "a comma-separated list gives two regions");
+    ck(pv != NULL && pv->size() == 2 && pv->at(0).end == 2699520 && pv->at(1).start == 154931044,
+       "the parsed coordinates are the ones given");
+
+    ExcludedRegions q;
+    vector<string> two;
+    two.push_back("chrX:1-10"); two.push_back("chrX:20-30");          // two tokens
+    ck(parsePARSpecs(two, q) == 0 && q.finalise() == 0, "a space-separated list parses");
+    ck(q.get("chrX") != NULL && q.get("chrX")->size() == 2, "both tokens are kept");
+
+    ExcludedRegions junk;
+    vector<string> bads;
+    bads.push_back("chrX-100-200");
+    quietErrors(true);
+    ck(parsePARSpecs(bads, junk) < 0, "a spec without chr:start-end is refused");
+    quietErrors(false);
+}
+
 // ------------------------------------------- checkChrKeyCollisions() ------
 // Two display names that differ only by case or a chr prefix are two
 // independent MapData entries, and every matcher now treats them as one name.
@@ -1119,6 +1191,7 @@ int main()
     test_canonChrKey();
     test_sex_model();
     test_chr_key_collisions();
+    test_excluded_regions();
     test_glToError();
     test_plToError();
     test_kde_helpers();

@@ -213,6 +213,13 @@ extern const string HELP_HAPLOID_CHR;
 extern const string ARG_HET_RATE_BOUNDS;
 extern const string HELP_HET_RATE_BOUNDS;
 
+extern const string ARG_PAR;
+extern const string HELP_PAR;
+
+extern const string ARG_PAR_FILE;
+extern const string DEFAULT_PAR_FILE;
+extern const string HELP_PAR_FILE;
+
 extern const string ARG_CHR;
 extern const string HELP_CHR;
 

@@ -432,6 +432,79 @@ int buildSexModel(SexModel &model,
 //state a number the metadata cannot support.
 void countSexCodes(IndData *indData, int &males, int &females, int &unknown);
 
+//---- pseudoautosomal regions ------------------------------------------------
+//
+//A PAR is diploid in both sexes, so it is neither hemizygous nor worth calling
+//at typical window sizes, and garlic drops the loci inside one.
+//
+//There is always a SET of them.  Humans have two (PAR1 and PAR2), other
+//species have more, and a system with several shared sex chromosomes can have
+//them on each -- so nothing here may assume one interval, or that an interval
+//is at the end of a chromosome.  This is deliberately NOT the container the
+//centromere table uses: that is one map<string,pos_t> pair keyed by chromosome
+//and a second row for the same chromosome silently overwrites the first, which
+//would lose PAR1 without an error.
+//
+//A PAR is identified by COORDINATES on a declared sex chromosome, never by a
+//chromosome code: PLINK's 25 collides with a real autosome in any species with
+//25 or more chromosomes, which is most of them, while coordinates are read in
+//the same assembly as the input and cannot collide.
+struct Interval
+{
+    pos_t start, end;   //inclusive at both ends, as PAR coordinates are written
+    Interval() : start(0), end(0) {}
+    Interval(pos_t s, pos_t e) : start(s), end(e) {}
+};
+
+class ExcludedRegions
+{
+public:
+    void add(const string &chr, pos_t s, pos_t e);
+    //Sorts and merges overlapping or abutting intervals per chromosome, and
+    //rejects an inverted or empty one.  Returns 0, or -1 after logging.
+    int finalise();
+    bool empty() const { return byChr.empty(); }
+    //Intervals of a chromosome, in the order they were merged into; NULL when
+    //it has none.  Keyed by canonChrKey, so any spelling finds them.
+    const vector<Interval> *get(const string &chr) const;
+    bool contains(const string &chr, pos_t p) const;
+    //Length of the part of [lo, hi] that this chromosome's intervals cover.
+    pos_t overlap(const string &chr, pos_t lo, pos_t hi) const;
+    //Every chromosome named, in insertion order, for validation messages.
+    const vector<string> &chromosomes() const { return order; }
+
+    //The spelling the user gave, for messages: the key is lower case with any
+    //"chr" stripped, which is not what they typed.
+    string spelling(const string &key) const;
+
+private:
+    map<string, vector<Interval> > byChr;
+    map<string, string> asGiven;
+    vector<string> order;
+};
+
+//Parses "chr:start-end" items, comma or whitespace separated, and the three
+//column <chr> <start> <end> file form -- in which, unlike --centromere,
+//repeated rows for a chromosome ADD a region rather than replacing one.
+//Return 0, or -1 after logging.
+int parsePARSpecs(const vector<string> &specs, ExcludedRegions &par);
+int readPARFile(const string &filename, ExcludedRegions &par);
+
+//Drops every locus inside an excluded region and reports how many each
+//INTERVAL removed -- a total is diagnostic enough for one PAR, but with
+//several it is the per-interval counts that reveal a coordinate given in the
+//wrong assembly.  Refuses an interval on a chromosome that is not a declared
+//shared sex chromosome: a PAR is defined relative to a sex-chromosome pair,
+//and an interval on chr7 is a mistake rather than a region to drop.
+//Returns the number of loci left, or -1 after logging.
+int dropExcludedSites(vector< MapData * > **mapDataByChr,
+                      vector< HapData * > **hapDataByChr,
+                      vector< FreqData * > **freqDataByChr,
+                      vector< GenoLikeData * > **GLDataByChr,
+                      const ExcludedRegions &par,
+                      const SexModel &model,
+                      bool USE_GL, bool PHASED);
+
 int filterChromosomes(vector<string> &keep,
                       vector< MapData * > **mapDataByChr,
                       vector< HapData * > **hapDataByChr,

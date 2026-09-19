@@ -1,6 +1,7 @@
 #include "garlic-data.h"
 #include <cmath>
 #include <random>
+#include <algorithm>
 #include <iomanip>
 
 static GarlicRNG *GARLIC_RNG = NULL;
@@ -662,6 +663,297 @@ void recomputeFreqForRole(vector< HapData * > *hapDataByChr,
             fd->freq[locus] = alleleFrequency(nalleles, total, nresample, r);
         }
     }
+}
+
+//---- pseudoautosomal regions ------------------------------------------------
+
+void ExcludedRegions::add(const string &chr, pos_t s, pos_t e)
+{
+    string key = canonChrKey(chr);
+    if (byChr.find(key) == byChr.end()) { order.push_back(key); asGiven[key] = chr; }
+    byChr[key].push_back(Interval(s, e));
+}
+
+string ExcludedRegions::spelling(const string &key) const
+{
+    map<string, string>::const_iterator it = asGiven.find(canonChrKey(key));
+    return (it == asGiven.end()) ? key : it->second;
+}
+
+//"chrX:60001-2699520" as one string, so a message does not come out with the
+//spaces LOG puts between its arguments.
+static string regionLabel(const string &chr, const Interval &v)
+{
+    ostringstream ss;
+    ss << chr << ":" << (long long)v.start << "-" << (long long)v.end;
+    return ss.str();
+}
+
+static bool intervalLess(const Interval &a, const Interval &b)
+{
+    if (a.start != b.start) return a.start < b.start;
+    return a.end < b.end;
+}
+
+int ExcludedRegions::finalise()
+{
+    for (map<string, vector<Interval> >::iterator it = byChr.begin(); it != byChr.end(); ++it)
+    {
+        vector<Interval> &v = it->second;
+        for (unsigned int i = 0; i < v.size(); i++)
+        {
+            if (v[i].end < v[i].start)
+            {
+                LOG.err("ERROR: region", regionLabel(spelling(it->first), v[i]), false);
+                LOG.err(" ends before it starts.");
+                return -1;
+            }
+        }
+        sort(v.begin(), v.end(), intervalLess);
+
+        //Merged so that overlapping or abutting regions are not subtracted
+        //twice from a denominator, and so that the per-locus test can stop at
+        //the first interval that starts after the position.
+        vector<Interval> merged;
+        for (unsigned int i = 0; i < v.size(); i++)
+        {
+            if (!merged.empty() && v[i].start <= merged.back().end + 1)
+            {
+                if (v[i].end > merged.back().end) merged.back().end = v[i].end;
+            }
+            else merged.push_back(v[i]);
+        }
+        v.swap(merged);
+    }
+    return 0;
+}
+
+const vector<Interval> *ExcludedRegions::get(const string &chr) const
+{
+    map<string, vector<Interval> >::const_iterator it = byChr.find(canonChrKey(chr));
+    if (it == byChr.end()) return NULL;
+    return &(it->second);
+}
+
+bool ExcludedRegions::contains(const string &chr, pos_t p) const
+{
+    const vector<Interval> *v = get(chr);
+    if (v == NULL) return false;
+    for (unsigned int i = 0; i < v->size(); i++)
+    {
+        if (p < v->at(i).start) return false;    //sorted: nothing later can match
+        if (p <= v->at(i).end) return true;
+    }
+    return false;
+}
+
+pos_t ExcludedRegions::overlap(const string &chr, pos_t lo, pos_t hi) const
+{
+    const vector<Interval> *v = get(chr);
+    if (v == NULL || hi < lo) return 0;
+    pos_t tot = 0;
+    for (unsigned int i = 0; i < v->size(); i++)
+    {
+        pos_t a = (v->at(i).start > lo ? v->at(i).start : lo);
+        pos_t b = (v->at(i).end   < hi ? v->at(i).end   : hi);
+        if (b >= a) tot += (b - a + 1);
+    }
+    return tot;
+}
+
+//"chrX:60001-2699520", one or more, comma or whitespace separated.
+int parsePARSpecs(const vector<string> &specs, ExcludedRegions &par)
+{
+    for (unsigned int i = 0; i < specs.size(); i++)
+    {
+        //A list flag splits on whitespace, so a comma-separated list arrives
+        //as one token; both spellings have to work.
+        string all = specs[i];
+        size_t from = 0;
+        while (from <= all.size())
+        {
+            size_t comma = all.find(',', from);
+            string item = all.substr(from, (comma == string::npos ? string::npos : comma - from));
+            from = (comma == string::npos ? all.size() + 1 : comma + 1);
+            if (item.empty()) continue;
+
+            size_t colon = item.rfind(':');
+            size_t dash  = (colon == string::npos ? string::npos : item.find('-', colon));
+            if (colon == string::npos || dash == string::npos)
+            {
+                LOG.err("ERROR: could not read", item, false);
+                LOG.err(" as <chr>:<start>-<end>.");
+                return -1;
+            }
+            string chr = item.substr(0, colon);
+            string a = item.substr(colon + 1, dash - colon - 1);
+            string b = item.substr(dash + 1);
+            if (chr.empty() || a.empty() || b.empty())
+            {
+                LOG.err("ERROR: could not read", item, false);
+                LOG.err(" as <chr>:<start>-<end>.");
+                return -1;
+            }
+            par.add(chr, (pos_t)atoll(a.c_str()), (pos_t)atoll(b.c_str()));
+        }
+    }
+    return 0;
+}
+
+int readPARFile(const string &filename, ExcludedRegions &par)
+{
+    igzstream fin;
+    fin.open(filename.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: Failed to open", filename);
+        return -1;
+    }
+
+    string line;
+    int lineno = 0, nread = 0;
+    while (getline(fin, line))
+    {
+        lineno++;
+        size_t hash = line.find('#');
+        if (hash != string::npos) line = line.substr(0, hash);
+        if (countFields(line) == 0) continue;
+        if (countFields(line) != 3)
+        {
+            LOG.err("ERROR: line", lineno, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" has", countFields(line), false);
+            LOG.err(" fields; the format is <chr> <start> <end>.");
+            return -1;
+        }
+        istringstream ss(line);
+        string chr; long long a, b;
+        ss >> chr >> a >> b;
+        if (ss.fail())
+        {
+            LOG.err("ERROR: could not read line", lineno, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" as <chr> <start> <end>.");
+            return -1;
+        }
+        par.add(chr, (pos_t)a, (pos_t)b);
+        nread++;
+    }
+    fin.close();
+    LOG.log("Read", nread, false);
+    LOG.log(" excluded regions from", filename);
+    return 0;
+}
+
+//Defined below, with the rest of the site filtering.
+static int filterSitesByKeep(vector< MapData * > **mapDataByChr,
+                             vector< HapData * > **hapDataByChr,
+                             vector< FreqData * > **freqDataByChr,
+                             vector< GenoLikeData * > **GLDataByChr,
+                             const vector< vector<int> > &keepByChr,
+                             bool USE_GL, bool PHASED);
+
+int dropExcludedSites(vector< MapData * > **mapDataByChr,
+                      vector< HapData * > **hapDataByChr,
+                      vector< FreqData * > **freqDataByChr,
+                      vector< GenoLikeData * > **GLDataByChr,
+                      const ExcludedRegions &par,
+                      const SexModel &model,
+                      bool USE_GL, bool PHASED)
+{
+    const unsigned int nchr = (*mapDataByChr)->size();
+
+    //A PAR is defined relative to a sex-chromosome pair.  An interval on an
+    //autosome is a mistake -- most likely a chromosome named in the wrong
+    //assembly or the wrong species -- and dropping those loci quietly would
+    //be the worst possible response to it.
+    const vector<string> &named = par.chromosomes();
+    for (unsigned int k = 0; k < named.size(); k++)
+    {
+        bool found = false, shared = false;
+        for (unsigned int chr = 0; chr < nchr; chr++)
+        {
+            if (canonChrKey((*mapDataByChr)->at(chr)->chr).compare(named[k]) != 0) continue;
+            found = true;
+            if (model.role[chr] == CHR_SEX_SHARED) shared = true;
+        }
+        if (!found)
+        {
+            LOG.err("ERROR: --par names", par.spelling(named[k]), false);
+            LOG.err(", which is not present in the data.");
+            return -1;
+        }
+        if (!shared)
+        {
+            LOG.err("ERROR: --par names", par.spelling(named[k]), false);
+            LOG.err(", which is not a shared sex chromosome.");
+            LOG.err("\tA pseudoautosomal region is defined relative to a sex-chromosome pair;");
+            LOG.err("\tsee --sex-chr.");
+            return -1;
+        }
+    }
+
+    vector< vector<int> > keepByChr(nchr);
+    long long totalDropped = 0;
+    for (unsigned int chr = 0; chr < nchr; chr++)
+    {
+        MapData *md = (*mapDataByChr)->at(chr);
+        const vector<Interval> *iv = par.get(md->chr);
+        keepByChr[chr].reserve(md->nloci);
+
+        if (iv == NULL)
+        {
+            for (int locus = 0; locus < md->nloci; locus++) keepByChr[chr].push_back(locus);
+            continue;
+        }
+
+        //Counted per interval, not in total: with one region a total says
+        //everything, and with several it is the individual counts that show a
+        //coordinate given in the wrong assembly.
+        vector<long long> dropped(iv->size(), 0);
+        for (int locus = 0; locus < md->nloci; locus++)
+        {
+            pos_t p = md->physicalPos[locus];
+            int hit = -1;
+            for (unsigned int i = 0; i < iv->size(); i++)
+            {
+                if (p < iv->at(i).start) break;
+                if (p <= iv->at(i).end) { hit = int(i); break; }
+            }
+            if (hit < 0) keepByChr[chr].push_back(locus);
+            else { dropped[hit]++; totalDropped++; }
+        }
+
+        pos_t firstKept = (keepByChr[chr].empty() ? 0 : md->physicalPos[keepByChr[chr].front()]);
+        pos_t lastKept  = (keepByChr[chr].empty() ? 0 : md->physicalPos[keepByChr[chr].back()]);
+        for (unsigned int i = 0; i < iv->size(); i++)
+        {
+            string label = regionLabel(md->chr, iv->at(i));
+            LOG.log("Excluded region", label, false);
+            LOG.log(" dropped", dropped[i], false);
+            LOG.log(" loci.");
+            if (dropped[i] == 0)
+            {
+                LOG.err("WARNING: the excluded region", label, false);
+                LOG.err(" contains no loci. Check that its coordinates");
+                LOG.err("\tare in the same assembly as the data.");
+            }
+            else if (!keepByChr[chr].empty() &&
+                     iv->at(i).start > firstKept && iv->at(i).end < lastKept)
+            {
+                //Worth saying because a PAR is normally terminal, and because
+                //an interior one is the case the FROH denominator has to
+                //correct for.
+                LOG.log("\tThis region is interior: loci remain on both sides of it.");
+            }
+        }
+    }
+
+    if (totalDropped == 0) return 0;
+    int numLoci = filterSitesByKeep(mapDataByChr, hapDataByChr, freqDataByChr, GLDataByChr,
+                                    keepByChr, USE_GL, PHASED);
+    LOG.log("Loci dropped as pseudoautosomal:", totalDropped);
+    return numLoci;
 }
 
 int filterChromosomes(vector<string> &keep,
@@ -2186,12 +2478,15 @@ static void gatherRows(Matrix<T> &dst, const Matrix<T> &src,
 //One implementation for both public entry points.  scaffoldMapByChr == NULL
 //selects the monomorphic-only filter; otherwise the out-of-bounds and
 //centromere clauses apply too.
-static int filterSites(vector< MapData * > **mapDataByChr,
-                       vector< HapData * > **hapDataByChr,
-                       vector< FreqData * > **freqDataByChr,
-                       vector< GenoLikeData * > **GLDataByChr,
-                       vector< GenMapScaffold * > *scaffoldMapByChr,
-                       bool USE_GL, bool PHASED)
+//The gather is the same whatever decides which sites to keep; only the rule
+//differs.  Split out so that dropping the pseudoautosomal regions reuses it
+//rather than growing a second copy that can drift.
+static int filterSitesByKeep(vector< MapData * > **mapDataByChr,
+                             vector< HapData * > **hapDataByChr,
+                             vector< FreqData * > **freqDataByChr,
+                             vector< GenoLikeData * > **GLDataByChr,
+                             const vector< vector<int> > &keepByChr,
+                             bool USE_GL, bool PHASED)
 {
     vector< MapData * > *mapDataByChr2 = new vector< MapData * >;
     vector< HapData * > *hapDataByChr2 = new vector< HapData * >;
@@ -2205,10 +2500,8 @@ static int filterSites(vector< MapData * > **mapDataByChr,
         MapData  *mapData  = (*mapDataByChr)->at(i);
         HapData  *hapData  = (*hapDataByChr)->at(i);
         FreqData *freqData = (*freqDataByChr)->at(i);
-        const GenMapScaffold *scaffold =
-            (scaffoldMapByChr != NULL) ? scaffoldMapByChr->at(i) : NULL;
 
-        vector<int> keep = keepSites(mapData, freqData, scaffold);
+        const vector<int> &keep = keepByChr[i];
         int newLoci = int(keep.size());
 
         MapData *mapData2 = initMapData(newLoci);
@@ -2252,6 +2545,24 @@ static int filterSites(vector< MapData * > **mapDataByChr,
     *freqDataByChr = freqDataByChr2;
 
     return numLoci;
+}
+
+static int filterSites(vector< MapData * > **mapDataByChr,
+                       vector< HapData * > **hapDataByChr,
+                       vector< FreqData * > **freqDataByChr,
+                       vector< GenoLikeData * > **GLDataByChr,
+                       vector< GenMapScaffold * > *scaffoldMapByChr,
+                       bool USE_GL, bool PHASED)
+{
+    vector< vector<int> > keepByChr((*mapDataByChr)->size());
+    for (unsigned int i = 0; i < (*mapDataByChr)->size(); i++)
+    {
+        const GenMapScaffold *scaffold =
+            (scaffoldMapByChr != NULL) ? scaffoldMapByChr->at(i) : NULL;
+        keepByChr[i] = keepSites((*mapDataByChr)->at(i), (*freqDataByChr)->at(i), scaffold);
+    }
+    return filterSitesByKeep(mapDataByChr, hapDataByChr, freqDataByChr, GLDataByChr,
+                             keepByChr, USE_GL, PHASED);
 }
 
 int filterMonomorphicSites(vector< MapData * > **mapDataByChr,

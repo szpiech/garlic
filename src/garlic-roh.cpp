@@ -838,7 +838,8 @@ void writeFROH(string outfile,
                bool CM,
                const string &popLabel,
                bool pooled,
-               const vector<ChrRole> *role)
+               const vector<ChrRole> *role,
+               const ExcludedRegions *excluded)
 {
     const int nclass = int(bounds.size()) + 1;   //A..  plus the ALL column set
 
@@ -854,18 +855,39 @@ void writeFROH(string outfile,
     //constants and a rule about who gets the second one, rather than a
     //denominator per individual.
     double denomAuto = 0, denomSex = 0;
-    bool haveSexChr = false;
-    string sexChrNames;
+    bool haveSexChr = false, haveExcluded = false;
+    string sexChrNames, excludedList;
     for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
     {
         MapData *md = mapDataByChr->at(chr);
         ChrRole r = (role != NULL && chr < role->size()) ? role->at(chr) : CHR_AUTOSOME;
         if (md->nloci < 2) continue;
 
+        pos_t first = md->physicalPos[0];
+        pos_t last  = md->physicalPos[md->nloci - 1];
+        const vector<Interval> *iv = (excluded != NULL) ? excluded->get(md->chr) : NULL;
+
         double span;
         if (CM)
         {
             span = md->geneticPos[md->nloci - 1] - md->geneticPos[0];
+            //The centromere is NOT subtracted in cM: a genetic map already
+            //spans about 0 cM across it, and taking it off again would
+            //double-count.  That reasoning does not carry to a
+            //pseudoautosomal region, which carries an obligate crossover and
+            //is the most recombinationally active part of the genome per base
+            //-- so an interior one overstates a cM denominator by more than a
+            //centromere would.  Subtracted here as the genetic distance
+            //between the loci that flank it, which needs no interpolation
+            //because both of them are in the map.
+            for (unsigned int k = 0; iv != NULL && k < iv->size(); k++)
+            {
+                if (iv->at(k).start <= first || iv->at(k).end >= last) continue;
+                int after = -1;
+                for (int locus = 0; locus < md->nloci; locus++)
+                    if (md->physicalPos[locus] > iv->at(k).end) { after = locus; break; }
+                if (after > 0) span -= (md->geneticPos[after] - md->geneticPos[after - 1]);
+            }
         }
         else
         {
@@ -880,6 +902,18 @@ void writeFROH(string outfile,
                 double ole = (ge < hi ? ge : hi);
                 if (ole > ols) span -= (ole - ols);
             }
+            //Merged, so overlapping exclusions are not subtracted twice, and
+            //clipped, so a terminal one contributes nothing.
+            if (iv != NULL) span -= double(excluded->overlap(md->chr, first, last));
+        }
+
+        for (unsigned int k = 0; iv != NULL && k < iv->size(); k++)
+        {
+            haveExcluded = true;
+            if (!excludedList.empty()) excludedList += ",";
+            ostringstream ss;
+            ss << md->chr << ":" << (long long)iv->at(k).start << "-" << (long long)iv->at(k).end;
+            excludedList += ss.str();
         }
 
         if (r == CHR_SEX_SHARED)
@@ -918,6 +952,8 @@ void writeFROH(string outfile,
     out << "## size_class_boundaries";
     for (unsigned int i = 0; i < bounds.size(); i++) out << "\t" << bounds[i];
     out << "\n";
+    if (haveExcluded)
+        out << "## excluded_regions\t" << excludedList << "\n";
     out << "## autosome_denominator\t" << (long long)(denomAuto + 0.5) << "\t";
     out << (CM ? "sum over analysed autosomes of (last - first genetic position)"
                : "sum over analysed autosomes of (last - first physical position), minus the assembly gap inside that span")

@@ -86,7 +86,13 @@ void writeFROH(string outfile,
                bool CM,
                const string &popLabel,
                bool pooled,
-               const vector<ChrRole> *role = NULL);
+               const vector<ChrRole> *role = NULL,
+               //Excluded regions are already gone from the map, so a TERMINAL
+               //one needs no handling: dropping its loci moved the first or
+               //last marker inward and the span shrank by itself.  An INTERIOR
+               //one does not, and stays in the denominator unless it is
+               //subtracted here.
+               const ExcludedRegions *excluded = NULL);
 void calcLOD(MapData *mapData,
              HapData *hapData, FreqData *freqData,
              GenoLikeData *GLData,

@@ -437,6 +437,12 @@ With --tgls (legacy; the format holds ONE value per genotype): GQ As above.  The
 --overlap-frac <double>: The minimum fraction of overlapping windows above the LOD cutoff required to begin constructing a run. ROH will have a lower bound size threshold of WINSIZE*OVERLAP_FRAC. If set to 0, GARLIC sets the value to the lowest sensible value: 1/winsize.
 	Default: 0.25
 
+--par <string1> ... <stringN>: Pseudoautosomal regions on the shared sex chromosome, as <chr>:<start>-<end>, comma or space separated. They are diploid in both sexes and too short to call at a useful window size, so the loci inside them are dropped. ANY NUMBER of regions per chromosome: humans have two, other species have more, and a system with several shared sex chromosomes can have them on each. Coordinates are read in the assembly the input uses; there is deliberately no way to name a pseudoautosomal region by chromosome code, because PLINK's 25 is an ordinary autosome in most species. garlic ships no built-in table: the coordinates differ between assemblies, and a wrong one silently drops the wrong part of a chromosome.
+	Default: none, and see the manual for what that costs
+
+--par-file <string>: The same regions from a file, one per line, <chr> <start> <end>. '#' comments and blank lines are ignored and .gz is accepted. Unlike --centromere, repeated rows for a chromosome ADD a region rather than replacing one. May be given together with --par; the regions accumulate.
+	Default: none
+
 --phased <bool>: Set if data are phased and you want to calculate r2 instead of hr2 while --weighted is set. Uses extra RAM. Has no effect on computations without --weighted.
 	Default: false
 
