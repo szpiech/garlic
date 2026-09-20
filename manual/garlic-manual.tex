@@ -92,7 +92,7 @@ GARLIC can be run by executing the following command.
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --out example --lod-cutoff 2.5 --size-bounds 500000 1000000}
 ~\\\\
-\noindent To run the wLOD, you must provide a map file and give the --weighted flag:
+\noindent To run the wLOD, you must provide a map file and give the {\tt --weighted} flag:
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --map example.map.gz --weighted --build hg18 --winsize 60 --out example --error 0.001}
 ~\\\\
@@ -171,7 +171,7 @@ The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED plus a {
 \begin{verbatim}
 	http://zzz.bwh.harvard.edu/plink/data.shtml#tr
 \end{verbatim}
-\noindent map (required when --weighted or --cm are set):
+\noindent map (required when {\tt --weighted} or {\tt --cm} are set):
 \begin{verbatim}
 	<chr> <snpid> <genetic pos> <physical pos>
 	http://zzz.bwh.harvard.edu/plink/data.shtml#map 
@@ -188,12 +188,12 @@ The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED plus a {
 	<sample id> <population> [sex]
 \end{verbatim}
 \noindent Matched by sample ID, never by position.  Note the column order is the opposite of a TFAM's first two columns; a TFAM-ordered file is diagnosed as such.  The optional third column uses PLINK sex coding and only makes the sex-chromosome warning specific.
-\noindent freq (optional, output during computation, can be generated without running whole pipeling with --freq-only): 
+\noindent freq (optional, output during computation, can be generated without running the whole pipeline with {\tt --freq-only}): 
 \begin{verbatim}
 	CHR SNP POS ALLELE FREQ
 	<chr> <locus ID> <allele> <freq>
 \end{verbatim}	
-\noindent centromere file (required if no --build is set):
+\noindent centromere file (required if no {\tt --build} is set):
 \begin{verbatim}
 	<chr> <centromere start> <centromere end>
 \end{verbatim}
