@@ -87,8 +87,9 @@ const string HELP_VCF = "A VCF file (plain or gzipped) to read genotypes from, i
 \tthe #CHROM line, so --tfam is neither needed nor accepted; use --pop to\n\
 \tsupply population labels.\n\
 \t\n\
-\tSites must be grouped by chromosome. Ploidy must be 2 at every call, and\n\
-\twith --phased every call must use '|'.";
+\tSites must be grouped by chromosome. Ploidy must be 2, except on a\n\
+\tchromosome declared with --sex-system or --sex-chr, where a haploid call is\n\
+\tread as hemizygous. With --phased every call must use '|'.";
 
 const string ARG_VCF_PASS_ONLY = "--vcf-pass-only";
 const bool DEFAULT_VCF_PASS_ONLY = false;

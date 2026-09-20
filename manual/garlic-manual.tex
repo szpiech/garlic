@@ -292,7 +292,7 @@ than falling back to its marker span, since mixing the two conventions across
 chromosomes gives a denominator that is neither.
 
 Lengths come from {\tt --chr-lengths}, from {\tt --build}, or from a VCF's
-{\tt ##contig} header, in that order of precedence.  {\tt --chr-lengths} takes
+{\tt \#\#contig} header, in that order of precedence.  {\tt --chr-lengths} takes
 two whitespace-separated columns, chromosome and length, and also accepts a
 {\tt samtools faidx} {\tt .fai} unchanged --- its first two columns are
 already name and length.  It is the way to use this mode on a non-human
