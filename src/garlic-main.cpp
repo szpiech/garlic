@@ -689,11 +689,19 @@ int main(int argc, char *argv[])
     //heterozygotes while keeping homozygotes is not a random thinning.
     ExcludedRegions par;
     {
-        bool any = false;
+        bool any = false, suppressed = false, fromBuild = false;
         if (params->isFlagSet(ARG_PAR))
         {
-            if (parsePARSpecs(params->getStringListFlag(ARG_PAR), par) < 0) return 1;
-            any = true;
+            vector<string> specs = params->getStringListFlag(ARG_PAR);
+            //"--par none" is how a run on a human build says it does not want
+            //the built-in regions: the alternative would be another flag whose
+            //only job is to turn one table off.
+            if (specs.size() == 1 && specs[0].compare("none") == 0) suppressed = true;
+            else
+            {
+                if (parsePARSpecs(specs, par) < 0) return 1;
+                any = true;
+            }
         }
         string parFile = params->getStringFlag(ARG_PAR_FILE);
         if (parFile.compare(DEFAULT_PAR_FILE) != 0)
@@ -701,6 +709,37 @@ int main(int argc, char *argv[])
             if (readPARFile(parFile, par) < 0) return 1;
             any = true;
         }
+
+        //The assembly defines these, so --build supplies them.  Only when the
+        //user has named none of their own: a run that says --par means the
+        //regions it names, not those plus a table it did not ask for.
+        if (!any && !suppressed && sexModel.anyOfRole(CHR_SEX_SHARED) && isHumanBuild(BUILD))
+        {
+            //Only for the human X, and filed under the name this data set
+            //calls it -- chrX in one file and 23 in the next.  A shared sex
+            //chromosome under a human build that is not the X is someone
+            //else's chromosome in human coordinates, and guessing there would
+            //be worse than doing nothing.
+            string sharedName;
+            for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+            {
+                if (sexModel.role[chr] != CHR_SEX_SHARED) continue;
+                string key = canonChrKey(mapDataByChr->at(chr)->chr);
+                if (key.compare("x") == 0 || key.compare("23") == 0)
+                    sharedName = mapDataByChr->at(chr)->chr;
+            }
+            vector<Interval> builtin;
+            if (!sharedName.empty() && builtinPAR(BUILD, builtin))
+            {
+                for (unsigned int i = 0; i < builtin.size(); i++)
+                    par.add(sharedName, builtin[i].start, builtin[i].end);
+                any = true; fromBuild = true;
+                LOG.log("Pseudoautosomal regions for", BUILD, false);
+                LOG.log(" applied to", sharedName, false);
+                LOG.log("; see centromeres/par_regions.txt. Pass --par none to keep them.");
+            }
+        }
+
         if (any)
         {
             if (par.finalise() < 0) return 1;
@@ -711,7 +750,8 @@ int main(int argc, char *argv[])
                 return 1;
             }
             if (dropExcludedSites(&mapDataByChr, &hapDataByChr, &freqDataByChr,
-                                  &GLDataByChr, par, sexModel, USE_GL, PHASED) < 0) return 1;
+                                  &GLDataByChr, par, sexModel, USE_GL, PHASED,
+                                  fromBuild) < 0) return 1;
         }
     }
 

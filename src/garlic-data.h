@@ -502,6 +502,16 @@ private:
 int parsePARSpecs(const vector<string> &specs, ExcludedRegions &par);
 int readPARFile(const string &filename, ExcludedRegions &par);
 
+//The pseudoautosomal regions of a human assembly, as the Genome Reference
+//Consortium defines them; see centromeres/par_regions.txt, which records the
+//rows and where they came from.  X only: Y is dropped whole, so a region on it
+//has nothing to exclude from.  Returns false for a build with no table.
+//Returned as coordinates rather than added directly, because the caller knows
+//what the chromosome is CALLED in this data set: the same human X is chrX in
+//one file and 23 in the next, and a region has to be filed under the name the
+//data uses or it will not be found there.
+bool builtinPAR(const string &build, vector<Interval> &regions);
+
 //Drops every locus inside an excluded region and reports how many each
 //INTERVAL removed -- a total is diagnostic enough for one PAR, but with
 //several it is the per-interval counts that reveal a coordinate given in the
@@ -515,7 +525,12 @@ int dropExcludedSites(vector< MapData * > **mapDataByChr,
                       vector< GenoLikeData * > **GLDataByChr,
                       const ExcludedRegions &par,
                       const SexModel &model,
-                      bool USE_GL, bool PHASED);
+                      bool USE_GL, bool PHASED,
+                      //Regions that came from --build are the assembly's own
+                      //definition, so one of them containing no marker says
+                      //something about the data rather than about the
+                      //coordinates, and is reported rather than warned about.
+                      bool fromBuild = false);
 
 int filterChromosomes(vector<string> &keep,
                       vector< MapData * > **mapDataByChr,

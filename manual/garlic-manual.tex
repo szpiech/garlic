@@ -447,11 +447,17 @@ warns by name.
 
 They are identified by coordinates on a declared sex chromosome and never by a
 chromosome code, because PLINK's 25 is an ordinary autosome in most species.
-{\tt garlic} ships no built-in table: the coordinates differ between assemblies
-and a wrong one silently drops the wrong part of a chromosome.
 
-Running without them has a bounded cost, which is worth knowing rather than
-discovering.  The heterogametic sex's genotypes in the pseudoautosomal region
+For the human X, {\tt --build} supplies them: the coordinates are the Genome
+Reference Consortium's own definition for that assembly, recorded with their
+source in {\tt centromeres/par\_regions.txt}, and they are filed under whatever
+the data calls that chromosome --- {\tt chrX} in one file and {\tt 23} in the
+next.  Naming any region with {\tt --par} replaces them, and {\tt --par none}
+keeps them all.  No table is supplied for a shared sex chromosome that is not
+the human X, since a species' own coordinates are not the assembly's.
+
+Running without them --- on a non-human assembly, or under {\tt --par none} ---
+has a bounded cost, which is worth knowing rather than discovering.  The heterogametic sex's genotypes in the pseudoautosomal region
 are recoded as hemizygous along with the rest of the chromosome, so their real
 heterozygous calls there are counted as impossible and discarded --- inflating
 {\tt n\_het\_recoded} by roughly that region's share of the markers, about 1--2\%

@@ -1,0 +1,40 @@
+# Pseudoautosomal regions of the four human assemblies garlic knows about.
+#
+# Source: the Genome Reference Consortium's own region reports, which are the
+# definition rather than a derivation of it.  Rows with region type PAR, taken
+# verbatim from:
+#
+#   hg18  https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.12_NCBI36/GCF_000001405.12_NCBI36_assembly_regions.txt
+#   hg19  https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.25_GRCh37.p13/GCF_000001405.25_GRCh37.p13_assembly_regions.txt
+#   hg38  https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_assembly_regions.txt
+#   t2t   https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/009/914/755/GCF_009914755.1_T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_assembly_regions.txt
+#
+# Retrieved 2026-09-20.  Coordinates are 1-based and inclusive at both ends,
+# which is what --par and --par-file take.
+#
+# The Y rows are recorded here because the GRC defines them and because a
+# reader should be able to check this file against the source, but garlic's
+# built-in table carries the X rows ONLY: Y is a degenerate sex chromosome and
+# is dropped from the analysis whole, so a pseudoautosomal region on it has
+# nothing to exclude from.  Passing this file to --par-file as it stands is
+# therefore an error -- garlic refuses a region on a chromosome that is not the
+# shared sex chromosome.  Take the chrX lines for the assembly you are using,
+# or just let --build supply them.
+#
+# build  chr    start       end         region
+hg18     chrX   1           2709520     PAR#1
+hg18     chrX   154584238   154913754   PAR#2
+hg18     chrY   1           2709520     PAR#1
+hg18     chrY   57443438    57772954    PAR#2
+hg19     chrX   60001       2699520     PAR#1
+hg19     chrX   154931044   155260560   PAR#2
+hg19     chrY   10001       2649520     PAR#1
+hg19     chrY   59034050    59363566    PAR#2
+hg38     chrX   10001       2781479     PAR#1
+hg38     chrX   155701383   156030895   PAR#2
+hg38     chrY   10001       2781479     PAR#1
+hg38     chrY   56887903    57217415    PAR#2
+t2t      chrX   1           2394410     PAR#1
+t2t      chrX   153925835   154259566   PAR#2
+t2t      chrY   1           2458320     PAR#1
+t2t      chrY   62122810    62460029    PAR#2

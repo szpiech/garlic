@@ -1921,6 +1921,48 @@ sex_chromosomes() {
         "$GARLIC" --vcf "$WORK/sxbad.vcf" --no-centromere --error 0.001 --freq-only \
         --out "$WORK/sx29"
 
+    # 13. --build supplies the human X regions on its own.  The fixture puts
+    #     chr21's markers inside hg19's PAR1 so the table has something to bite
+    #     on; PAR2 is then empty, which is a fact about the data rather than a
+    #     wrong coordinate and must not warn.
+    gz "$WORK/sxXhemi.tped.gz" | awk 'BEGIN{OFS="\t"} {$4 = $4 - 13000000 + 100000; print}' \
+        | gzip > "$WORK/sxpar19.tped.gz"
+    PARBASE="--error 0.001 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --sex-system xy"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/sxpar19.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg19 $PARBASE \
+        --out "$WORK/sx30" --force >/dev/null 2>"$WORK/sx30.stderr"
+    want=$(gz "$WORK/sxpar19.tped.gz" | awk '$4>=60001 && $4<=2699520' | wc -l | tr -d ' ')
+    got=$(awk '/Excluded region chrX:60001-2699520 dropped/{print $(NF-1)}' "$WORK/sx30.log")
+    if [ "$got" = "$want" ] && [ "$want" != "0" ]; then ok
+    else bad "the hg19 PAR1 table dropped $got loci, expected $want"; fi
+    if grep -q "Pseudoautosomal regions for hg19" "$WORK/sx30.log"; then ok
+    else bad "the built-in PAR table was not reported"; fi
+    if grep -q "contains no loci" "$WORK/sx30.stderr"; then
+        bad "an empty region from the build table warned as if it were a wrong coordinate"
+    else ok; fi
+    # The coordinates are the assembly's, so a different build must move them.
+    "$GARLIC" --tped "$WORK/sxpar19.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg38 $PARBASE \
+        --out "$WORK/sx31" --force >/dev/null 2>&1
+    if grep -q "Excluded region chrX:10001-2781479" "$WORK/sx31.log" && \
+       ! grep -q "Excluded region chrX:60001-2699520" "$WORK/sx31.log"; then ok
+    else bad "the PAR table does not follow --build"; fi
+    # Named regions replace the table; --par none keeps them all.
+    "$GARLIC" --tped "$WORK/sxpar19.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg19 $PARBASE \
+        --par chrX:200000-300000 --out "$WORK/sx32" --force >/dev/null 2>&1
+    if grep -q "Excluded region chrX:200000-300000" "$WORK/sx32.log" && \
+       ! grep -q "Excluded region chrX:60001-2699520" "$WORK/sx32.log"; then ok
+    else bad "a named region did not replace the build's table"; fi
+    "$GARLIC" --tped "$WORK/sxpar19.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg19 $PARBASE \
+        --par none --out "$WORK/sx33" --force >/dev/null 2>&1
+    if ! grep -q "Excluded region" "$WORK/sx33.log"; then ok
+    else bad "--par none did not suppress the build's table"; fi
+    # Under PLINK's numbering the same chromosome is called 23, and a region
+    # filed under "chrX" would not be found on it.
+    "$GARLIC" --tped "$WORK/sx23hemi.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 $PARBASE \
+        --out "$WORK/sx34" --force >/dev/null 2>"$WORK/sx34.stderr"
+    if [ $? -eq 0 ] && grep -q "applied to chr23" "$WORK/sx34.log"; then ok
+    else bad "the build's PAR table was not filed under the name the data uses"; fi
+
     # 9f. A cutoff at or below the uncallable-window sentinel would call every
     #     window that exists to be uncallable, including these.
     expect_exit 1 "--lod-cutoff below the MISSING sentinel" \

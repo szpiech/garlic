@@ -323,9 +323,10 @@ const string HELP_PAR = "Pseudoautosomal regions on the shared sex chromosome, a
 \teach. Coordinates are read in the assembly the input uses; there is\n\
 \tdeliberately no way to name a pseudoautosomal region by chromosome code,\n\
 \tbecause PLINK's 25 is an ordinary autosome in most species.\n\
-\tgarlic ships no built-in table: the coordinates differ between assemblies,\n\
-\tand a wrong one silently drops the wrong part of a chromosome.\n\
-\tDefault: none, and see the manual for what that costs";
+\t--build supplies the human X regions on its own, from the Genome Reference\n\
+\tConsortium's definition for that assembly; see centromeres/par_regions.txt.\n\
+\tNaming any region here replaces them, and --par none keeps them all.\n\
+\tDefault: the regions for --build, or none without one";
 
 const string ARG_PAR_FILE = "--par-file";
 const string DEFAULT_PAR_FILE = "none";

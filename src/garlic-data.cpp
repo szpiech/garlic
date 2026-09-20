@@ -918,6 +918,37 @@ int readPARFile(const string &filename, ExcludedRegions &par)
     return 0;
 }
 
+bool builtinPAR(const string &build, vector<Interval> &regions)
+{
+    //From the GRC region report for each assembly, recorded with its source
+    //URL in centromeres/par_regions.txt.  1-based and inclusive at both ends,
+    //which is what ExcludedRegions holds.  Only the X rows: the Y is a
+    //degenerate sex chromosome and never reaches the analysis, and a region
+    //naming it would be refused as not being the shared sex chromosome.
+    regions.clear();
+    if (build.compare("hg18") == 0)
+    {
+        regions.push_back(Interval(1, 2709520));
+        regions.push_back(Interval(154584238, 154913754));
+    }
+    else if (build.compare("hg19") == 0)
+    {
+        regions.push_back(Interval(60001, 2699520));
+        regions.push_back(Interval(154931044, 155260560));
+    }
+    else if (build.compare("hg38") == 0)
+    {
+        regions.push_back(Interval(10001, 2781479));
+        regions.push_back(Interval(155701383, 156030895));
+    }
+    else if (build.compare("t2t-chm13") == 0)
+    {
+        regions.push_back(Interval(1, 2394410));
+        regions.push_back(Interval(153925835, 154259566));
+    }
+    return !regions.empty();
+}
+
 //Defined below, with the rest of the site filtering.
 static int filterSitesByKeep(vector< MapData * > **mapDataByChr,
                              vector< HapData * > **hapDataByChr,
@@ -932,7 +963,8 @@ int dropExcludedSites(vector< MapData * > **mapDataByChr,
                       vector< GenoLikeData * > **GLDataByChr,
                       const ExcludedRegions &par,
                       const SexModel &model,
-                      bool USE_GL, bool PHASED)
+                      bool USE_GL, bool PHASED,
+                      bool fromBuild)
 {
     const unsigned int nchr = (*mapDataByChr)->size();
 
@@ -1005,7 +1037,11 @@ int dropExcludedSites(vector< MapData * > **mapDataByChr,
             LOG.log("Excluded region", label, false);
             LOG.log(" dropped", dropped[i], false);
             LOG.log(" loci.");
-            if (dropped[i] == 0)
+            if (dropped[i] == 0 && fromBuild)
+            {
+                LOG.log("\tThis region contains no loci in this data set.");
+            }
+            else if (dropped[i] == 0)
             {
                 LOG.err("WARNING: the excluded region", label, false);
                 LOG.err(" contains no loci. Check that its coordinates");

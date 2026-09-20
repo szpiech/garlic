@@ -147,9 +147,10 @@ The two are not summed.  The table also changes shape: one row per individual wi
 across columns, replacing one row per individual per size class.
 
 --par and --par-file exclude pseudoautosomal regions, any number of them per chromosome, given
-as coordinates rather than by a chromosome code.  garlic ships no built-in table: the
-coordinates differ between assemblies and a wrong one silently drops the wrong part of a
-chromosome.
+as coordinates rather than by a chromosome code.  For the human X, --build supplies them from
+the Genome Reference Consortium's definition for that assembly, filed under whatever the data
+calls the chromosome; see centromeres/par_regions.txt for the coordinates and where they came
+from.  --par replaces them and --par none keeps them all.
 
 Chromosome names are matched case-insensitively and ignoring a leading chr, so --chr x finds
 chrX and a --build table matches a file that spells its chromosomes as bare numbers.  Two
@@ -491,8 +492,8 @@ With --tgls (legacy; the format holds ONE value per genotype): GQ As above.  The
 --overlap-frac <double>: The minimum fraction of overlapping windows above the LOD cutoff required to begin constructing a run. ROH will have a lower bound size threshold of WINSIZE*OVERLAP_FRAC. If set to 0, GARLIC sets the value to the lowest sensible value: 1/winsize.
 	Default: 0.25
 
---par <string1> ... <stringN>: Pseudoautosomal regions on the shared sex chromosome, as <chr>:<start>-<end>, comma or space separated. They are diploid in both sexes and too short to call at a useful window size, so the loci inside them are dropped. ANY NUMBER of regions per chromosome: humans have two, other species have more, and a system with several shared sex chromosomes can have them on each. Coordinates are read in the assembly the input uses; there is deliberately no way to name a pseudoautosomal region by chromosome code, because PLINK's 25 is an ordinary autosome in most species. garlic ships no built-in table: the coordinates differ between assemblies, and a wrong one silently drops the wrong part of a chromosome.
-	Default: none, and see the manual for what that costs
+--par <string1> ... <stringN>: Pseudoautosomal regions on the shared sex chromosome, as <chr>:<start>-<end>, comma or space separated. They are diploid in both sexes and too short to call at a useful window size, so the loci inside them are dropped. ANY NUMBER of regions per chromosome: humans have two, other species have more, and a system with several shared sex chromosomes can have them on each. Coordinates are read in the assembly the input uses; there is deliberately no way to name a pseudoautosomal region by chromosome code, because PLINK's 25 is an ordinary autosome in most species. --build supplies the human X regions on its own, from the Genome Reference Consortium's definition for that assembly; see centromeres/par_regions.txt. Naming any region here replaces them, and --par none keeps them all.
+	Default: the regions for --build, or none without one
 
 --par-file <string>: The same regions from a file, one per line, <chr> <start> <end>. '#' comments and blank lines are ignored and .gz is accepted. Unlike --centromere, repeated rows for a chromosome ADD a region rather than replacing one. May be given together with --par; the regions accumulate.
 	Default: none
