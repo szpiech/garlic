@@ -336,10 +336,11 @@ garlic no longer links GNU GSL, FIGTree or ANN. The ten GSL routines it used are
 bit for bit in garlic-math.cpp, which removes 44 MB of vendored archives from every clone
 and the largest source of build friction. Windows users no longer need the FIGTree DLLs.
 
-A test suite is included: sh test/run_tests.sh runs 92 checks (91 where bgzip is not installed) -- unit tests, golden-output
-regression, mode smoke tests, exit-code and --load-params round-trip contracts, and the VCF
-equivalences above -- from tracked data only. A GitHub Actions workflow builds on
-ubuntu/macos-arm/macos-x86, runs the suite, runs every mode under ASan and UBSan, checks
+A test suite is included: sh test/run_tests.sh runs 252 checks (253 where bgzip is installed),
+one of which is a unit-test binary of a further 337 assertions -- golden-output regression,
+mode smoke tests, exit-code and --load-params round-trip contracts, and the VCF
+equivalences above -- from tracked data only. A GitHub Actions workflow builds on ubuntu
+(shared and static) and macOS, runs the suite, runs every mode under ASan and UBSan, checks
 that the generated command line reference in this file and manual/flags.tex is in sync with
 the help strings, and runs every command in example/example_README.txt.
 

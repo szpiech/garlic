@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {os: ubuntu-latest, label: linux-x86_64, static: ''}
+          - {os: ubuntu-latest, label: linux-x86_64, static: '', platform: ''}
           # The DEFAULT linux link is -static, and until this entry existed no job
           # built it: every one passed STATIC=.  That matters specifically for
           # std::thread, which decides at runtime whether threading is available by
@@ -26,9 +26,30 @@ jobs:
           # succeeded.  The Makefile wraps -lpthread in --whole-archive to prevent
           # it; this entry is what checks that the wrapping works.  It also needs
           # the static zlib, which zlib1g-dev provides.
-          - {os: ubuntu-latest, label: linux-x86_64-static, static: '-static'}
-          - {os: macos-latest,  label: macos-arm64,  static: ''}
-          - {os: macos-13,      label: macos-x86_64, static: ''}
+          - {os: ubuntu-latest, label: linux-x86_64-static, static: '-static', platform: ''}
+          # One macOS entry, building both architectures into one binary.
+          #
+          # This replaced two native entries, macos-latest for arm64 and
+          # macos-13 for x86_64.  macos-13 had to go regardless: GitHub began
+          # deprecating that image in September 2025 and withdrew it that
+          # December, and a job asking for a label no runner claims queues
+          # forever rather than failing.  Its Intel successor,
+          # macos-15-intel, is itself the last x86_64 image and is scheduled
+          # to go in 2027.
+          #
+          # What is lost, stated plainly: an arm64 runner can only EXECUTE the
+          # arm64 slice, so the test suite below covers arm64 and the x86_64
+          # half is compiled and linked but not run.  `make check-universal`
+          # asserts that half exists, which a successful build does not --
+          # a universal link missing its arch flags quietly emits a thin
+          # binary for the host.
+          #
+          # The evidence that this is an acceptable trade is that the two
+          # slices agree: split with lipo and run separately, both pass the
+          # whole harness against the SAME golden checksums, so arm64 and
+          # x86_64 macOS produce bit-identical output here -- no FMA
+          # contraction or vectorisation divergence to catch.
+          - {os: macos-latest,  label: macos-universal, static: '', platform: 'macos-universal'}
     steps:
       - uses: actions/checkout@v5
 
@@ -42,20 +63,37 @@ jobs:
       - name: Build
         working-directory: src
         run: |
-          make STATIC="${{ matrix.static }}"
+          # PLATFORM is autodetected from uname everywhere but the universal
+          # build, which is opt-in because it compiles every translation unit
+          # twice.  An empty value leaves the detection alone.
+          make STATIC="${{ matrix.static }}" PLATFORM="${{ matrix.platform }}"
           ./garlic --version
 
+      - name: Both architectures present
+        if: matrix.platform == 'macos-universal'
+        working-directory: src
+        run: make PLATFORM=macos-universal check-universal
+
+      # On the universal build this runs the arm64 slice -- the only one an
+      # arm64 runner can execute.  The x86_64 slice is covered by the step
+      # above, which is existence and not behaviour; see the matrix comment.
       - name: Test
         run: sh test/run_tests.sh
 
       # A build with no warnings is worth keeping that way: -Wall is already on
       # by default, this just makes regressions visible without failing the run.
+      #
+      # Counted unique: a universal build compiles each translation unit once
+      # per architecture, so a plain `grep -c` reports every warning twice and
+      # the number is not comparable with the other jobs'.  Identical text
+      # dedupes to one; a warning raised on only one architecture still counts,
+      # because it is still one distinct line.
       - name: Warning count
         working-directory: src
         run: |
           make clean
-          make STATIC="${{ matrix.static }}" 2>&1 | tee build.log
-          echo "warnings: $(grep -c 'warning:' build.log || true)"
+          make STATIC="${{ matrix.static }}" PLATFORM="${{ matrix.platform }}" 2>&1 | tee build.log
+          echo "warnings: $(grep 'warning:' build.log | sort -u | wc -l | tr -d ' ')"
 
   sanitizers:
     name: asan + ubsan

@@ -7,6 +7,7 @@
 #     make CXX=clang++           # different compiler
 #     make OPTFLAGS='-O2 -g'     # different optimisation level
 #     make PLATFORM=win32        # cross/explicit platform
+#     make PLATFORM=macos-universal   # one binary for both macOS architectures
 #
 # NOTE: do not use `-fast` here.  It is an Intel/legacy-Apple spelling that
 # clang accepts and silently ignores ("argument unused during compilation"),
@@ -17,12 +18,22 @@ CXX ?= g++
 UNAME_S := $(shell uname -s)
 UNAME_M := $(shell uname -m)
 
-ifndef PLATFORM
+# An EMPTY PLATFORM means autodetect, not "no platform".  ifndef would not do
+# that: a `make PLATFORM=` on the command line leaves the variable defined with
+# an empty value, so detection was skipped and the build died on "Unknown
+# PLATFORM ''".  That matters wherever the value is substituted in rather than
+# typed -- a CI matrix with one entry that wants an explicit platform and the
+# rest that do not.
+#
+# `override` is required, not stylistic: a variable set on the command line
+# beats every assignment in the makefile, so without it the detection below
+# runs and its result is discarded.
+ifeq ($(strip $(PLATFORM)),)
   ifeq ($(UNAME_S),Darwin)
     ifeq ($(UNAME_M),arm64)
-      PLATFORM = macos-arm
+      override PLATFORM = macos-arm
     else
-      PLATFORM = osx
+      override PLATFORM = osx
     endif
   # MSYS2/MinGW report MINGW64_NT-10.0-..., MSYS_NT-... or CYGWIN_NT-...  None
   # of those is Darwin, so they used to fall through to PLATFORM=linux and the
@@ -30,13 +41,13 @@ ifndef PLATFORM
   # The manual says "type make; the Makefile detects the platform from uname,
   # so no editing is needed" -- that was only true off Windows.
   else ifneq (,$(findstring MINGW,$(UNAME_S)))
-    PLATFORM = win32
+    override PLATFORM = win32
   else ifneq (,$(findstring MSYS,$(UNAME_S)))
-    PLATFORM = win32
+    override PLATFORM = win32
   else ifneq (,$(findstring CYGWIN,$(UNAME_S)))
-    PLATFORM = win32
+    override PLATFORM = win32
   else
-    PLATFORM = linux
+    override PLATFORM = linux
   endif
 endif
 
@@ -110,6 +121,24 @@ else ifeq ($(PLATFORM),macos-arm)
   # arm64: the x86 ISA flags (-m64 -mmmx -msse -msse2) are meaningless here
   ARCHFLAGS =
   LINK_OPTS =
+else ifeq ($(PLATFORM),macos-universal)
+  # One binary carrying both macOS architectures.  Never autodetected: it
+  # compiles every translation unit twice, which a local build has no reason
+  # to pay for, so it is opt-in and CI is what asks for it.
+  #
+  # No -m64 -msse2 here even though half the output is x86_64.  Those are
+  # x86 ISA flags and clang rejects them outright for the arm64 slice, so a
+  # universal build cannot carry the flags the osx platform sets -- which is
+  # why this is its own platform and not osx with extra arguments.  SSE2 is
+  # baseline on x86_64 regardless; the flags were explicit for toolchains
+  # older than any that can build a universal binary.
+  #
+  # The arch flags have to appear on the LINK line as well as the compile
+  # line: the link rule passes $(LINK_OPTS) and not $(ARCHFLAGS), and a
+  # universal link driven without them produces a thin binary for the host
+  # from fat objects, silently.  `make check-universal` is what catches that.
+  ARCHFLAGS = -arch arm64 -arch x86_64
+  LINK_OPTS = -arch arm64 -arch x86_64
 else ifeq ($(PLATFORM),win32)
   # No include path either: ../include/win32 held the 2017 zlib headers that
   # went with the 32-bit archive, and both are gone.  MSYS2 supplies zlib.h and
@@ -139,7 +168,7 @@ else ifeq ($(PLATFORM),win32)
   # zlib comes from -lz on the link line like every other platform now.
   LINK_OPTS = -static-libgcc -static-libstdc++
 else
-  $(error Unknown PLATFORM '$(PLATFORM)'; expected linux, osx, macos-arm or win32)
+  $(error Unknown PLATFORM '$(PLATFORM)'; expected linux, osx, macos-arm, macos-universal or win32)
 endif
 
 CXXFLAGS ?= $(OPTFLAGS) $(WARNFLAGS) $(STDFLAG) $(ARCHFLAGS)
@@ -215,7 +244,25 @@ docs : garlic
 	mv README.docs.tmp ../README
 	@echo "regenerated ../README flag block and ../manual/flags.tex"
 
-.PHONY : all clean docs test FORCE
+# Assert that the binary really carries both macOS architectures.  A universal
+# link driven without the arch flags produces a thin binary for the host and
+# reports no error, so "the build succeeded" is not evidence -- this is.  It is
+# also the only check on the x86_64 half: that slice cannot be RUN on an arm64
+# machine, so the test suite exercises the arm64 one and this exercises the
+# existence of the other.
+check-universal : garlic
+	@archs=$$(lipo -archs garlic 2>/dev/null); \
+	echo "architectures: $$archs"; \
+	case " $$archs " in \
+	  *" arm64 "*) ;; \
+	  *) echo "ERROR: no arm64 slice in garlic" >&2; exit 1 ;; \
+	esac; \
+	case " $$archs " in \
+	  *" x86_64 "*) ;; \
+	  *) echo "ERROR: no x86_64 slice in garlic" >&2; exit 1 ;; \
+	esac
+
+.PHONY : all clean docs test check-universal FORCE
 
 # Run the test suite: unit tests, golden-output regression on the bundled
 # example, determinism, the exit-code contract, the --load-params round trip,
