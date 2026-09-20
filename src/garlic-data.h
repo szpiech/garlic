@@ -643,7 +643,11 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
                                int numThreads,
                                int ldSubsample,
                                int sexWinsize = 0,
-                               const vector<ChrRole> *role = NULL);
+                               const vector<ChrRole> *role = NULL,
+                               //Per-individual Zygo, so the subsample for the
+                               //shared sex chromosome can be drawn from the
+                               //individuals who have genotypes there.
+                               const vector<int> *zygo = NULL);
 
 LDData *initLDData(int nloci, int winsize);
 void releaseLDData(LDData *data);

@@ -146,6 +146,15 @@ calls that mean nothing.  Both are recorded in <out>.params.json as sexchr_winsi
 sexchr_lod_cutoff, holding what was applied whether or not the flags were given, and
 --load-params replays them.
 
+--weighted estimates its LD matrix on the shared sex chromosome from the individuals who are
+diploid there, since a half call carries no genotype for either LD statistic to use.  With
+--ld-subsample the subsample for that chromosome is drawn from those individuals, so the
+number asked for is the number that informs it rather than the fraction of them that happens
+to be diploid.  --tgls needs nothing said about it: a half call carries no genotype, so the
+LOD score takes its default branch and never reads the error rate.  The same is true of GQ,
+PL and GL read from a VCF, which matters because a haploid PL array holds one value per
+allele -- two at a biallelic site, not the three a diploid site has.
+
 A check that always runs establishes who is diploid there, from heterozygosity
 (--het-rate-bounds) or from haploid calls where the file provides them.  It verifies a recorded
 sex, infers an unrecorded one, and writes <out>.sexcheck.tsv.  Heterozygous calls in an

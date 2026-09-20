@@ -2050,6 +2050,89 @@ sex_chromosomes() {
         "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" \
         --sex-system xy --freq-only --sexchr-winsize 30 --sexchr-lod-cutoff 1.5 \
         --out "$WORK/sx48" --force
+
+    # 15. --weighted.  Both LD statistics skip a genotype that is not called,
+    #     and a half call is not called, so the LD matrix on the shared sex
+    #     chromosome is estimated among the individuals who are diploid there.
+    #     The map is chr21's, duplicated under the other name.
+    { gz "$EX/chr21.map.gz"; gz "$EX/chr21.map.gz" | sed 's/^21/chrX/'; } | gzip > "$WORK/sxmix.map.gz"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" --map "$WORK/sxmix.map.gz" \
+        --weighted $SXEST --winsize 60 --lod-cutoff 2.5 --out "$WORK/sx50" --force >/dev/null 2>&1
+    awk -F'\t' '$1 == "chrX" { print $4 }' "$WORK/sx50.roh.bed" | sort -u > "$WORK/sx50.called"
+    gz "$EX/chr21.tfam.gz" | awk '$5 == 1 { print $2 }' | sort -u > "$WORK/sx50.hetero"
+    nbad=$(comm -12 "$WORK/sx50.called" "$WORK/sx50.hetero" | wc -l | tr -d ' ')
+    ncalled=$(wc -l < "$WORK/sx50.called" | tr -d ' ')
+    if [ "$ncalled" -gt 0 ] && [ "$nbad" -eq 0 ]; then ok
+    else bad "--weighted called $nbad heterogametic individuals on the sex chromosome"; fi
+    # The weighted path must leave the autosomes alone too.
+    "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --map "$EX/chr21.map.gz" \
+        --weighted --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 \
+        --size-bounds 500000 1000000 --out "$WORK/sx51" --force >/dev/null 2>&1
+    awk '$1 != "chrX"' "$WORK/sx50.roh.bed" | sed 's/^chr21/21/' > "$WORK/sx50.auto"
+    sed 's/^chr21/21/' "$WORK/sx51.roh.bed" > "$WORK/sx51.auto"
+    if diff "$WORK/sx51.auto" "$WORK/sx50.auto" >/dev/null; then ok
+    else bad "--weighted moved an autosomal call when a sex chromosome was present"; fi
+    # A subsample smaller than the heterogametic count: drawn from the whole
+    # cohort it would spend most of its budget on individuals with no
+    # genotypes there, and could contain none who has any.  (The NaN that
+    # produced is covered by the unit tests, which reach hr2 and r2 directly;
+    # this checks the chromosome is still informed at all.)
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" --map "$WORK/sxmix.map.gz" \
+        --weighted $SXEST --winsize 60 --lod-cutoff 2.5 --ld-subsample 4 --seed 1 \
+        --out "$WORK/sx52" --force >/dev/null 2>&1
+    if [ "$(awk '$1 == "chrX"' "$WORK/sx52.roh.bed" | wc -l | tr -d ' ')" -gt 0 ]; then ok
+    else bad "--weighted with a small LD subsample called nothing on the sex chromosome"; fi
+
+    # 16. --tgls.  A half call carries no genotype, so lod() takes its default
+    #     branch and never reads the error rate; the likelihoods still have to
+    #     line up with the sites after the sex chromosome is handled.  The
+    #     fixture is example.tped/example.tgls -- the tracked pair with usable
+    #     GL values -- with chromosome 22 relabelled and made hemizygous.
+    awk '{ print NR"\t"$5 }' "$EX/example.tfam" > "$WORK/sxex.sex"
+    gz "$EX/example.tped.gz" | awk -v OFS='\t' 'NR == FNR { sex[$1] = $2; next }
+        $1 != 22 { print; next }
+        { $1 = "chrX"
+          for (i = 5; i <= NF; i += 2) { j = (i-3)/2; if (sex[j] == 1 && $i != $(i+1)) $(i+1) = $i }
+          print }' "$WORK/sxex.sex" - | gzip > "$WORK/sxex.tped.gz"
+    gz "$EX/example.tgls.gz" | sed 's/^22\t/chrX\t/' | gzip > "$WORK/sxex.tgls.gz"
+    "$GARLIC" --tped "$WORK/sxex.tped.gz" --tfam "$EX/example.tfam" --tgls "$WORK/sxex.tgls.gz" \
+        --gl-type GL --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+        --sex-system xy --out "$WORK/sx53" --force >/dev/null 2>&1
+    awk -F'\t' '$1 == "chrX" { print $4 }' "$WORK/sx53.roh.bed" | sort -u > "$WORK/sx53.called"
+    awk '$5 == 1 { print $2 }' "$EX/example.tfam" | sort -u > "$WORK/sx53.hetero"
+    nbad=$(comm -12 "$WORK/sx53.called" "$WORK/sx53.hetero" | wc -l | tr -d ' ')
+    if [ "$(wc -l < "$WORK/sx53.called" | tr -d ' ')" -gt 0 ] && [ "$nbad" -eq 0 ]; then ok
+    else bad "--tgls called $nbad heterogametic individuals on the sex chromosome"; fi
+    # The allele frequencies do not depend on the likelihoods at all, so the
+    # --tgls run and the --error run have to agree on them exactly.
+    "$GARLIC" --tped "$WORK/sxex.tped.gz" --tfam "$EX/example.tfam" --error 0.001 \
+        --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+        --sex-system xy --out "$WORK/sx54" --force >/dev/null 2>&1
+    gz "$WORK/sx53.freq.gz" | awk '$1 == "chrX"' > "$WORK/sx53.xfreq"
+    gz "$WORK/sx54.freq.gz" | awk '$1 == "chrX"' > "$WORK/sx54.xfreq"
+    if [ -s "$WORK/sx53.xfreq" ] && diff "$WORK/sx53.xfreq" "$WORK/sx54.xfreq" >/dev/null; then ok
+    else bad "--tgls and --error disagree on the sex chromosome's allele frequencies"; fi
+
+    # 17. Haploid calls in a VCF alongside GQ, PL and GL.  A haploid PL array
+    #     has one value per ALLELE -- two at a biallelic site, not the three
+    #     the diploid parser requires.  It is never parsed, because a half
+    #     call is not a called genotype and takes the earlier branch, and
+    #     these three cases are what keeps that ordering.
+    {
+        printf '##fileformat=VCFv4.2\n'
+        printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tm1\tm2\tf1\tf2\n'
+        printf 'chrX\t1000\ts1\tA\tG\t.\tPASS\t.\tGT:GQ:PL:GL\t0:40:0,60:0,-6\t1:40:60,0:-6,0\t0/1:40:60,0,60:-6,0,-6\t0/0:40:0,60,120:0,-6,-12\n'
+        printf 'chrX\t2000\ts2\tA\tG\t.\tPASS\t.\tGT:GQ:PL:GL\t1:40:60,0:-6,0\t1:40:60,0:-6,0\t1/1:40:120,60,0:-12,-6,0\t0/1:40:60,0,60:-6,0,-6\n'
+    } > "$WORK/sxhapgl.vcf"
+    for t in GQ PL GL; do
+        "$GARLIC" --vcf "$WORK/sxhapgl.vcf" --pop "$WORK/sxhap.pop" --no-centromere \
+            --winsize 2 --lod-cutoff 2.5 --size-bounds 100 200 --sex-system xy \
+            --gl-type "$t" --out "$WORK/sxgl$t" --force >/dev/null 2>&1
+        if [ $? -eq 0 ] && [ -f "$WORK/sxgl$t.sexcheck.tsv" ]; then ok
+        else bad "a hemizygous VCF was not read with --gl-type $t"; fi
+    done
 }
 
 params_roundtrip() {

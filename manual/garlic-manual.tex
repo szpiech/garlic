@@ -430,6 +430,18 @@ windows of another size.  Both are recorded in {\tt <out>.params.json} as
 were applied whether or not the flags were given, so the record says what
 happened without a reader having to reconstruct it from the command line.
 
+A half call carries no genotype, which is what the rest of the pipeline needs
+to know about it.  The LOD score takes its default branch for one, so
+{\tt --tgls} and a VCF's {\tt GQ}, {\tt PL} or {\tt GL} need no special
+handling --- the per-genotype error rate is never read there.  That last point
+is load-bearing for a hemizygous VCF: a haploid {\tt PL} array holds one value
+per allele, two at a biallelic site rather than the three a diploid site has,
+and it is never parsed.  Both LD statistics behind {\tt --weighted} skip an
+uncalled genotype too, so the LD matrix on the shared sex chromosome is
+estimated among the individuals who are diploid there; under
+{\tt --ld-subsample} the subsample for that chromosome is drawn from those
+individuals, so the number requested is the number that informs it.
+
 Who is diploid there is established by a check that always runs.  Each
 individual's heterozygosity on that chromosome is compared against
 {\tt --het-rate-bounds} (0.02 and 0.10 by default): below the first it reads as

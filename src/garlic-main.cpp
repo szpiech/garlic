@@ -208,7 +208,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     if(WEIGHTED){
         cerr << "Calculating LD matrix.\n";
         ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads, LD_SUBSAMPLE,
-                                 SEXCHR_WINSIZE, chrRole);
+                                 SEXCHR_WINSIZE, chrRole, &(indData->zygo));
         if(!PHASED) releaseGenoFreq(genoFreqDataByChr);
         winDataByChr = calcwLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
                                        GLDataByChr, ldDataByChr,

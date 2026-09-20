@@ -1969,7 +1969,8 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
                                int numThreads,
                                int ldSubsample,
                                int sexWinsize,
-                               const vector<ChrRole> *role)
+                               const vector<ChrRole> *role,
+                               const vector<int> *zygo)
 {
 
     GarlicRNG *r = getRNG();
@@ -1977,6 +1978,7 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
     //to hold the indicies of the randomly selected individuals
     int nind = hapDataByChr->at(0)->nind;
     vector<int> randInd;
+    bool subsampled = false;
     if (ldSubsample >= nind || ldSubsample <= 0)
     {
         ldSubsample = nind;
@@ -1990,15 +1992,54 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
         randInd.resize(ldSubsample);
         r->choose(randInd.data(), ldSubsample, indIndex.data(), nind);
         nind = ldSubsample;
+        subsampled = true;
     }
 
+    //A separate draw for the shared sex chromosome, from the individuals who
+    //are diploid there.  A heterogametic individual contributes half calls,
+    //which carry no genotype and are skipped by both LD statistics, so a
+    //subsample drawn from the whole cohort spends part of its budget on
+    //individuals that cannot inform the matrix: ask for 20 in a cohort that is
+    //half heterogametic and roughly 10 arrive.  Drawn only when a subsample
+    //was requested AND such a chromosome is present, so no run that predates
+    //this consumes a different sequence of random numbers than it used to.
+    vector<int> sexInd;
+    int sexSubsample = 0;
+    if (subsampled && zygo != NULL && role != NULL)
+    {
+        bool anySexShared = false;
+        for (unsigned int c = 0; c < role->size(); c++)
+            if (role->at(c) == CHR_SEX_SHARED) anySexShared = true;
+        if (anySexShared)
+        {
+            vector<int> pool;
+            for (unsigned int i = 0; i < zygo->size(); i++)
+                if (zygo->at(i) == ZYG_HOMOGAMETIC) pool.push_back(int(i));
+            if (int(pool.size()) <= ldSubsample)
+            {
+                //Fewer diploid individuals than the budget: use them all,
+                //which is the most the chromosome can offer.
+                sexInd = pool;
+            }
+            else
+            {
+                sexInd.resize(ldSubsample);
+                r->choose(sexInd.data(), ldSubsample, pool.data(), int(pool.size()));
+            }
+            sexSubsample = int(sexInd.size());
+        }
+    }
 
     vector< LDData * > *ldDataByChr = new vector< LDData * >;
     for(unsigned int chr = 0; chr < hapDataByChr->size(); chr++){
         cerr << mapDataByChr->at(chr)->chr << "    ";
         const int w = winsizeForChr(winsize, sexWinsize, role, chr);
-        if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), w, numThreads, randInd.data(), ldSubsample));
-        else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), w, numThreads, randInd.data(), ldSubsample));
+        int *useInd = randInd.data();
+        int useN = ldSubsample;
+        if (sexSubsample > 0 && chr < role->size() && role->at(chr) == CHR_SEX_SHARED)
+        { useInd = sexInd.data(); useN = sexSubsample; }
+        if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), w, numThreads, useInd, useN));
+        else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), w, numThreads, useInd, useN));
     }
     return ldDataByChr;
 }
@@ -2317,6 +2358,14 @@ double hr2(HapData *hapData, GenoFreqData *genoFreqData, int i, int j, int *indI
                 }
             }
         }
+        //Nobody in the sample has a genotype at both loci, so there is no
+        //evidence about the LD between them.  0/0 used to reach the caller as
+        //a NaN, which becomes 1/NaN in the weighted LOD and leaves every
+        //window containing this pair silently uncalled -- no error, no
+        //warning, a stretch of chromosome simply absent from the output.
+        //Zero is the same answer the monomorphic branch gives, and the
+        //diagonal keeps the window's LD sum at least 1.
+        if (total == 0) return 0;
         HAB /= total;
         double H = HAB - HA * HB;
         double HR2 = H * H / (HA * (1 - HA) * HB * (1 - HB));
@@ -2351,6 +2400,8 @@ double r2(HapData *hapData, FreqData *freqData, int i, int j, int *indIndex, int
                 }
             }
         }
+        //As in hr2: no shared genotype means no evidence, not a NaN.
+        if (total == 0) return 0;
         x11 /= total;
         double D = x11 - pi * pj;
         double R2 = D * D / (pi * (1 - pi) * pj * (1 - pj));

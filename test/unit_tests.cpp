@@ -689,6 +689,42 @@ static void test_winsize_for_chr()
     ck(winsizeForChr(60, 30, &role, 7) == 60, "an index past the table means the run's size");
 }
 
+// ------------------------------------------- LD with half calls ---------
+// Both LD statistics skip a genotype that is not called, and a half call is
+// not called.  On the shared sex chromosome that removes every heterogametic
+// individual, so a subsample can contain nobody with genotypes at both loci
+// -- and 0/0 used to leave as a NaN, which the weighted LOD turns into
+// 1/NaN and a silently uncalled stretch of chromosome.
+static void test_ld_no_shared_genotypes()
+{
+    HapData *h = initHapData(6, 2, false);
+    // 0-3 diploid and a mix of homozygous and heterozygous, so the genotype
+    // frequency is strictly between 0 and 1 and the statistic is evaluated
+    // rather than short-circuited; 4 and 5 hemizygous at both loci.
+    geno_t L0[6] = {0, 1, 2, 1, GENO_HALF_COUNTED, GENO_HALF_OTHER};
+    geno_t L1[6] = {2, 1, 0, 1, GENO_HALF_OTHER,   GENO_HALF_COUNTED};
+    for (int i = 0; i < 6; i++) { h->data[0][i] = L0[i]; h->data[1][i] = L1[i]; }
+
+    GenoFreqData *g = calculateGenoFreq(h);
+    ck(g->homFreq[0] > 0 && g->homFreq[0] < 1,
+       "half calls are left out of the genotype frequency");
+
+    FreqData *f = initFreqData(2);
+    f->freq[0] = 0.5; f->freq[1] = 0.5;
+
+    int all[6] = {0, 1, 2, 3, 4, 5};
+    int hemi[2] = {4, 5};
+    ck(hr2(h, g, 0, 1, all, 6) == hr2(h, g, 0, 1, all, 6), "hr2 over the cohort is a number");
+    double bh = hr2(h, g, 0, 1, hemi, 2);
+    double br = r2(h, f, 0, 1, hemi, 2);
+    ck(bh == bh && bh == 0, "hr2 with no shared genotypes is 0, not NaN");
+    ck(br == br && br == 0, "r2 with no shared genotypes is 0, not NaN");
+
+    releaseFreqData(f);
+    releaseGenoFreq(g);
+    releaseHapData(h);
+}
+
 // ------------------------------------------- ExcludedRegions -------------
 // A chromosome has a SET of excluded regions, not one.  Humans already have
 // two pseudoautosomal regions; the container the centromere table uses is one
@@ -1218,6 +1254,7 @@ int main()
     test_canonChrKey();
     test_sex_model();
     test_winsize_for_chr();
+    test_ld_no_shared_genotypes();
     test_chr_key_collisions();
     test_excluded_regions();
     test_glToError();
