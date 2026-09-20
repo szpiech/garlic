@@ -69,7 +69,8 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
                                    bool USE_GL,
                                    double variantDensity,
                                    const vector<ChrRole> *chrRole,
-                                   const ExcludedRegions *parRegions)
+                                   const ExcludedRegions *parRegions,
+                                   const ChrLengths *chrLengths)
 {
     PopResult res;
     res.status = POP_OK;
@@ -339,7 +340,8 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         if (params->getBoolFlag(ARG_FROH))
         {
             writeFROH(outfile + ".froh.tsv", rohDataByInd, mapDataByChr, boundSizes,
-                  indData, centro, CM, popLabel, opt.POOLED, chrRole, parRegions);
+                  indData, centro, CM, popLabel, opt.POOLED, chrRole, parRegions,
+                  opt.FROH_DENOM, chrLengths);
         }
     }
     catch (...) { logCurrentException("writing the ROH calls"); writeStatus = 2; }
@@ -368,6 +370,12 @@ int main(int argc, char *argv[])
     param_t *params = getCLI(argc, argv, cliStatus);
     //0 success, 1 usage error, 2 runtime error.
     if (params == NULL) return (cliStatus == PARAM_HELP) ? 0 : 1;
+
+    //Whatever a VCF's ##contig lines state.  Empty for TPED input and for a
+    //VCF that declares no lengths; the lowest-precedence source of the
+    //lengths --froh-denominator assembly needs, and a cross-check on --build
+    //whether or not that mode is in use.
+    ChrLengths headerLengths;
 
     GarlicOptions opt;
     int optStatus = configureFromCommandLine(params, opt, argc, argv);
@@ -492,7 +500,8 @@ int main(int argc, char *argv[])
             loadVCFData(opt.vcffile, numLoci, numInd,
                         &hapDataByChr, &mapDataByChr, &freqDataByChr, &GLDataByChr,
                         nresample, PHASED, AUTO_FREQ, opt.VCF_PASS_ONLY,
-                        USE_GL ? GL_TYPE : string("none"), sampleIDs, &declaredRoles);
+                        USE_GL ? GL_TYPE : string("none"), sampleIDs, &declaredRoles,
+                        &headerLengths);
 
             LOG.log("Total loci:", numLoci);
 
@@ -923,6 +932,133 @@ int main(int argc, char *argv[])
         }
     }
 
+    //---- chromosome lengths ------------------------------------------------
+    //
+    //Resolved here because it needs three things the command line alone does
+    //not have: which chromosomes survived filtering, what a VCF's header said,
+    //and where each chromosome's last marker lies.
+    //
+    //Precedence: --chr-lengths, then --build, then the VCF header.  The user's
+    //own file is the most specific statement.  --build beats the header
+    //because it already supplies the centromeres and the pseudoautosomal
+    //regions, and taking lengths from a different source than those would be
+    //incoherent.  The header is the file's own claim and is the weakest, but
+    //it is worth having: it is the only length a VCF from a non-human assembly
+    //carries, and it checks --build for free.
+    ChrLengths chrLengths;
+    {
+        ChrLengths buildLengths;
+        const bool haveBuild = builtinChrLengths(BUILD, buildLengths);
+        const bool haveFile  = (opt.CHR_LENGTHS_FILE.compare(DEFAULT_CHR_LENGTHS) != 0);
+
+        if (haveFile)
+        {
+            if (readChrLengthsFile(opt.CHR_LENGTHS_FILE, chrLengths) < 0) return 1;
+        }
+        else if (haveBuild) chrLengths = buildLengths;
+        else if (!headerLengths.empty())
+        {
+            chrLengths = headerLengths;
+            chrLengths.setSource("VCF ##contig header");
+        }
+        if (!chrLengths.empty()) LOG.log("Chromosome lengths:", chrLengths.source());
+
+        //Two assertions about the same thing.  A hg19 VCF analysed under
+        //--build hg38 is a real and otherwise undetectable mistake, and the
+        //header is the only witness to it.  Compared only where both speak,
+        //and only for chromosomes the run actually uses -- a decoy or an alt
+        //contig the build has never heard of is not a disagreement.
+        if (haveBuild && !headerLengths.empty())
+        {
+            for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+            {
+                const string &name = mapDataByChr->at(chr)->chr;
+                pos_t fromHeader = headerLengths.get(name);
+                pos_t fromBuild  = buildLengths.get(name);
+                if (fromHeader == 0 || fromBuild == 0 || fromHeader == fromBuild) continue;
+                ostringstream ss;
+                ss << "ERROR: the VCF header gives " << name << " a length of " << (long long)fromHeader
+                   << ", and " << BUILD << " has " << (long long)fromBuild << ".";
+                LOG.err(ss.str());
+                LOG.err("\tOne of them is not this assembly.");
+                return 1;
+            }
+        }
+
+        //A marker past the end of its chromosome means the lengths and the
+        //coordinates are from different assemblies.  Under assembly that makes
+        //the denominator wrong, so it stops the run; under analyzed the
+        //lengths feed nothing, so it is a warning -- but still worth saying,
+        //because the centromere and pseudoautosomal coordinates --build
+        //supplied are from that same wrong assembly.
+        if (!chrLengths.empty())
+        {
+            string over;
+            for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+            {
+                MapData *md = mapDataByChr->at(chr);
+                if (md->nloci < 1) continue;
+                pos_t len = chrLengths.get(md->chr);
+                if (len == 0 || md->physicalPos[md->nloci - 1] <= len) continue;
+                if (!over.empty()) over += ", ";
+                ostringstream ss;
+                ss << md->chr << " (last marker " << (long long)md->physicalPos[md->nloci - 1]
+                   << " > " << (long long)len << ")";
+                over += ss.str();
+            }
+            if (!over.empty())
+            {
+                if (opt.FROH_DENOM == FROH_ASSEMBLY)
+                {
+                    LOG.err("ERROR: markers lie past the end of the chromosome according to");
+                    LOG.err("\t" + chrLengths.source() + ":", over);
+                    LOG.err("\tThose lengths are the denominator, so this run would divide by the");
+                    LOG.err("\twrong numbers. Check --build, or give --chr-lengths.");
+                    return 1;
+                }
+                LOG.err("WARNING: markers lie past the end of the chromosome according to");
+                LOG.err("\t" + chrLengths.source() + ":", over);
+                LOG.err("\tThe coordinates and that assembly do not agree, which also means the");
+                LOG.err("\tcentromere and pseudoautosomal positions in use are the wrong ones.");
+            }
+        }
+
+        //Under assembly the lengths are load-bearing, so every analysed
+        //chromosome must have one.  Falling back to a chromosome's marker span
+        //for the ones that are missing would produce a denominator that is
+        //neither convention, and a warning about it does not survive into a
+        //figure.
+        if (opt.FROH_DENOM == FROH_ASSEMBLY)
+        {
+            string missing;
+            for (unsigned int chr = 0; chr < mapDataByChr->size(); chr++)
+            {
+                MapData *md = mapDataByChr->at(chr);
+                if (md->nloci < 2) continue;   //not in any denominator anyway
+                if (sexModel.role[chr] != CHR_AUTOSOME &&
+                    sexModel.role[chr] != CHR_SEX_SHARED) continue;
+                if (chrLengths.get(md->chr) > 0) continue;
+                if (!missing.empty()) missing += ", ";
+                missing += md->chr;
+            }
+            if (!missing.empty())
+            {
+                LOG.err("ERROR:", ARG_FROH_DENOM, false);
+                LOG.err(" assembly needs the length of every analysed chromosome, and");
+                if (chrLengths.empty()) LOG.err("\tnone is available. Supply them with one of:");
+                else
+                {
+                    LOG.err("\t" + chrLengths.source() + " does not give one for:", missing);
+                    LOG.err("\tSupply them with one of:");
+                }
+                LOG.err(string("\t  ") + ARG_CHR_LENGTHS + " <file>   two columns, chromosome and length, or a .fai");
+                LOG.err(string("\t  ") + ARG_BUILD + " <assembly>    for a human assembly garlic knows");
+                LOG.err("\t  a VCF whose header carries ##contig=<ID=...,length=...>");
+                return 1;
+            }
+        }
+    }
+
     //Checked here rather than in the option parser: whether the run has a
     //shared sex chromosome depends on the data and on --autosomes-only and
     //--chr, none of which the command line alone can answer.  Silently
@@ -1062,7 +1198,7 @@ int main(int argc, char *argv[])
                                           pHap, pFreq, pMap,
                                           pGL, pGF,
                                           pInd, centro, USE_GL, variantDensity,
-                                          &(sexModel.role), &par);
+                                          &(sexModel.role), &par, &chrLengths);
         //analyzePopulation has released pHap/pFreq/pGL/pGF by now; the map and
         //the per-population IndData are the caller's.
         if (!singlePop) { releaseIndData(pInd); releaseMapData(pMap); }
@@ -1118,6 +1254,19 @@ int main(int argc, char *argv[])
             {
                 v.str(""); v << pop.sexWinsize;   resolved.push_back(make_pair("sexchr_winsize", v.str()));
                 v.str(""); v << pop.sexLodCutoff; resolved.push_back(make_pair("sexchr_lod_cutoff", v.str()));
+            }
+            //Recorded whether or not the flag was given: the two conventions
+            //differ by several percent, so which one produced a column of
+            //FROH is not something a reader should have to infer from which
+            //flags happen to be in the "set" list.  The source goes with it
+            //when there is one -- under analyzed it is what the span check
+            //used, under assembly it is the denominator itself.
+            v.str(""); v << "\"" << (opt.FROH_DENOM == FROH_ASSEMBLY ? "assembly" : "analyzed") << "\"";
+            resolved.push_back(make_pair("froh_denominator", v.str()));
+            if (!chrLengths.empty())
+            {
+                v.str(""); v << "\"" << chrLengths.source() << "\"";
+                resolved.push_back(make_pair("chromosome_lengths", v.str()));
             }
             v.str(""); v << KDE_THIN_STEP;    resolved.push_back(make_pair("kde_thin_step", v.str()));
             v.str(""); v << mapDataByChr->size(); resolved.push_back(make_pair("chromosomes_analysed", v.str()));

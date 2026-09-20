@@ -137,6 +137,30 @@ belongs to the window size it was estimated at.  Both are recorded in <out>.para
 sexchr_winsize and sexchr_lod_cutoff, holding what was applied whether or not the flags were
 given.
 
+--froh-denominator chooses what <out>.froh.tsv divides by.  analyzed, the default and what
+garlic has always done, is the span the markers cover, less the centromere and anything --par
+excluded; it moves with the marker set, so FROH from two arrays are not comparable.  assembly
+is the full length of each analysed chromosome with nothing subtracted, which is what published
+denominators are -- the hg19 autosomes sum to 2,881,033,286 bp and chrX is 155,270,560 bp, the
+numbers Cotter et al. (2024) used.  On the bundled example the two differ by about 5%.
+
+The sum is over the chromosomes that were ANALYSED, with the assembly supplying each one's
+length; it is not a sum over the assembly.  --chr therefore divides by those chromosomes alone,
+and a contig carrying no data is never looked up -- which is why a VCF full of decoys, unplaced
+scaffolds and alt haplotypes needs no filtering.  A chromosome that was analysed with no length
+available stops the run rather than falling back to its marker span.
+
+Lengths come from --chr-lengths, from --build, or from a VCF's ##contig header, in that order.
+--chr-lengths takes two columns, chromosome and length, and accepts a samtools faidx .fai
+unchanged; it is the way to use this on a non-human assembly and on TPED input.  The built-in
+tables are the GRC assembly reports' own numbers, recorded in centromeres/chr_lengths.txt.
+assembly is refused with --cm.
+
+Whenever lengths are available garlic checks that no marker lies past the end of its
+chromosome, which is how a wrong --build announces itself -- an error under assembly, where
+those lengths are the denominator, and a warning otherwise.  A VCF header and --build that
+disagree on a length stop the run: one of them is not this assembly.
+
 --sexchr-lod-cutoff and --sexchr-winsize are the escape hatch, for the shared sex chromosome
 alone.  The autosomal estimates are the default rather than the only option, and the
 diagnostic garlic already reports is where a replacement cutoff comes from.  --sexchr-winsize
@@ -422,6 +446,9 @@ strings. Do not edit by hand.
 --chr <string1> ... <stringN>: Analyse only these chromosomes, e.g. --chr chr1 chr2 chrX. Names are matched after normalisation, so '1' and 'chr1' are the same. It is an error to name a chromosome that is not in the data.
 	Default: all chromosomes in the input
 
+--chr-lengths <string>: A file of chromosome lengths: two whitespace-separated columns, chromosome and length. A samtools faidx .fai is accepted unchanged -- its first two columns are already name and length and the rest is ignored -- so the index beside your reference can be passed as it is. The way to use --froh-denominator assembly on a non-human assembly, and on TPED input, where nothing in the data states a chromosome's length. Takes precedence over --build and over a VCF's ##contig header.
+	Default: none
+
 --cm <bool>: Measure ROH lengths in genetic distance units. This requires a mapfile.
 	Default: false
 
@@ -442,6 +469,9 @@ strings. Do not edit by hand.
 
 --froh <bool>: Also write <out>.froh.tsv: per-individual autozygous total and fraction, broken down by ROH size class. The denominator is stated in the file header.
 	Default: false
+
+--froh-denominator <string>: What <out>.froh.tsv divides the autozygous total by. analyzed (default): the span the markers cover -- from the first to the last locus of each analysed chromosome, less the centromere and any region excluded with --par. This is what a marker set can support on its own, and it moves with the markers, so FROH from two different arrays are not directly comparable. assembly: the FULL length of each analysed chromosome, nothing subtracted. This is what published FROH denominators are, and it is reproducible from an external table rather than from the data. Lengths come from --chr-lengths, from --build, or from a VCF's ##contig header, in that order; a chromosome with no length available stops the run rather than falling back. Not available with --cm: a base pair length is not a genetic length.
+	Default: analyzed
 
 --gl-type <string>: Which genotype-quality field to use.  With --vcf it is read from the FORMAT column; with --tgls it names the form of the single value per genotype in the .tgls file.  The two sources are NOT equivalent.
 With --vcf (recommended): GQ error = 10^(-GQ/10), the VCF spec's definition directly. PL The whole PL array is read and converted to a posterior:     P(g) proportional to 10^(-PL_g/10),  error = 1 - P(called)/sum.   This is the only correct use of a VCF's PL.  A VCF normalises PL   so the CALLED genotype is exactly 0, so that one value carries no   information -- it is 0 for every call, confident or not.  The   information is in how much worse the alternatives are. GL The same, via PL = -10*GL.   A missing field is an error naming whichever of GQ/PL/GL the file   does carry, and a called genotype with '.' for the field is an   error rather than a silent fall back to --error.

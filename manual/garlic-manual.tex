@@ -263,10 +263,54 @@ CHR	SNP	POS	ALLELE	POPA	POPB
 This is the format {\tt --freq-file} reads, so a run's own frequency file can be given back to {\tt garlic} to reproduce that run.  A file with a single frequency column is applied to every population, whatever the column is called, so a frequency file from an earlier version keeps working.  {\tt --freq-only} writes the same file without performing the analysis.
 ~\\
 With {\tt --froh}, a {\tt .froh.tsv} table gives each individual's autozygous
-total and the fraction of the analysed genome it covers, one row per individual
-per size class plus a row for all classes together.  The denominator is stated
-in the header, as are the size-class boundaries actually used, so the fractions
-can be recomputed or compared across runs.
+total and the fraction of the genome it covers, one row per individual with the
+size classes across the columns.  The denominator is stated in the header, as
+are the size-class boundaries actually used, so the fractions can be recomputed
+or compared across runs.
+
+There are two things that fraction can be taken of, and {\tt
+--froh-denominator} chooses between them.  {\tt analyzed}, the default and what
+{\tt garlic} has always done, is the span the markers cover: from the first to
+the last locus of each analysed chromosome, less the centromere and any region
+excluded with {\tt --par}.  It is what a marker set can support on its own, and
+it moves with the marker set, so F$_{\mathrm{ROH}}$ from two different arrays
+are not directly comparable.  {\tt assembly} is the full length of each
+analysed chromosome with nothing subtracted --- not the centromere, not the
+pseudoautosomal regions, not the part beyond the outermost marker.  That is
+what published F$_{\mathrm{ROH}}$ denominators are: the hg19 autosomes sum to
+2,881,033,286\,bp and chrX is 155,270,560\,bp, which are the 2881.03\,Mb and
+155.27\,Mb of \citet{CotterEtAl24}.  On the bundled example data the two differ
+by about 5\%.
+
+The sum is over the chromosomes that were {\em analysed}, and the assembly
+supplies each one's length --- it is not a sum over the assembly.  A run
+restricted with {\tt --chr} is divided by those chromosomes alone, and a
+contig that carries no data is never looked up, which is why a VCF full of
+decoys, unplaced scaffolds and alternate haplotypes needs no filtering here.
+A chromosome that was analysed and has no length available stops the run rather
+than falling back to its marker span, since mixing the two conventions across
+chromosomes gives a denominator that is neither.
+
+Lengths come from {\tt --chr-lengths}, from {\tt --build}, or from a VCF's
+{\tt ##contig} header, in that order of precedence.  {\tt --chr-lengths} takes
+two whitespace-separated columns, chromosome and length, and also accepts a
+{\tt samtools faidx} {\tt .fai} unchanged --- its first two columns are
+already name and length.  It is the way to use this mode on a non-human
+assembly and on TPED input, where nothing in the data states a length.  The
+built-in tables are the GRC assembly reports' own numbers, recorded with their
+source in {\tt centromeres/chr\_lengths.txt}.  {\tt assembly} is refused with
+{\tt --cm}: a chromosome's length in base pairs is not its length in
+centimorgans.
+
+Whenever lengths are available, {\tt garlic} checks that no marker lies beyond
+the end of the chromosome it is on.  This is how a wrong {\tt --build}
+announces itself, which nothing else in the program can detect --- and it
+matters in either mode, because the centromere and pseudoautosomal coordinates
+in use came from that same assembly.  Under {\tt assembly} a violation stops
+the run, since those lengths are the denominator; under {\tt analyzed} they
+feed nothing, so it is a warning.  Where a VCF header and {\tt --build} both
+state a length and disagree, one of them is not this assembly and {\tt garlic}
+says so rather than picking.
 
 Kernel density estimation of the LOD score distribution is output to {\tt .<winsize>SNPs.kde} formatted as
 \begin{lstlisting}

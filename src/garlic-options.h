@@ -66,6 +66,10 @@ struct GarlicOptions
     //gave them.  Unset means "whatever the autosomes use", which is the
     //default because a cutoff estimated on one chromosome's windows from part
     //of a cohort is usually worse than the autosomal one, not better.
+    //--froh-denominator, as one of the FROHDenominator values, and the file
+    //that can supply the lengths it needs.
+    int             FROH_DENOM;
+    string          CHR_LENGTHS_FILE;
     double          SEXCHR_LOD_CUTOFF;
     bool            SEXCHR_CUTOFF_SET;
     int             SEXCHR_WINSIZE;

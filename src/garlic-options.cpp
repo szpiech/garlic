@@ -156,6 +156,14 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     LOG.log("Choose LOD score cutoff automatically:", opt.AUTO_CUTOFF);
     if (!opt.AUTO_CUTOFF) LOG.log("User defined LOD score cutoff:", opt.LOD_CUTOFF);
 
+    opt.CHR_LENGTHS_FILE = params->getStringFlag(ARG_CHR_LENGTHS);
+    argerr = argerr || checkFROHDenominator(params->getStringFlag(ARG_FROH_DENOM),
+                                            opt.FROH_DENOM, opt.CM,
+                                            params->getBoolFlag(ARG_FROH),
+                                            params->isFlagSet(ARG_CHR_LENGTHS));
+    if (argerr) return OPTIONS_USAGE_ERROR;
+    LOG.log("FROH denominator:", params->getStringFlag(ARG_FROH_DENOM));
+
     opt.SEXCHR_LOD_CUTOFF = params->getDoubleFlag(ARG_SEXCHR_LOD_CUTOFF);
     opt.SEXCHR_CUTOFF_SET = params->isFlagSet(ARG_SEXCHR_LOD_CUTOFF);
     opt.SEXCHR_WINSIZE = params->getIntFlag(ARG_SEXCHR_WINSIZE);

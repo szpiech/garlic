@@ -468,6 +468,14 @@ struct Interval
     Interval(pos_t s, pos_t e) : start(s), end(e) {}
 };
 
+//How writeFROH forms the denominator.  FROH_ANALYZED is the span the markers
+//cover, less the centromere and any excluded region -- what garlic has always
+//done, and what a marker set can support on its own.  FROH_ASSEMBLY is the
+//full length of each analysed chromosome with nothing subtracted, which is
+//what published denominators are and the only thing reproducible from an
+//external table.
+enum FROHDenominator { FROH_ANALYZED = 0, FROH_ASSEMBLY = 1 };
+
 class ExcludedRegions
 {
 public:
@@ -494,6 +502,45 @@ private:
     map<string, string> asGiven;
     vector<string> order;
 };
+
+//---- chromosome lengths -----------------------------------------------------
+//
+//The full length of a chromosome, as the assembly defines it, which is a
+//different quantity from the span its markers cover.  --froh-denominator
+//assembly divides by the former; every mode uses it to check that no marker
+//lies past the end of its chromosome, which is how a wrong --build shows
+//itself.
+//
+//Keyed by canonChrKey so any spelling of a name finds it, and carrying a
+//description of where the numbers came from because that belongs in the
+//output header next to the denominator it produced.
+class ChrLengths
+{
+public:
+    void add(const string &chr, pos_t len);
+    bool empty() const { return byKey.empty(); }
+    //0 when the chromosome is not in the table; a real length is never 0.
+    pos_t get(const string &chr) const;
+    void setSource(const string &s) { src = s; }
+    const string &source() const { return src; }
+    //Every name in the table, in insertion order.
+    const vector<string> &chromosomes() const { return order; }
+
+private:
+    map<string, pos_t> byKey;
+    vector<string> order;
+    string src;
+};
+
+//The built-in table for a human --build, read from centromeres/chr_lengths.txt
+//at build time.  False when the build has no table (a non-human assembly, or
+//none given).
+bool builtinChrLengths(const string &build, ChrLengths &result);
+
+//Two whitespace-separated columns, chromosome and length.  A samtools faidx
+//.fai is accepted unchanged: its first two columns are already name and
+//length, and the rest is ignored.  Returns 0, or -1 after logging.
+int readChrLengthsFile(const string &filename, ChrLengths &out);
 
 //Parses "chr:start-end" items, comma or whitespace separated, and the three
 //column <chr> <start> <end> file form -- in which, unlike --centromere,
@@ -579,7 +626,10 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                  //than an error; see declaredRolesByKey.  NULL means every
                  //chromosome must be diploid, which is what garlic required
                  //before there was any notion of a sex chromosome.
-                 const map<string, ChrRole> *declaredRoles = NULL);
+                 const map<string, ChrRole> *declaredRoles = NULL,
+                 //##contig=<ID=,length=> as the file states it, or NULL to
+                 //skip the header as every other ## line is skipped.
+                 ChrLengths *headerLengths = NULL);
 
 //popOfInd carries one population label per individual, in file order.  Empty,
 //or all one label, gives the single FREQ column every earlier version wrote.

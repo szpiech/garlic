@@ -213,6 +213,14 @@ extern const string HELP_HAPLOID_CHR;
 extern const string ARG_HET_RATE_BOUNDS;
 extern const string HELP_HET_RATE_BOUNDS;
 
+extern const string ARG_FROH_DENOM;
+extern const string DEFAULT_FROH_DENOM;
+extern const string HELP_FROH_DENOM;
+
+extern const string ARG_CHR_LENGTHS;
+extern const string DEFAULT_CHR_LENGTHS;
+extern const string HELP_CHR_LENGTHS;
+
 extern const string ARG_SEXCHR_LOD_CUTOFF;
 extern const double DEFAULT_SEXCHR_LOD_CUTOFF;
 extern const string HELP_SEXCHR_LOD_CUTOFF;
@@ -308,6 +316,12 @@ bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF, bool wasSet);
 //--sexchr-lod-cutoff and --sexchr-winsize.  A cutoff is a statement about
 //windows of a given size, so a sex chromosome given its own size must be given
 //its own cutoff too; the autosomal one no longer means anything there.
+//--froh-denominator, and the file that can feed it.  Sets denom to one of the
+//FROHDenominator values.  Returns true after logging when the combination
+//cannot be honoured.
+bool checkFROHDenominator(const string &mode, int &denom, bool CM, bool FROH,
+                          bool chrLengthsSet);
+
 bool checkSexChrEstimates(double cutoff, bool cutoffSet, int winsize, bool winsizeSet,
                           bool WINSIZE_EXPLORE, bool FREQ_ONLY);
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet);

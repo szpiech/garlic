@@ -314,6 +314,31 @@ const string HELP_SEX_CHR_DEGENERATE = "The chromosome carried only by the heter
 \tsex and absent in the other -- so it is dropped before calling.\n\
 \tDefault: the conventional name for --sex-system";
 
+const string ARG_FROH_DENOM = "--froh-denominator";
+const string DEFAULT_FROH_DENOM = "analyzed";
+const string HELP_FROH_DENOM = "What <out>.froh.tsv divides the autozygous total by.\n\
+\tanalyzed (default): the span the markers cover -- from the first to the last\n\
+\tlocus of each analysed chromosome, less the centromere and any region\n\
+\texcluded with --par. This is what a marker set can support on its own, and\n\
+\tit moves with the markers, so FROH from two different arrays are not\n\
+\tdirectly comparable.\n\
+\tassembly: the FULL length of each analysed chromosome, nothing subtracted.\n\
+\tThis is what published FROH denominators are, and it is reproducible from an\n\
+\texternal table rather than from the data. Lengths come from --chr-lengths,\n\
+\tfrom --build, or from a VCF's ##contig header, in that order; a chromosome\n\
+\twith no length available stops the run rather than falling back.\n\
+\tNot available with --cm: a base pair length is not a genetic length.\n\tDefault: " + DEFAULT_FROH_DENOM;
+
+const string ARG_CHR_LENGTHS = "--chr-lengths";
+const string DEFAULT_CHR_LENGTHS = "_NONE";
+const string HELP_CHR_LENGTHS = "A file of chromosome lengths: two whitespace-separated columns, chromosome\n\
+\tand length. A samtools faidx .fai is accepted unchanged -- its first two\n\
+\tcolumns are already name and length and the rest is ignored -- so the index\n\
+\tbeside your reference can be passed as it is.\n\
+\tThe way to use --froh-denominator assembly on a non-human assembly, and on\n\
+\tTPED input, where nothing in the data states a chromosome's length. Takes\n\
+\tprecedence over --build and over a VCF's ##contig header.\n\tDefault: none";
+
 const string ARG_SEXCHR_LOD_CUTOFF = "--sexchr-lod-cutoff";
 const double DEFAULT_SEXCHR_LOD_CUTOFF = -999999;
 const string HELP_SEXCHR_LOD_CUTOFF = "Call the shared sex chromosome at this LOD score cutoff instead of the one\n\
@@ -541,6 +566,8 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addListFlag(ARG_SEX_CHR_DEGENERATE, "_NONE", "", HELP_SEX_CHR_DEGENERATE);
 	params->addListFlag(ARG_HAPLOID_CHR, "_NONE", "", HELP_HAPLOID_CHR);
 	params->addListFlag(ARG_HET_RATE_BOUNDS, 0.02, "", HELP_HET_RATE_BOUNDS);
+	params->addFlag(ARG_FROH_DENOM, DEFAULT_FROH_DENOM, "", HELP_FROH_DENOM);
+	params->addFlag(ARG_CHR_LENGTHS, DEFAULT_CHR_LENGTHS, "", HELP_CHR_LENGTHS);
 	params->addFlag(ARG_SEXCHR_LOD_CUTOFF, DEFAULT_SEXCHR_LOD_CUTOFF, "", HELP_SEXCHR_LOD_CUTOFF);
 	params->addFlag(ARG_SEXCHR_WINSIZE, DEFAULT_SEXCHR_WINSIZE, "", HELP_SEXCHR_WINSIZE);
 	params->addListFlag(ARG_PAR, "_NONE", "", HELP_PAR);
@@ -828,6 +855,52 @@ bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF, bool wasSet)
 			LOG.err(", which is the value that marks a window as uncallable.");
 			return true;
 		}
+	}
+	return false;
+}
+
+bool checkFROHDenominator(const string &mode, int &denom, bool CM, bool FROH,
+                          bool chrLengthsSet)
+{
+	if (mode.compare("analyzed") == 0)      denom = FROH_ANALYZED;
+	else if (mode.compare("assembly") == 0) denom = FROH_ASSEMBLY;
+	else
+	{
+		LOG.err("ERROR:", ARG_FROH_DENOM, false);
+		LOG.err(" must be analyzed or assembly, not", mode, false);
+		LOG.err(".");
+		return true;
+	}
+
+	//Nothing to divide: --froh-denominator describes a file that is not being
+	//written, and silently accepting it would leave the user believing they
+	//had asked for something.
+	if (denom == FROH_ASSEMBLY && !FROH)
+	{
+		LOG.err("ERROR:", ARG_FROH_DENOM, false);
+		LOG.err(string(" assembly describes ") + ARG_FROH + ", which was not given.");
+		return true;
+	}
+
+	//A chromosome length is a number of base pairs and the denominator under
+	//--cm is a number of centimorgans.  The equivalent would be a total map
+	//length per chromosome, which is a different table and a different flag.
+	if (denom == FROH_ASSEMBLY && CM)
+	{
+		LOG.err("ERROR:", ARG_FROH_DENOM, false);
+		LOG.err(string(" assembly cannot be used with ") + ARG_CM + ": a chromosome's length in");
+		LOG.err("\tbase pairs is not its length in centimorgans.");
+		return true;
+	}
+
+	//The file is a source of lengths, not a mode.  Reading it and then not
+	//using it would be the quieter failure.
+	if (chrLengthsSet && denom != FROH_ASSEMBLY)
+	{
+		LOG.err("ERROR:", ARG_CHR_LENGTHS, false);
+		LOG.err(string(" supplies the lengths that ") + ARG_FROH_DENOM + " assembly divides by,");
+		LOG.err("\tand nothing else reads them. Give that too, or drop this.");
+		return true;
 	}
 	return false;
 }

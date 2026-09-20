@@ -1,0 +1,135 @@
+# Chromosome lengths of the four human assemblies garlic knows about.
+#
+# Used by --froh-denominator assembly, which divides the autozygous total by
+# the FULL length of each analysed chromosome rather than by the span its
+# markers happen to cover.  Also used, in every mode, to check that no marker
+# lies past the end of the chromosome it is on -- which is how a wrong --build
+# announces itself.
+#
+# Source: the Genome Reference Consortium's assembly reports.  The rows are
+# those with sequence-role "assembled-molecule" and molecule type "Chromosome";
+# the length is the report's own "Sequence-Length" column, taken verbatim from:
+#
+#   hg18  https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.12_NCBI36/GCF_000001405.12_NCBI36_assembly_report.txt
+#   hg19  https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.13_GRCh37/GCF_000001405.13_GRCh37_assembly_report.txt
+#   hg38  https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.26_GRCh38/GCF_000001405.26_GRCh38_assembly_report.txt
+#   t2t   https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/009/914/755/GCF_009914755.1_T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_assembly_report.txt
+#
+# Retrieved 2026-09-20.
+#
+# Lengths are the RAW length of the chromosome: nothing is subtracted for the
+# centromere, for assembly gaps, or for the pseudoautosomal regions.  That is
+# deliberate.  It is the only definition reproducible from an external table,
+# and it is the one published F_ROH denominators use -- the hg19 autosomes here
+# sum to 2,881,033,286 bp and chrX is 155,270,560 bp, which are exactly the
+# 2881.03 Mb and 155.27 Mb of Cotter et al. (2024).
+#
+# The Y rows are recorded so this file can be checked against the source.
+# garlic never uses them: Y is a degenerate sex chromosome and is dropped from
+# the analysis whole, so it is in no denominator.
+#
+# Format, for anyone reusing this with --chr-lengths: build, chromosome,
+# length.  --chr-lengths itself takes a two-column file (chromosome and
+# length) or a samtools faidx .fai, not this three-column one.
+#
+# build	chr	length
+hg18	chr1	247249719
+hg18	chr2	242951149
+hg18	chr3	199501827
+hg18	chr4	191273063
+hg18	chr5	180857866
+hg18	chr6	170899992
+hg18	chr7	158821424
+hg18	chr8	146274826
+hg18	chr9	140273252
+hg18	chr10	135374737
+hg18	chr11	134452384
+hg18	chr12	132349534
+hg18	chr13	114142980
+hg18	chr14	106368585
+hg18	chr15	100338915
+hg18	chr16	88827254
+hg18	chr17	78774742
+hg18	chr18	76117153
+hg18	chr19	63811651
+hg18	chr20	62435964
+hg18	chr21	46944323
+hg18	chr22	49691432
+hg18	chrX	154913754
+hg18	chrY	57772954
+#
+hg19	chr1	249250621
+hg19	chr2	243199373
+hg19	chr3	198022430
+hg19	chr4	191154276
+hg19	chr5	180915260
+hg19	chr6	171115067
+hg19	chr7	159138663
+hg19	chr8	146364022
+hg19	chr9	141213431
+hg19	chr10	135534747
+hg19	chr11	135006516
+hg19	chr12	133851895
+hg19	chr13	115169878
+hg19	chr14	107349540
+hg19	chr15	102531392
+hg19	chr16	90354753
+hg19	chr17	81195210
+hg19	chr18	78077248
+hg19	chr19	59128983
+hg19	chr20	63025520
+hg19	chr21	48129895
+hg19	chr22	51304566
+hg19	chrX	155270560
+hg19	chrY	59373566
+#
+hg38	chr1	248956422
+hg38	chr2	242193529
+hg38	chr3	198295559
+hg38	chr4	190214555
+hg38	chr5	181538259
+hg38	chr6	170805979
+hg38	chr7	159345973
+hg38	chr8	145138636
+hg38	chr9	138394717
+hg38	chr10	133797422
+hg38	chr11	135086622
+hg38	chr12	133275309
+hg38	chr13	114364328
+hg38	chr14	107043718
+hg38	chr15	101991189
+hg38	chr16	90338345
+hg38	chr17	83257441
+hg38	chr18	80373285
+hg38	chr19	58617616
+hg38	chr20	64444167
+hg38	chr21	46709983
+hg38	chr22	50818468
+hg38	chrX	156040895
+hg38	chrY	57227415
+#
+t2t	chr1	248387328
+t2t	chr2	242696752
+t2t	chr3	201105948
+t2t	chr4	193574945
+t2t	chr5	182045439
+t2t	chr6	172126628
+t2t	chr7	160567428
+t2t	chr8	146259331
+t2t	chr9	150617247
+t2t	chr10	134758134
+t2t	chr11	135127769
+t2t	chr12	133324548
+t2t	chr13	113566686
+t2t	chr14	101161492
+t2t	chr15	99753195
+t2t	chr16	96330374
+t2t	chr17	84276897
+t2t	chr18	80542538
+t2t	chr19	61707364
+t2t	chr20	66210255
+t2t	chr21	45090682
+t2t	chr22	51324926
+t2t	chrX	154259566
+t2t	chrY	62460029
+#

@@ -881,7 +881,9 @@ void writeFROH(string outfile,
                const string &popLabel,
                bool pooled,
                const vector<ChrRole> *role,
-               const ExcludedRegions *excluded)
+               const ExcludedRegions *excluded,
+               int denomMode,
+               const ChrLengths *chrLengths)
 {
     const int nclass = int(bounds.size()) + 1;   //A..  plus the ALL column set
 
@@ -910,7 +912,20 @@ void writeFROH(string outfile,
         const vector<Interval> *iv = (excluded != NULL) ? excluded->get(md->chr) : NULL;
 
         double span;
-        if (CM)
+        if (denomMode == FROH_ASSEMBLY)
+        {
+            //The RAW length of the chromosome.  Nothing is subtracted -- not
+            //the centromere, not an excluded region, not the part beyond the
+            //outermost marker -- because the point of this mode is a number
+            //reproducible from an external table and comparable with a
+            //published one, and "the assembly minus whatever this run
+            //happened to exclude" is neither.
+            //
+            //main has already refused the run if any analysed chromosome has
+            //no length here, so the lookup cannot come back empty.
+            span = double(chrLengths->get(md->chr));
+        }
+        else if (CM)
         {
             span = md->geneticPos[md->nloci - 1] - md->geneticPos[0];
             //The centromere is NOT subtracted in cM: a genetic map already
@@ -996,15 +1011,30 @@ void writeFROH(string outfile,
     out << "\n";
     if (haveExcluded)
         out << "## excluded_regions\t" << excludedList << "\n";
+    //Named, because the two conventions differ by several percent and a
+    //denominator is not self-describing.  The source goes with it: "assembly"
+    //is not a number until you know which assembly.
+    out << "## denominator_mode\t"
+        << (denomMode == FROH_ASSEMBLY ? "assembly" : "analyzed") << "\n";
+    if (denomMode == FROH_ASSEMBLY && chrLengths != NULL)
+        out << "## chromosome_lengths\t" << chrLengths->source() << "\n";
     out << "## autosome_denominator\t" << (long long)(denomAuto + 0.5) << "\t";
-    out << (CM ? "sum over analysed autosomes of (last - first genetic position)"
-               : "sum over analysed autosomes of (last - first physical position), minus the assembly gap inside that span")
+    out << (denomMode == FROH_ASSEMBLY
+               ? "sum over analysed autosomes of the full chromosome length, nothing subtracted"
+               : (CM ? "sum over analysed autosomes of (last - first genetic position)"
+                     : "sum over analysed autosomes of (last - first physical position), minus the assembly gap inside that span"))
         << "\n";
+    //True in both modes and easy to misread in one: a chromosome carrying a
+    //single locus is not analysed and is in no denominator, so under assembly
+    //this is not the whole assembly either.
+    out << "## note\ta chromosome with fewer than two analysed loci is in neither denominator\n";
     if (haveSexChr)
     {
         out << "## sex_chromosomes\t" << sexChrNames << "\n";
         out << "## sexchr_denominator\t" << (long long)(denomSex + 0.5) << "\t"
             << "the same over the shared sex chromosome; applies only to individuals diploid there\n";
+        if (denomMode == FROH_ASSEMBLY && haveExcluded)
+            out << "## sexchr_denominator_note\tincludes the excluded regions above, which assembly does not subtract\n";
         out << "## na\tNA where an individual cannot carry a run of homozygosity on the sex chromosome\n";
     }
 

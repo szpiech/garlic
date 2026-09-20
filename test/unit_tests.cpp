@@ -725,6 +725,56 @@ static void test_ld_no_shared_genotypes()
     releaseHapData(h);
 }
 
+// ------------------------------------------- ChrLengths ------------------
+// The lengths are matched to whatever the data calls a chromosome, which is
+// the whole reason a VCF's decoys and alt contigs need no filtering: nothing
+// looks them up.  The lookup therefore has to be the same canonicalisation
+// the rest of the program uses, not a string compare.
+static void test_chr_lengths()
+{
+    ChrLengths L;
+    L.add("chr1", 249250621);
+    L.add("23", 155270560);
+
+    ck(L.get("chr1") == 249250621, "a length is found under the name it was added with");
+    ck(L.get("1") == 249250621,    "and under the same chromosome spelled without chr");
+    ck(L.get("CHR1") == 249250621, "and case-insensitively");
+    ck(L.get("chr23") == 155270560, "and the other way round, chr23 finding 23");
+    //0 is the "not here" answer, and a real length is never 0.
+    ck(L.get("chr2") == 0,          "a chromosome not in the table has no length");
+    ck(L.get("chrUn_KI270302v1") == 0, "nor does an unplaced contig");
+    ck(!L.empty() && L.chromosomes().size() == 2, "two chromosomes, in insertion order");
+
+    ChrLengths E;
+    ck(E.empty() && E.get("chr1") == 0, "an empty table answers nothing");
+
+    //The built-in table is the one --build supplies, and the hg19 autosomes
+    //have to sum to the published denominator or the point of the mode is
+    //lost.
+    ChrLengths B;
+    ck(builtinChrLengths("hg19", B), "hg19 has a built-in length table");
+    long long total = 0;
+    for (int c = 1; c <= 22; c++)
+    {
+        ostringstream ss; ss << "chr" << c;
+        total += (long long)B.get(ss.str());
+    }
+    ck(total == 2881033286LL, "the hg19 autosomes sum to the published 2,881,033,286 bp");
+    ck(B.get("chrX") == 155270560, "and chrX is the published 155,270,560 bp");
+    //Y is a degenerate sex chromosome; it is in no denominator, so carrying a
+    //length for it would be a number nothing reads.
+    ck(B.get("chrY") == 0, "no length is carried for the degenerate sex chromosome");
+    ck(B.source().compare("build hg19") == 0, "the table says where it came from");
+
+    //An unknown build must leave the caller's table untouched and say so,
+    //rather than reporting whatever was already in it as its own.
+    ChrLengths P;
+    P.add("chr1", 12345);
+    ck(!builtinChrLengths("none", P), "an unknown build has no table");
+    ck(P.get("chr1") == 12345 && P.source().empty(),
+       "and does not claim the table it was handed");
+}
+
 // ------------------------------------------- ExcludedRegions -------------
 // A chromosome has a SET of excluded regions, not one.  Humans already have
 // two pseudoautosomal regions; the container the centromere table uses is one
@@ -1255,6 +1305,7 @@ int main()
     test_sex_model();
     test_winsize_for_chr();
     test_ld_no_shared_genotypes();
+    test_chr_lengths();
     test_chr_key_collisions();
     test_excluded_regions();
     test_glToError();

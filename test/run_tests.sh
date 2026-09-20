@@ -218,9 +218,9 @@ golden() {
                 echo "  FAIL  $name.$suffix: no golden checksum (run with --bless)"
                 echo x >>"$WORK/failures"; continue
             fi
-            want=$(cat "$g")
-            if [ "$got" != "$want" ]; then
-                echo "  FAIL  $name.$suffix: $got != $want"
+            _gold_want=$(cat "$g")
+            if [ "$got" != "$_gold_want" ]; then
+                echo "  FAIL  $name.$suffix: $got != $_gold_want"
                 echo "        output kept at $f"
                 echo x >>"$WORK/failures"
             fi
@@ -253,17 +253,23 @@ determinism() {
 # ---------------------------------------------------------------------------
 # 4. Exit-code contract: 0 success, 1 usage error, 2 runtime error
 # ---------------------------------------------------------------------------
+# NOTE: sh has no local variables, so every name assigned here is assigned in
+# the CALLING stage's scope.  A stage that used "want" for its own expected
+# value and then called expect_exit got that value silently replaced by the
+# expected exit status, and the comparison afterwards still looked like a real
+# assertion.  Hence the underscore prefixes: they are this function's, and no
+# stage should use them.
 expect_exit() {
-    want=$1; what=$2; shift 2
+    _ee_want=$1; _ee_what=$2; shift 2
     # Keep stderr.  It used to be discarded, which made every exit-code failure
     # in this suite undiagnosable from a CI log -- you could see that garlic
     # returned the wrong status but not what it thought it was doing.  On
     # failure the program's own diagnosis is worth more than the status is.
     "$@" >/dev/null 2>"$WORK/.expect_exit.err"
-    got=$?
-    if [ "$got" -eq "$want" ]; then ok
+    _ee_got=$?
+    if [ "$_ee_got" -eq "$_ee_want" ]; then ok
     else
-        bad "$what: exit $got, expected $want"
+        bad "$_ee_what: exit $_ee_got, expected $_ee_want"
         sed -n '1,3p' "$WORK/.expect_exit.err" | sed 's/^/        /'
     fi
 }
@@ -2135,6 +2141,216 @@ sex_chromosomes() {
     done
 }
 
+# ---------------------------------------------------------------------------
+# --froh-denominator.  Two conventions that differ by several percent: the
+# span the markers cover (what garlic has always divided by) and the full
+# length of each analysed chromosome (what published FROH use).  The whole
+# point is a number reproducible from an external table, so every check here
+# compares against the table rather than against a recorded value.
+# ---------------------------------------------------------------------------
+froh_denominator() {
+    echo "== FROH denominator =="
+    FDBASE="--tfam $EX/example.tfam --winsize 60 --error 0.001 --lod-cutoff 2.5"
+    FDBASE="$FDBASE --size-bounds 500000 1000000 --froh --force"
+
+    # The bundled example is hg18 -- established by the only build under which
+    # no marker lies past the end of its chromosome, which case 6 checks.
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --build hg18 \
+        --out "$WORK/fd1" >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --build hg18 \
+        --froh-denominator assembly --out "$WORK/fd2" >/dev/null 2>&1
+
+    # 1. The denominator IS the sum of the table's autosome rows.  Summed here
+    #    from centromeres/chr_lengths.txt rather than pasted in, so the file
+    #    and the compiled-in table cannot drift apart unnoticed.
+    want=$(awk -F'\t' '$1 == "hg18" && $2 != "chrX" && $2 != "chrY" { s += $3 } END { printf "%d", s }' \
+           "$ROOT/centromeres/chr_lengths.txt")
+    got=$(awk -F'\t' '$1 == "## autosome_denominator" { print $2 }' "$WORK/fd2.froh.tsv")
+    if [ "$got" = "$want" ]; then ok
+    else bad "assembly denominator is $got, the hg18 autosomes sum to $want"; fi
+
+    # 2. Nothing is subtracted, where analyzed subtracts the centromere and
+    #    stops at the outermost marker.  Both differences point the same way,
+    #    so assembly has to be the larger number -- and case 1 has already
+    #    pinned it to the table.  (PARs are the other thing not subtracted;
+    #    that needs a sex chromosome and is case 11.)
+    gotan=$(awk -F'\t' '$1 == "## autosome_denominator" { print $2 }' "$WORK/fd1.froh.tsv")
+    if [ -n "$gotan" ] && [ "$gotan" -lt "$want" ]; then ok
+    else bad "the analyzed denominator ($gotan) is not smaller than the assembly one ($want)"; fi
+
+    # 3. The autozygous LENGTHS are identical between modes -- only the
+    #    division changes.  A denominator flag that moved a call would be a
+    #    different bug entirely.
+    awk -F'\t' 'NR == FNR { if (!/^##/) a[$1] = $0; next }
+                !/^##/ && $1 in a { n++ }
+                END { print n }' "$WORK/fd1.froh.tsv" "$WORK/fd2.froh.tsv" > /dev/null
+    cut -f1-3 < "$WORK/fd1.froh.tsv" | grep -v '^##' > "$WORK/fd1.ids"
+    cut -f1-3 < "$WORK/fd2.froh.tsv" | grep -v '^##' > "$WORK/fd2.ids"
+    grep -v '^##' "$WORK/fd1.froh.tsv" | awk -F'\t' 'NR==1{for(i=1;i<=NF;i++)c[$i]=i;next}{print $1"\t"$(c["auto_ALL_len"])}' > "$WORK/fd1.len"
+    grep -v '^##' "$WORK/fd2.froh.tsv" | awk -F'\t' 'NR==1{for(i=1;i<=NF;i++)c[$i]=i;next}{print $1"\t"$(c["auto_ALL_len"])}' > "$WORK/fd2.len"
+    if diff "$WORK/fd1.ids" "$WORK/fd2.ids" >/dev/null && diff "$WORK/fd1.len" "$WORK/fd2.len" >/dev/null; then ok
+    else bad "--froh-denominator changed the autozygous totals, not just the denominator"; fi
+
+    # 4. And FROH is the total over that denominator, to the printed digits.
+    bad4=$(grep -v '^##' "$WORK/fd2.froh.tsv" |
+        awk -F'\t' -v d="$want" 'NR==1{for(i=1;i<=NF;i++)c[$i]=i;next}
+            { e = $(c["auto_ALL_len"]) / d
+              if ((e - $(c["auto_ALL_froh"]))^2 > 1e-14) n++ } END { print n+0 }')
+    if [ "$bad4" -eq 0 ]; then ok
+    else bad "$bad4 individuals' FROH are not their total over the assembly denominator"; fi
+
+    # 5. --chr restricts the denominator to that chromosome.  Summing the whole
+    #    assembly for a one-chromosome run would put FROH near zero.
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --build hg18 --chr 21 \
+        --froh-denominator assembly --out "$WORK/fd4" >/dev/null 2>&1
+    want21=$(awk -F'\t' '$1 == "hg18" && $2 == "chr21" { print $3 }' "$ROOT/centromeres/chr_lengths.txt")
+    got21=$(awk -F'\t' '$1 == "## autosome_denominator" { print $2 }' "$WORK/fd4.froh.tsv")
+    if [ "$got21" = "$want21" ]; then ok
+    else bad "--chr 21 gave a denominator of $got21, chr21 is $want21"; fi
+
+    # 6. A marker past the end of its chromosome means the coordinates and the
+    #    lengths are different assemblies.  Under assembly that makes the
+    #    denominator wrong, so the run stops; under analyzed the lengths feed
+    #    nothing, so it warns -- and it still matters, because the centromere
+    #    positions in use came from the same wrong build.
+    # shellcheck disable=SC2086
+    expect_exit 1 "a wrong --build under assembly" \
+        "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --build hg38 \
+        --froh-denominator assembly --out "$WORK/fd5"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --build hg38 \
+        --out "$WORK/fd6" >/dev/null 2>"$WORK/fd6.stderr"
+    if [ $? -eq 0 ] && grep -q "markers lie past the end" "$WORK/fd6.stderr"; then ok
+    else bad "a wrong --build under analyzed did not warn"; fi
+    # The right build says nothing.
+    if ! grep -q "markers lie past the end" "$WORK/fd1.log"; then ok
+    else bad "the correct build reported markers past the end of a chromosome"; fi
+
+    # 7. --chr-lengths: the two-column form, a samtools .fai unchanged, and
+    #    precedence over --build.
+    awk -F'\t' '$1 == "hg18" && $2 != "chrX" && $2 != "chrY" { print $2"\t"$3 }' \
+        "$ROOT/centromeres/chr_lengths.txt" > "$WORK/fd.lens"
+    awk -v OFS='\t' '{ print $1, $2, 0, 60, 61 }' "$WORK/fd.lens" > "$WORK/fd.fa.fai"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --no-centromere \
+        --chr-lengths "$WORK/fd.lens" --froh-denominator assembly --out "$WORK/fd7" >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --no-centromere \
+        --chr-lengths "$WORK/fd.fa.fai" --froh-denominator assembly --out "$WORK/fd8" >/dev/null 2>&1
+    grep -v chromosome_lengths "$WORK/fd7.froh.tsv" > "$WORK/fd7.cmp"
+    grep -v chromosome_lengths "$WORK/fd8.froh.tsv" > "$WORK/fd8.cmp"
+    got7=$(awk -F'\t' '$1 == "## autosome_denominator" { print $2 }' "$WORK/fd7.froh.tsv")
+    got8=$(awk -F'\t' '$1 == "## autosome_denominator" { print $2 }' "$WORK/fd8.froh.tsv")
+    if [ "$got7" = "$want" ] && [ "$got8" = "$want" ] &&
+       diff "$WORK/fd7.cmp" "$WORK/fd8.cmp" >/dev/null; then ok
+    else bad "two-column gave $got7 and .fai gave $got8, expected $want for both"; fi
+    # Doubling every length in the file doubles the denominator even though
+    # --build is also given, which is the precedence rule.
+    awk -v OFS='\t' '{ print $1, $2 * 2 }' "$WORK/fd.lens" > "$WORK/fd.dbl"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --build hg18 \
+        --chr-lengths "$WORK/fd.dbl" --froh-denominator assembly --out "$WORK/fd9" >/dev/null 2>&1
+    got9=$(awk -F'\t' '$1 == "## autosome_denominator" { print $2 }' "$WORK/fd9.froh.tsv")
+    want2=$(awk -F'\t' '{ s += $2 } END { printf "%d", s }' "$WORK/fd.dbl")
+    if [ "$got9" = "$want2" ]; then ok
+    else bad "--chr-lengths did not take precedence over --build ($got9, expected $want2)"; fi
+
+    # 8. A chromosome with no length stops the run.  Falling back to its marker
+    #    span would make the denominator neither convention, and the warning
+    #    would not survive into a figure.
+    grep -v "^chr9	" "$WORK/fd.lens" > "$WORK/fd.gap"
+    # shellcheck disable=SC2086
+    expect_exit 1 "a chromosome missing from --chr-lengths" \
+        "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --no-centromere \
+        --chr-lengths "$WORK/fd.gap" --froh-denominator assembly --out "$WORK/fd10"
+    # shellcheck disable=SC2086
+    expect_exit 1 "assembly with no lengths available at all" \
+        "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --no-centromere \
+        --froh-denominator assembly --out "$WORK/fd11"
+
+    # 9. Combinations that cannot be honoured.
+    # shellcheck disable=SC2086
+    expect_exit 1 "assembly with --cm" \
+        "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --map "$EX/chr21.map.gz" \
+        --cm --build hg18 --winsize 60 --error 0.001 --lod-cutoff 0.5 --size-bounds 1 2 \
+        --froh --froh-denominator assembly --out "$WORK/fd12" --force
+    # shellcheck disable=SC2086
+    expect_exit 1 "--chr-lengths without assembly" \
+        "$GARLIC" --tped "$EX/example.tped.gz" $FDBASE --build hg18 \
+        --chr-lengths "$WORK/fd.lens" --out "$WORK/fd13"
+    expect_exit 1 "assembly without --froh" \
+        "$GARLIC" --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 \
+        --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+        --froh-denominator assembly --out "$WORK/fd14" --force
+    expect_exit 1 "an unknown --froh-denominator" \
+        "$GARLIC" --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 \
+        --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --froh \
+        --froh-denominator genome --out "$WORK/fd15" --force
+
+    # 10. A VCF states its own lengths.  The decoys, the alt contig and chrEBV
+    #     are in the header and must never be consulted -- they carry no data,
+    #     so nothing looks them up, which is what makes this need no list of
+    #     "real" chromosome names.
+    {
+        printf '##fileformat=VCFv4.2\n'
+        printf '##contig=<ID=chr21,length=48129895>\n'
+        printf '##contig=<ID=chrUn_KI270302v1,length=2274>\n'
+        printf '##contig=<ID=chr21_KI270872v1_alt,length=82692>\n'
+        printf '##contig=<ID=chrEBV,length=171823>\n'
+        printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\ts3\ts4\n'
+        for p in 1000 200000 400000 600000 800000 1000000; do
+            printf 'chr21\t%s\tv%s\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/0\n' "$p" "$p"
+        done
+    } > "$WORK/fdh.vcf"
+    printf 's1\tP\ns2\tP\ns3\tP\ns4\tP\n' > "$WORK/fdh.pop"
+    "$GARLIC" --vcf "$WORK/fdh.vcf" --pop "$WORK/fdh.pop" --no-centromere --winsize 2 \
+        --error 0.001 --lod-cutoff 2.5 --size-bounds 100 200 --froh \
+        --froh-denominator assembly --out "$WORK/fd16" --force >/dev/null 2>&1
+    got16=$(awk -F'\t' '$1 == "## autosome_denominator" { print $2 }' "$WORK/fd16.froh.tsv")
+    if [ "$got16" = "48129895" ]; then ok
+    else bad "the VCF header gave a denominator of $got16, its chr21 contig is 48129895"; fi
+    # Its length disagrees with hg38, and one of them is wrong.  This is the
+    # only witness garlic has to a --build that does not match the data.
+    expect_exit 1 "a VCF header that contradicts --build" \
+        "$GARLIC" --vcf "$WORK/fdh.vcf" --pop "$WORK/fdh.pop" --build hg38 --winsize 2 \
+        --error 0.001 --lod-cutoff 2.5 --size-bounds 100 200 --froh --out "$WORK/fd17" --force
+
+    # 11. The shared sex chromosome gets its chromosome's raw length, PARs
+    #     included -- the inconsistency the raw definition accepts, and the one
+    #     the published denominators have.
+    awk '{ print NR"\t"$5 }' "$EX/example.tfam" > "$WORK/fdsex.txt"
+    gz "$EX/example.tped.gz" | awk -v OFS='\t' 'NR == FNR { sex[$1] = $2; next }
+        $1 != 22 { print; next }
+        { $1 = "chrX"
+          for (i = 5; i <= NF; i += 2) { j = (i-3)/2; if (sex[j] == 1 && $i != $(i+1)) $(i+1) = $i }
+          print }' "$WORK/fdsex.txt" - | gzip > "$WORK/fdsex.tped.gz"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/fdsex.tped.gz" $FDBASE --build hg18 --sex-system xy \
+        --froh-denominator assembly --out "$WORK/fd18" >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/fdsex.tped.gz" $FDBASE --build hg18 --sex-system xy --par none \
+        --froh-denominator assembly --out "$WORK/fd19" >/dev/null 2>&1
+    wantx=$(awk -F'\t' '$1 == "hg18" && $2 == "chrX" { print $3 }' "$ROOT/centromeres/chr_lengths.txt")
+    gotx=$(awk -F'\t' '$1 == "## sexchr_denominator" { print $2 }' "$WORK/fd18.froh.tsv")
+    gotxn=$(awk -F'\t' '$1 == "## sexchr_denominator" { print $2 }' "$WORK/fd19.froh.tsv")
+    if [ "$gotx" = "$wantx" ] && [ "$gotxn" = "$wantx" ]; then ok
+    else bad "the sex chromosome denominator is $gotx (--par none: $gotxn), chrX is $wantx"; fi
+
+    # 12. The record says which convention produced the numbers, with or
+    #     without the flag, and replays.
+    m1=$(grep -c '"froh_denominator": "analyzed"' "$WORK/fd1.params.json")
+    m2=$(grep -c '"froh_denominator": "assembly"' "$WORK/fd2.params.json")
+    m3=$(grep -c '"chromosome_lengths": "build hg18"' "$WORK/fd2.params.json")
+    if [ "$m1" -eq 1 ] && [ "$m2" -eq 1 ] && [ "$m3" -eq 1 ]; then ok
+    else bad "the parameter record does not name the denominator and its source"; fi
+    "$GARLIC" --load-params "$WORK/fd2.params.json" --out "$WORK/fd20" --force >/dev/null 2>&1
+    if diff "$WORK/fd2.froh.tsv" "$WORK/fd20.froh.tsv" >/dev/null; then ok
+    else bad "an assembly-denominator run did not replay from its parameter record"; fi
+}
+
 params_roundtrip() {
     echo "== params round trip =="
     $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --map "$EX/chr21.map.gz" \
@@ -2194,6 +2410,7 @@ freq_file_format
 half_calls
 multi_population
 sex_chromosomes
+froh_denominator
 outdir_paths
 exit_codes
 params_roundtrip

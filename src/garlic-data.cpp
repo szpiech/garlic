@@ -918,6 +918,214 @@ int readPARFile(const string &filename, ExcludedRegions &par)
     return 0;
 }
 
+//---- chromosome lengths -----------------------------------------------------
+
+void ChrLengths::add(const string &chr, pos_t len)
+{
+    string key = canonChrKey(chr);
+    if (byKey.find(key) == byKey.end()) order.push_back(chr);
+    byKey[key] = len;
+}
+
+pos_t ChrLengths::get(const string &chr) const
+{
+    map<string, pos_t>::const_iterator it = byKey.find(canonChrKey(chr));
+    return (it == byKey.end()) ? 0 : it->second;
+}
+
+int readChrLengthsFile(const string &filename, ChrLengths &out)
+{
+    igzstream fin;
+    fin.open(filename.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: could not open", filename);
+        return -1;
+    }
+
+    string line;
+    int lineno = 0, nread = 0;
+    while (getline(fin, line))
+    {
+        lineno++;
+        //A .fai has no comments, but a hand-written list often does.
+        size_t b = line.find_first_not_of(" \t\r\n");
+        if (b == string::npos || line[b] == '#') continue;
+
+        //Columns 1 and 2 and nothing else, which is the two-column form AND a
+        //samtools faidx .fai -- whose remaining columns are byte offsets that
+        //say nothing about the chromosome.  Reading only the first two means
+        //a user can pass the .fai sitting next to their reference unchanged.
+        istringstream ss(line);
+        string chr; double len = 0;
+        if (!(ss >> chr >> len))
+        {
+            LOG.err("ERROR: line", lineno, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" is not <chromosome> <length>.");
+            return -1;
+        }
+        if (len <= 0)
+        {
+            LOG.err("ERROR: line", lineno, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" gives chromosome", chr, false);
+            LOG.err(" a length of", len, false);
+            LOG.err("; a length must be positive.");
+            return -1;
+        }
+        if (out.get(chr) > 0 && out.get(chr) != pos_t(len))
+        {
+            LOG.err("ERROR:", filename, false);
+            LOG.err(" gives chromosome", chr, false);
+            LOG.err(" two different lengths.");
+            return -1;
+        }
+        out.add(chr, pos_t(len));
+        nread++;
+    }
+    fin.close();
+
+    if (nread == 0)
+    {
+        LOG.err("ERROR:", filename, false);
+        LOG.err(" contains no chromosome lengths.");
+        return -1;
+    }
+    out.setSource(filename);
+    LOG.log("Chromosome lengths read:", nread, false);
+    LOG.log(" from", filename);
+    return 0;
+}
+
+bool builtinChrLengths(const string &build, ChrLengths &result)
+{
+    //Sequence-Length of every assembled-molecule Chromosome row in the GRC
+    //assembly report for each build, recorded with its source URL in
+    //centromeres/chr_lengths.txt.  RAW lengths: nothing is taken off for the
+    //centromere, for assembly gaps, or for the pseudoautosomal regions.  The
+    //hg19 autosomes sum to 2,881,033,286 and chrX is 155,270,560, which are
+    //the denominators Cotter et al. (2024) published.
+    //
+    //Y is omitted: it is a degenerate sex chromosome, dropped from the
+    //analysis whole, so it is in no denominator and a length for it would
+    //only be a number nothing reads.
+    //
+    //Builds into a local and assigns only on success: called with a build it
+    //does not know, it must leave the caller's table exactly as it found it
+    //and say so, rather than reporting the table's existing contents as its
+    //own.
+    ChrLengths out;
+    if (build.compare("hg18") == 0)
+    {
+        out.add("chr1", 247249719);
+        out.add("chr2", 242951149);
+        out.add("chr3", 199501827);
+        out.add("chr4", 191273063);
+        out.add("chr5", 180857866);
+        out.add("chr6", 170899992);
+        out.add("chr7", 158821424);
+        out.add("chr8", 146274826);
+        out.add("chr9", 140273252);
+        out.add("chr10", 135374737);
+        out.add("chr11", 134452384);
+        out.add("chr12", 132349534);
+        out.add("chr13", 114142980);
+        out.add("chr14", 106368585);
+        out.add("chr15", 100338915);
+        out.add("chr16", 88827254);
+        out.add("chr17", 78774742);
+        out.add("chr18", 76117153);
+        out.add("chr19", 63811651);
+        out.add("chr20", 62435964);
+        out.add("chr21", 46944323);
+        out.add("chr22", 49691432);
+        out.add("chrX", 154913754);
+    }
+    else if (build.compare("hg19") == 0)
+    {
+        out.add("chr1", 249250621);
+        out.add("chr2", 243199373);
+        out.add("chr3", 198022430);
+        out.add("chr4", 191154276);
+        out.add("chr5", 180915260);
+        out.add("chr6", 171115067);
+        out.add("chr7", 159138663);
+        out.add("chr8", 146364022);
+        out.add("chr9", 141213431);
+        out.add("chr10", 135534747);
+        out.add("chr11", 135006516);
+        out.add("chr12", 133851895);
+        out.add("chr13", 115169878);
+        out.add("chr14", 107349540);
+        out.add("chr15", 102531392);
+        out.add("chr16", 90354753);
+        out.add("chr17", 81195210);
+        out.add("chr18", 78077248);
+        out.add("chr19", 59128983);
+        out.add("chr20", 63025520);
+        out.add("chr21", 48129895);
+        out.add("chr22", 51304566);
+        out.add("chrX", 155270560);
+    }
+    else if (build.compare("hg38") == 0)
+    {
+        out.add("chr1", 248956422);
+        out.add("chr2", 242193529);
+        out.add("chr3", 198295559);
+        out.add("chr4", 190214555);
+        out.add("chr5", 181538259);
+        out.add("chr6", 170805979);
+        out.add("chr7", 159345973);
+        out.add("chr8", 145138636);
+        out.add("chr9", 138394717);
+        out.add("chr10", 133797422);
+        out.add("chr11", 135086622);
+        out.add("chr12", 133275309);
+        out.add("chr13", 114364328);
+        out.add("chr14", 107043718);
+        out.add("chr15", 101991189);
+        out.add("chr16", 90338345);
+        out.add("chr17", 83257441);
+        out.add("chr18", 80373285);
+        out.add("chr19", 58617616);
+        out.add("chr20", 64444167);
+        out.add("chr21", 46709983);
+        out.add("chr22", 50818468);
+        out.add("chrX", 156040895);
+    }
+    else if (build.compare("t2t-chm13") == 0)
+    {
+        out.add("chr1", 248387328);
+        out.add("chr2", 242696752);
+        out.add("chr3", 201105948);
+        out.add("chr4", 193574945);
+        out.add("chr5", 182045439);
+        out.add("chr6", 172126628);
+        out.add("chr7", 160567428);
+        out.add("chr8", 146259331);
+        out.add("chr9", 150617247);
+        out.add("chr10", 134758134);
+        out.add("chr11", 135127769);
+        out.add("chr12", 133324548);
+        out.add("chr13", 113566686);
+        out.add("chr14", 101161492);
+        out.add("chr15", 99753195);
+        out.add("chr16", 96330374);
+        out.add("chr17", 84276897);
+        out.add("chr18", 80542538);
+        out.add("chr19", 61707364);
+        out.add("chr20", 66210255);
+        out.add("chr21", 45090682);
+        out.add("chr22", 51324926);
+        out.add("chrX", 154259566);
+    }
+    if (out.empty()) return false;
+    out.setSource("build " + build);
+    result = out;
+    return true;
+}
+
 bool builtinPAR(const string &build, vector<Interval> &regions)
 {
     //From the GRC region report for each assembly, recorded with its source
@@ -3762,7 +3970,8 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                  vector< GenoLikeData * > **GLDataByChr,
                  int nresample, bool PHASED, bool AUTO_FREQ, bool PASS_ONLY,
                  string GL_TYPE, vector<string> &sampleIDs,
-                 const map<string, ChrRole> *declaredRoles)
+                 const map<string, ChrRole> *declaredRoles,
+                 ChrLengths *headerLengths)
 {
     igzstream fin;
     fin.open(vcffile.c_str());
@@ -3812,7 +4021,50 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
         const char *pEnd = p + line.size();
         const char *tEnd;
 
-        if (line.size() >= 2 && line[0] == '#' && line[1] == '#') continue;
+        if (line.size() >= 2 && line[0] == '#' && line[1] == '#')
+        {
+            //##contig=<ID=...,length=...> is the only meta line garlic reads.
+            //A VCF states the length of each sequence it was called against,
+            //which is a denominator for --froh-denominator assembly and a
+            //check on --build that nothing else in the file provides.  The
+            //rest of the header is skipped as before.
+            //
+            //Nothing here cares how many contigs the file declares or what
+            //they are: the lengths are looked up later, only for chromosomes
+            //that turn out to carry data, so decoys, unplaced scaffolds and
+            //alt haplotypes cost a map entry and are never consulted.
+            if (headerLengths != NULL && line.compare(0, 10, "##contig=<") == 0)
+            {
+                string id; double len = 0; bool haveLen = false;
+                size_t p0 = 10;
+                while (p0 < line.size())
+                {
+                    size_t eq = line.find('=', p0);
+                    if (eq == string::npos) break;
+                    string key = line.substr(p0, eq - p0);
+                    size_t vs = eq + 1, ve;
+                    if (vs < line.size() && line[vs] == '"')
+                    { vs++; ve = line.find('"', vs); if (ve == string::npos) break; }
+                    else
+                    {
+                        ve = line.find_first_of(",>", vs);
+                        if (ve == string::npos) ve = line.size();
+                    }
+                    string val = line.substr(vs, ve - vs);
+                    if (key.compare("ID") == 0) id = val;
+                    else if (key.compare("length") == 0)
+                    { len = atof(val.c_str()); haveLen = true; }
+                    p0 = line.find_first_of(",>", ve);
+                    if (p0 == string::npos || line[p0] == '>') break;
+                    p0++;
+                }
+                //A contig with no length attribute is legal and common; it
+                //simply supplies nothing.
+                if (!id.empty() && haveLen && len > 0)
+                    headerLengths->add(id, pos_t(len));
+            }
+            continue;
+        }
 
         //--- the #CHROM header names the samples ---
         if (!line.empty() && line[0] == '#')

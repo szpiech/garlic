@@ -92,7 +92,11 @@ void writeFROH(string outfile,
                //last marker inward and the span shrank by itself.  An INTERIOR
                //one does not, and stays in the denominator unless it is
                //subtracted here.
-               const ExcludedRegions *excluded = NULL);
+               const ExcludedRegions *excluded = NULL,
+               //One of the FROHDenominator values, and the lengths it needs.
+               //chrLengths may be NULL under FROH_ANALYZED, which reads none.
+               int denomMode = FROH_ANALYZED,
+               const ChrLengths *chrLengths = NULL);
 void calcLOD(MapData *mapData,
              HapData *hapData, FreqData *freqData,
              GenoLikeData *GLData,
