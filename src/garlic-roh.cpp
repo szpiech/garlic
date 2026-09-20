@@ -374,28 +374,42 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< MapData * > *mapDataByChr,
                                     vector< GenoLikeData * > *GLDataByChr,
                                     centromere *centro,
-                                    int winsize, double error, int MAX_GAP, bool USE_GL)
+                                    int winsize, double error, int MAX_GAP, bool USE_GL,
+                                    int sexWinsize, const vector<ChrRole> *role)
 {
-    if (!LOG.isQuiet()) cerr << "Calculating LOD scores with winsize " << winsize << ".\n";
+    if (!LOG.isQuiet())
+    {
+        //Named separately when they differ: this line is the record of what
+        //the windows in this run are, and one number would not be it.
+        cerr << "Calculating LOD scores with winsize " << winsize;
+        if (sexWinsize > 0 && role != NULL)
+        {
+            for (unsigned int c = 0; c < role->size(); c++)
+                if (role->at(c) == CHR_SEX_SHARED)
+                { cerr << " (" << sexWinsize << " on the shared sex chromosome)"; break; }
+        }
+        cerr << ".\n";
+    }
 
     vector< WinData * > *winDataByChr = initWinData(mapDataByChr, hapDataByChr->at(0)->nind);
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         if (progressEnabled()) cerr << mapDataByChr->at(chr)->chr << "    ";
+        const int w = winsizeForChr(winsize, sexWinsize, role, chr);
         if(USE_GL){
             calcLOD(mapDataByChr->at(chr),
                     hapDataByChr->at(chr), freqDataByChr->at(chr),
                     GLDataByChr->at(chr),
                     winDataByChr->at(chr), centro,
-                    winsize, error, MAX_GAP, USE_GL);
+                    w, error, MAX_GAP, USE_GL);
         }
         else{
             calcLOD(mapDataByChr->at(chr),
                     hapDataByChr->at(chr), freqDataByChr->at(chr),
                     NULL,
                     winDataByChr->at(chr), centro,
-                    winsize, error, MAX_GAP, USE_GL);
+                    w, error, MAX_GAP, USE_GL);
         }
     }
     return winDataByChr;
@@ -408,15 +422,29 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                                      vector< LDData * > *ldDataByChr,
                                      centromere *centro,
                                      int winsize, double error, int MAX_GAP, bool USE_GL, 
-                                     int M, double mu, int numThreads)
+                                     int M, double mu, int numThreads,
+                                     int sexWinsize, const vector<ChrRole> *role)
 {
-    if (!LOG.isQuiet()) cerr << "Calculating LOD scores with winsize " << winsize << ".\n";
+    if (!LOG.isQuiet())
+    {
+        //Named separately when they differ: this line is the record of what
+        //the windows in this run are, and one number would not be it.
+        cerr << "Calculating LOD scores with winsize " << winsize;
+        if (sexWinsize > 0 && role != NULL)
+        {
+            for (unsigned int c = 0; c < role->size(); c++)
+                if (role->at(c) == CHR_SEX_SHARED)
+                { cerr << " (" << sexWinsize << " on the shared sex chromosome)"; break; }
+        }
+        cerr << ".\n";
+    }
 
     vector< WinData * > *winDataByChr = initWinData(mapDataByChr, hapDataByChr->at(0)->nind);
 
     for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
     {
         if (progressEnabled()) cerr << mapDataByChr->at(chr)->chr << "    ";
+        const int w = winsizeForChr(winsize, sexWinsize, role, chr);
         if(USE_GL){
             calcwLOD(mapDataByChr->at(chr),
                      hapDataByChr->at(chr),
@@ -424,7 +452,7 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                      GLDataByChr->at(chr),
                      ldDataByChr->at(chr),
                      winDataByChr->at(chr), centro,
-                     winsize, error, MAX_GAP, USE_GL, mu, M, numThreads);
+                     w, error, MAX_GAP, USE_GL, mu, M, numThreads);
         }
         else{
             calcwLOD(mapDataByChr->at(chr),
@@ -433,7 +461,7 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                      NULL,
                      ldDataByChr->at(chr),
                      winDataByChr->at(chr), centro,
-                     winsize, error, MAX_GAP, USE_GL, mu, M, numThreads);   
+                     w, error, MAX_GAP, USE_GL, mu, M, numThreads);   
         }
     }
     return winDataByChr;
@@ -508,9 +536,12 @@ struct ROH_work_order_t
     double lodScoreCutoff;
     int winSize;
     int MAX_GAP;
-    double OVERLAP_THRESHOLD;
+    double OVERLAP_FRAC;
     bool CM;
     const vector<ChrRole> *role;
+    double sexCutoff;
+    bool haveSexCutoff;
+    int sexWinsize;
     vector< ROHData * > *rohDataByInd;
     //Per-thread so there is no shared push_back; concatenated in thread order
     //below, which reproduces the serial order exactly because each thread owns
@@ -526,10 +557,9 @@ static void parallelAssembleROH(ROH_work_order_t *p)
     vector< MapData * > *mapDataByChr = p->mapDataByChr;
     IndData *indData = p->indData;
     centromere *centro = p->centro;
-    const double lodScoreCutoff = p->lodScoreCutoff;
-    const int winSize = p->winSize;
+    const int winSizeRun = p->winSize;
     const int MAX_GAP = p->MAX_GAP;
-    const double OVERLAP_THRESHOLD = p->OVERLAP_THRESHOLD;
+    const double OVERLAP_FRAC = p->OVERLAP_FRAC;
     const bool CM = p->CM;
     const vector<ChrRole> *role = p->role;
     vector< ROHData * > *rohDataByInd = p->rohDataByInd;
@@ -548,6 +578,17 @@ static void parallelAssembleROH(ROH_work_order_t *p)
             //this is true everywhere and the behaviour is unchanged.
             const bool sizeClassChr = (role == NULL || chr >= role->size() ||
                                        role->at(chr) == CHR_AUTOSOME);
+
+            //Both of these belong to the chromosome, not to the run: a cutoff
+            //is a statement about windows of a given size, so a chromosome
+            //given its own size needs its own cutoff to go with it.
+            const int winSize = winsizeForChr(winSizeRun, p->sexWinsize, role, chr);
+            double OVERLAP_THRESHOLD = OVERLAP_FRAC * winSize;
+            OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD >= 1) ? OVERLAP_THRESHOLD : 1;
+            OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD <= winSize) ? OVERLAP_THRESHOLD : winSize;
+            const double lodScoreCutoff =
+                (p->haveSexCutoff && role != NULL && chr < role->size() &&
+                 role->at(chr) == CHR_SEX_SHARED) ? p->sexCutoff : p->lodScoreCutoff;
 
             WinData *winData = winDataByChr->at(chr);
             MapData *mapData = mapDataByChr->at(chr);
@@ -683,13 +724,11 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         int winSize,
                                         int MAX_GAP,
                                         double OVERLAP_FRAC, bool CM,
-                                        const vector<ChrRole> *role)
+                                        const vector<ChrRole> *role,
+                                        double sexCutoff, bool haveSexCutoff,
+                                        int sexWinsize)
 {
     vector< ROHData * > *rohDataByInd = initROHData(indData);
-
-    double OVERLAP_THRESHOLD = OVERLAP_FRAC * winSize;
-    OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD >= 1) ? OVERLAP_THRESHOLD : 1;
-    OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD <= winSize) ? OVERLAP_THRESHOLD : winSize;
 
     //Individuals are independent: each writes only its own ROHData.
     int nt = LOD_NUM_THREADS;
@@ -709,7 +748,10 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
         orders[i].lodScoreCutoff = lodScoreCutoff;
         orders[i].winSize = winSize;
         orders[i].MAX_GAP = MAX_GAP;
-        orders[i].OVERLAP_THRESHOLD = OVERLAP_THRESHOLD;
+        orders[i].OVERLAP_FRAC = OVERLAP_FRAC;
+        orders[i].sexCutoff = sexCutoff;
+        orders[i].haveSexCutoff = haveSexCutoff;
+        orders[i].sexWinsize = sexWinsize;
         orders[i].CM = CM;
         orders[i].role = role;
         orders[i].rohDataByInd = rohDataByInd;
@@ -1161,7 +1203,7 @@ long long maskIneligibleWindows(vector< WinData * > *winDataByChr, IndData *indD
 
 bool reportSexChrLODCutoff(vector< WinData * > *winDataByChr, IndData *indData,
                            const vector<ChrRole> *role, int step, int wsize,
-                           double autosomalCutoff)
+                           double appliedCutoff, bool cutoffIsItsOwn)
 {
     if (role == NULL) return false;
     bool haveSexChr = false;
@@ -1192,12 +1234,14 @@ bool reportSexChrLODCutoff(vector< WinData * > *winDataByChr, IndData *indData,
         //cohort often have no second mode to find.  That is the reason the
         //autosomal cutoff is the one used.
         LOG.log("Sex chromosome: no separate LOD score cutoff could be estimated from its own");
-        LOG.log("\twindows; the autosomal cutoff is the one applied.");
+        if (cutoffIsItsOwn) LOG.log("\twindows; the one given for it is the one applied.");
+        else LOG.log("\twindows; the autosomal cutoff is the one applied.");
         return false;
     }
 
     LOG.log("Sex chromosome: its own windows would give a LOD score cutoff of", cutoff, false);
-    LOG.log("; the autosomal cutoff", autosomalCutoff, false);
+    if (cutoffIsItsOwn) LOG.log("; the cutoff given for it,", appliedCutoff, false);
+    else LOG.log("; the autosomal cutoff", appliedCutoff, false);
     LOG.log(" is the one applied.");
     return true;
 }

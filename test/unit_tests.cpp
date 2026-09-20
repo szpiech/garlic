@@ -662,6 +662,33 @@ static void test_sex_model()
     releaseIndData(ind2);
 }
 
+// ------------------------------------------- winsizeForChr ---------------
+// The window size stops being one number for the run once --sexchr-winsize
+// exists.  Every stage that takes one -- the LOD windows, the LD matrix, the
+// overlap threshold -- asks this, so a wrong answer here is a silent change
+// of window size on the wrong chromosome.
+static void test_winsize_for_chr()
+{
+    vector<ChrRole> role;
+    role.push_back(CHR_AUTOSOME);
+    role.push_back(CHR_SEX_SHARED);
+    role.push_back(CHR_SEX_DEGENERATE);
+
+    ck(winsizeForChr(60, 30, &role, 0) == 60, "an autosome keeps the run's window size");
+    ck(winsizeForChr(60, 30, &role, 1) == 30, "the shared sex chromosome takes its own");
+    ck(winsizeForChr(60, 30, &role, 2) == 60,
+       "a degenerate sex chromosome is not the one --sexchr-winsize names");
+
+    // Unset is the default and has to mean "the run's size", not zero.
+    ck(winsizeForChr(60, 0, &role, 1) == 60, "no override leaves the sex chromosome alone");
+    ck(winsizeForChr(60, -1, &role, 1) == 60, "a nonsensical override is ignored, not applied");
+
+    // The role vector is absent on paths that never built one, and an index
+    // past its end is reachable while chromosomes are being filtered.
+    ck(winsizeForChr(60, 30, NULL, 1) == 60, "no role table means the run's size");
+    ck(winsizeForChr(60, 30, &role, 7) == 60, "an index past the table means the run's size");
+}
+
 // ------------------------------------------- ExcludedRegions -------------
 // A chromosome has a SET of excluded regions, not one.  Humans already have
 // two pseudoautosomal regions; the container the centromere table uses is one
@@ -1190,6 +1217,7 @@ int main()
     test_chr_names();
     test_canonChrKey();
     test_sex_model();
+    test_winsize_for_chr();
     test_chr_key_collisions();
     test_excluded_regions();
     test_glToError();

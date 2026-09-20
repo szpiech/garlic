@@ -156,6 +156,16 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     LOG.log("Choose LOD score cutoff automatically:", opt.AUTO_CUTOFF);
     if (!opt.AUTO_CUTOFF) LOG.log("User defined LOD score cutoff:", opt.LOD_CUTOFF);
 
+    opt.SEXCHR_LOD_CUTOFF = params->getDoubleFlag(ARG_SEXCHR_LOD_CUTOFF);
+    opt.SEXCHR_CUTOFF_SET = params->isFlagSet(ARG_SEXCHR_LOD_CUTOFF);
+    opt.SEXCHR_WINSIZE = params->getIntFlag(ARG_SEXCHR_WINSIZE);
+    argerr = argerr || checkSexChrEstimates(opt.SEXCHR_LOD_CUTOFF, opt.SEXCHR_CUTOFF_SET,
+                                            opt.SEXCHR_WINSIZE, params->isFlagSet(ARG_SEXCHR_WINSIZE),
+                                            opt.WINSIZE_EXPLORE, FREQ_ONLY);
+    if (argerr) return OPTIONS_USAGE_ERROR;
+    if (opt.SEXCHR_CUTOFF_SET) LOG.log("Sex chromosome LOD score cutoff:", opt.SEXCHR_LOD_CUTOFF);
+    if (opt.SEXCHR_WINSIZE > 0) LOG.log("Sex chromosome window size:", opt.SEXCHR_WINSIZE);
+
     opt.boundSizes = params->getDoubleListFlag(ARG_BOUND_SIZE);
     opt.AUTO_BOUNDS = true;
     argerr = argerr || checkBoundSizes(opt.boundSizes, opt.AUTO_BOUNDS, params->isFlagSet(ARG_BOUND_SIZE));

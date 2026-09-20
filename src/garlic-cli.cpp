@@ -314,6 +314,25 @@ const string HELP_SEX_CHR_DEGENERATE = "The chromosome carried only by the heter
 \tsex and absent in the other -- so it is dropped before calling.\n\
 \tDefault: the conventional name for --sex-system";
 
+const string ARG_SEXCHR_LOD_CUTOFF = "--sexchr-lod-cutoff";
+const double DEFAULT_SEXCHR_LOD_CUTOFF = -999999;
+const string HELP_SEXCHR_LOD_CUTOFF = "Call the shared sex chromosome at this LOD score cutoff instead of the one\n\
+\testimated on the autosomes. Every run logs what the sex chromosome's own\n\
+\twindows would have given, which is where the value for this comes from.\n\
+\tThe autosomal cutoff is the default because one chromosome's windows from\n\
+\tpart of a cohort often cannot locate a second minimum in the density at all;\n\
+\tthat is also why this is a value you supply rather than a switch that asks\n\
+\tgarlic to re-estimate.\n\tDefault: the autosomal cutoff";
+
+const string ARG_SEXCHR_WINSIZE = "--sexchr-winsize";
+const int DEFAULT_SEXCHR_WINSIZE = 0;
+const string HELP_SEXCHR_WINSIZE = "Build windows of this many SNPs on the shared sex chromosome instead of the\n\
+\tsize used on the autosomes. The overlap FRACTION is unchanged, so the number\n\
+\tof windows a SNP must fall in scales with the window.\n\
+\tA LOD score cutoff belongs to the window size it was estimated at, so with\n\
+\tthis the autosomal cutoff no longer applies to the sex chromosome; give\n\
+\t--sexchr-lod-cutoff as well.\n\tDefault: the autosomal window size";
+
 const string ARG_PAR = "--par";
 const string HELP_PAR = "Pseudoautosomal regions on the shared sex chromosome, as <chr>:<start>-<end>,\n\
 \tcomma or space separated. They are diploid in both sexes and too short to\n\
@@ -522,6 +541,8 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addListFlag(ARG_SEX_CHR_DEGENERATE, "_NONE", "", HELP_SEX_CHR_DEGENERATE);
 	params->addListFlag(ARG_HAPLOID_CHR, "_NONE", "", HELP_HAPLOID_CHR);
 	params->addListFlag(ARG_HET_RATE_BOUNDS, 0.02, "", HELP_HET_RATE_BOUNDS);
+	params->addFlag(ARG_SEXCHR_LOD_CUTOFF, DEFAULT_SEXCHR_LOD_CUTOFF, "", HELP_SEXCHR_LOD_CUTOFF);
+	params->addFlag(ARG_SEXCHR_WINSIZE, DEFAULT_SEXCHR_WINSIZE, "", HELP_SEXCHR_WINSIZE);
 	params->addListFlag(ARG_PAR, "_NONE", "", HELP_PAR);
 	params->addFlag(ARG_PAR_FILE, DEFAULT_PAR_FILE, "", HELP_PAR_FILE);
 	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
@@ -805,6 +826,58 @@ bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF, bool wasSet)
 			LOG.err("ERROR:", ARG_LOD_CUTOFF, false);
 			LOG.err(" must be greater than", MISSING, false);
 			LOG.err(", which is the value that marks a window as uncallable.");
+			return true;
+		}
+	}
+	return false;
+}
+
+bool checkSexChrEstimates(double cutoff, bool cutoffSet, int winsize, bool winsizeSet,
+                          bool WINSIZE_EXPLORE, bool FREQ_ONLY)
+{
+	if (!cutoffSet && !winsizeSet) return false;
+
+	const string which = (cutoffSet && winsizeSet)
+	                     ? (ARG_SEXCHR_LOD_CUTOFF + " and " + ARG_SEXCHR_WINSIZE)
+	                     : (cutoffSet ? ARG_SEXCHR_LOD_CUTOFF : ARG_SEXCHR_WINSIZE);
+
+	if (FREQ_ONLY) {
+		LOG.err("ERROR:", which, false);
+		LOG.err(string(" concern ROH calling and ") + ARG_FREQ_ONLY + " calls none.");
+		return true;
+	}
+
+	//The exploration reports a table over window sizes, and every row of it
+	//would need its own sex-chromosome cutoff to mean anything.
+	if (WINSIZE_EXPLORE) {
+		LOG.err("ERROR:", which, false);
+		LOG.err(string(" cannot be used with ") + ARG_WINSIZE_MULTI + ".");
+		return true;
+	}
+
+	if (cutoffSet && cutoff <= double(MISSING)) {
+		LOG.err("ERROR:", ARG_SEXCHR_LOD_CUTOFF, false);
+		LOG.err(" must be greater than", MISSING, false);
+		LOG.err(", which is the value that marks a window as uncallable.");
+		return true;
+	}
+
+	if (winsizeSet) {
+		if (winsize <= 0) {
+			LOG.err("ERROR:", ARG_SEXCHR_WINSIZE, false);
+			LOG.err(" must be a positive number of SNPs.");
+			return true;
+		}
+		//A LOD score cutoff belongs to the window size it was estimated at:
+		//more SNPs in a window means more terms in the sum, and the scores
+		//move with it.  Carrying the autosomal cutoff onto windows of another
+		//size would give a plausible-looking but meaningless set of calls, so
+		//it is refused rather than warned about.
+		if (!cutoffSet) {
+			LOG.err("ERROR:", ARG_SEXCHR_WINSIZE, false);
+			LOG.err(string(" changes what a LOD score on that chromosome means, so the "
+			               "autosomal cutoff no longer applies to it. Give ") +
+			        ARG_SEXCHR_LOD_CUTOFF + " as well.");
 			return true;
 		}
 	}

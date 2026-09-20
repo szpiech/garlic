@@ -1065,6 +1065,12 @@ int dropExcludedSites(vector< MapData * > **mapDataByChr,
     return numLoci;
 }
 
+int winsizeForChr(int winsize, int sexWinsize, const vector<ChrRole> *role, unsigned int chr)
+{
+    if (sexWinsize <= 0 || role == NULL || chr >= role->size()) return winsize;
+    return (role->at(chr) == CHR_SEX_SHARED) ? sexWinsize : winsize;
+}
+
 int filterChromosomes(vector<string> &keep,
                       vector< MapData * > **mapDataByChr,
                       vector< HapData * > **hapDataByChr,
@@ -1961,7 +1967,9 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
                                int MAX_GAP,
                                bool PHASED,
                                int numThreads,
-                               int ldSubsample)
+                               int ldSubsample,
+                               int sexWinsize,
+                               const vector<ChrRole> *role)
 {
 
     GarlicRNG *r = getRNG();
@@ -1988,8 +1996,9 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
     vector< LDData * > *ldDataByChr = new vector< LDData * >;
     for(unsigned int chr = 0; chr < hapDataByChr->size(); chr++){
         cerr << mapDataByChr->at(chr)->chr << "    ";
-        if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), winsize, numThreads, randInd.data(), ldSubsample));
-        else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), winsize, numThreads, randInd.data(), ldSubsample));
+        const int w = winsizeForChr(winsize, sexWinsize, role, chr);
+        if(!PHASED) ldDataByChr->push_back(calcHR2LD(hapDataByChr->at(chr), genoFreqDataByChr->at(chr), w, numThreads, randInd.data(), ldSubsample));
+        else ldDataByChr->push_back(calcR2LD(hapDataByChr->at(chr), freqDataByChr->at(chr), w, numThreads, randInd.data(), ldSubsample));
     }
     return ldDataByChr;
 }

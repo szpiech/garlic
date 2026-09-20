@@ -62,6 +62,13 @@ struct GarlicOptions
     bool            PHASED;
     int             KDE_THIN_STEP;
     int             MAX_WINSIZE;
+    //The shared sex chromosome's own cutoff and window size, when the user
+    //gave them.  Unset means "whatever the autosomes use", which is the
+    //default because a cutoff estimated on one chromosome's windows from part
+    //of a cohort is usually worse than the autosomal one, not better.
+    double          SEXCHR_LOD_CUTOFF;
+    bool            SEXCHR_CUTOFF_SET;
+    int             SEXCHR_WINSIZE;
     //The seed actually used: --seed if given, otherwise the one drawn.  Recorded
     //in <out>.params.json so a replay reuses it.
     unsigned long int SEED;

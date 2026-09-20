@@ -213,6 +213,14 @@ extern const string HELP_HAPLOID_CHR;
 extern const string ARG_HET_RATE_BOUNDS;
 extern const string HELP_HET_RATE_BOUNDS;
 
+extern const string ARG_SEXCHR_LOD_CUTOFF;
+extern const double DEFAULT_SEXCHR_LOD_CUTOFF;
+extern const string HELP_SEXCHR_LOD_CUTOFF;
+
+extern const string ARG_SEXCHR_WINSIZE;
+extern const int DEFAULT_SEXCHR_WINSIZE;
+extern const string HELP_SEXCHR_WINSIZE;
+
 extern const string ARG_PAR;
 extern const string HELP_PAR;
 
@@ -296,6 +304,12 @@ bool checkAutoFreq(string freqfile, bool FREQ_ONLY, bool &AUTO_FREQ);
 bool checkAutoWinsizeStep(int auto_winsize_step);
 bool checkAutoWinsize(bool WINSIZE_EXPLORE, bool AUTO_WINSIZE);
 bool checkAutoCutoff(double LOD_CUTOFF, bool &AUTO_CUTOFF, bool wasSet);
+
+//--sexchr-lod-cutoff and --sexchr-winsize.  A cutoff is a statement about
+//windows of a given size, so a sex chromosome given its own size must be given
+//its own cutoff too; the autosomal one no longer means anything there.
+bool checkSexChrEstimates(double cutoff, bool cutoffSet, int winsize, bool winsizeSet,
+                          bool WINSIZE_EXPLORE, bool FREQ_ONLY);
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet);
 bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile);
 bool checkMapFile(string mapfile, bool WEIGHTED);

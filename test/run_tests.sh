@@ -1969,6 +1969,87 @@ sex_chromosomes() {
         "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 \
         --winsize 60 --error 0.001 --lod-cutoff -9999 --size-bounds 500000 1000000 \
         --out "$WORK/sx13" --force
+
+    # 14. --sexchr-lod-cutoff and --sexchr-winsize: the escape hatch for a
+    #     cohort where the autosomal estimates do not suit the sex chromosome.
+    #     The fixture is the mixed one, so every case can check that what
+    #     changed on the sex chromosome left the autosomes alone.
+    SXEST="--build hg18 --error 0.001 --size-bounds 500000 1000000 --sex-system xy"
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SXEST \
+        --winsize 60 --lod-cutoff 2.5 --out "$WORK/sx40" --force >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SXEST \
+        --winsize 60 --lod-cutoff 2.5 --sexchr-lod-cutoff 1.5 --sexchr-winsize 30 \
+        --out "$WORK/sx41" --force >/dev/null 2>&1
+    # A different window size and cutoff on that chromosome has to change what
+    # is called there -- otherwise the flags are being read and discarded.
+    n40=$(awk '$1 == "chrX"' "$WORK/sx40.roh.bed" | wc -l | tr -d ' ')
+    n41=$(awk '$1 == "chrX"' "$WORK/sx41.roh.bed" | wc -l | tr -d ' ')
+    if [ "$n40" -gt 0 ] && [ "$n41" -ne "$n40" ]; then ok
+    else bad "--sexchr-winsize/--sexchr-lod-cutoff changed nothing on the sex chromosome ($n40 vs $n41)"; fi
+    # and nothing anywhere else.
+    awk '$1 != "chrX"' "$WORK/sx40.roh.bed" > "$WORK/sx40.auto.bed"
+    awk '$1 != "chrX"' "$WORK/sx41.roh.bed" > "$WORK/sx41.auto.bed"
+    if diff "$WORK/sx40.auto.bed" "$WORK/sx41.auto.bed" >/dev/null; then ok
+    else bad "the sex chromosome's own window size and cutoff moved autosomal calls"; fi
+    # The run record has to say what was applied where.  Both numbers, from
+    # the run rather than from the command line: this is the file --load-params
+    # reads and the one a reader checks a published cutoff against.
+    if grep -q '"sexchr_winsize": 30' "$WORK/sx41.params.json" &&
+       grep -q '"sexchr_lod_cutoff": 1.5' "$WORK/sx41.params.json"; then ok
+    else bad "the parameter record does not carry the sex chromosome's window size and cutoff"; fi
+    # Without the flags they are still recorded, holding the autosomal values:
+    # a reader should not have to know which flags were set to learn what the
+    # sex chromosome was called at.
+    if grep -q '"sexchr_winsize": 60' "$WORK/sx40.params.json" &&
+       grep -q '"sexchr_lod_cutoff": 2.5' "$WORK/sx40.params.json"; then ok
+    else bad "the parameter record omits the sex chromosome's resolved values by default"; fi
+    # And not at all when no sex chromosome was analysed, where they would be
+    # the autosomal numbers under another name.
+    # shellcheck disable=SC2086
+    "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SXEST \
+        --winsize 60 --lod-cutoff 2.5 --autosomes-only --out "$WORK/sx42" --force >/dev/null 2>&1
+    if ! grep -q 'sexchr_winsize' "$WORK/sx42.params.json"; then ok
+    else bad "an autosome-only run recorded a sex chromosome window size"; fi
+    # The log says it too, next to the autosomal window size, because a reader
+    # who sees one number will assume it applied to the whole run.
+    if grep -q "Window size on the shared sex chromosome: 30" "$WORK/sx41.log" &&
+       grep -q "cutoff on the shared sex chromosome: 1.5" "$WORK/sx41.log"; then ok
+    else bad "the log does not report the sex chromosome's window size and cutoff"; fi
+    # --load-params replays them: the record is only worth writing if it is
+    # enough to reproduce the run.
+    "$GARLIC" --load-params "$WORK/sx41.params.json" --out "$WORK/sx43" --force >/dev/null 2>&1
+    if diff "$WORK/sx41.roh.bed" "$WORK/sx43.roh.bed" >/dev/null; then ok
+    else bad "a run with sex-chromosome estimates did not replay from its parameter record"; fi
+    # A window size without a cutoff to go with it is refused: LOD scores move
+    # with the number of SNPs in a window, so the autosomal cutoff would be
+    # applied to numbers it does not describe.
+    # shellcheck disable=SC2086
+    expect_exit 1 "--sexchr-winsize without --sexchr-lod-cutoff" \
+        "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SXEST \
+        --winsize 60 --lod-cutoff 2.5 --sexchr-winsize 30 --out "$WORK/sx44" --force
+    # Given with nothing to apply them to, rather than silently ignored.
+    # shellcheck disable=SC2086
+    expect_exit 1 "--sexchr-lod-cutoff with no shared sex chromosome" \
+        "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SXEST \
+        --winsize 60 --lod-cutoff 2.5 --sexchr-lod-cutoff 1.5 --autosomes-only \
+        --out "$WORK/sx45" --force
+    # The same sentinel check the autosomal cutoff gets.
+    # shellcheck disable=SC2086
+    expect_exit 1 "--sexchr-lod-cutoff below the MISSING sentinel" \
+        "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SXEST \
+        --winsize 60 --lod-cutoff 2.5 --sexchr-lod-cutoff -9999 --out "$WORK/sx46" --force
+    # Each row of a window-size exploration would need its own sex-chromosome
+    # cutoff for one to mean anything, and --freq-only calls no ROH at all.
+    # shellcheck disable=SC2086
+    expect_exit 1 "--sexchr-lod-cutoff with --winsize-multi" \
+        "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" $SXEST \
+        --winsize-multi 40 60 --sexchr-lod-cutoff 1.5 --out "$WORK/sx47" --force
+    expect_exit 1 "--sexchr-winsize with --freq-only" \
+        "$GARLIC" --tped "$WORK/sxmixhemi.tped.gz" --tfam "$EX/chr21.tfam.gz" \
+        --sex-system xy --freq-only --sexchr-winsize 30 --sexchr-lod-cutoff 1.5 \
+        --out "$WORK/sx48" --force
 }
 
 params_roundtrip() {

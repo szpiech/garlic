@@ -532,6 +532,13 @@ int dropExcludedSites(vector< MapData * > **mapDataByChr,
                       //coordinates, and is reported rather than warned about.
                       bool fromBuild = false);
 
+//The window size to use on one chromosome: the sex chromosome's own when
+//--sexchr-winsize gave one, the run's everywhere else.  A window size is a
+//property of the chromosome it is applied to from here on, so every stage that
+//takes one -- the LOD windows, the LD matrix behind --weighted, and the
+//assembly of windows into tracts -- asks this rather than holding a scalar.
+int winsizeForChr(int winsize, int sexWinsize, const vector<ChrRole> *role, unsigned int chr);
+
 int filterChromosomes(vector<string> &keep,
                       vector< MapData * > **mapDataByChr,
                       vector< HapData * > **hapDataByChr,
@@ -634,7 +641,9 @@ vector< LDData * > *calcLDData(vector< HapData * > *hapDataByChr,
                                int MAX_GAP,
                                bool PHASED,
                                int numThreads,
-                               int ldSubsample);
+                               int ldSubsample,
+                               int sexWinsize = 0,
+                               const vector<ChrRole> *role = NULL);
 
 LDData *initLDData(int nloci, int winsize);
 void releaseLDData(LDData *data);

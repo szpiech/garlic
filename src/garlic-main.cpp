@@ -46,6 +46,14 @@ struct PopResult
     double         overlapFrac;
     double         lodCutoff;
     vector<double> boundSizes;
+    //What the shared sex chromosome was actually called at.  Equal to the
+    //autosomal values unless --sexchr-winsize/--sexchr-lod-cutoff changed
+    //them, and only meaningful when the run had a shared sex chromosome in
+    //it: recorded so the parameter file says what was applied where, rather
+    //than leaving a reader to work it out from which flags were set.
+    bool           haveSexChr;
+    int            sexWinsize;
+    double         sexLodCutoff;
 };
 
 static PopResult analyzePopulation(const GarlicOptions &opt,
@@ -98,6 +106,14 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     const bool   &PHASED           = opt.PHASED;
     const int    &KDE_THIN_STEP    = opt.KDE_THIN_STEP;
     const int    &MAX_WINSIZE      = opt.MAX_WINSIZE;
+    const double &SEXCHR_LOD_CUTOFF = opt.SEXCHR_LOD_CUTOFF;
+    const bool   &SEXCHR_CUTOFF_SET = opt.SEXCHR_CUTOFF_SET;
+    const int    &SEXCHR_WINSIZE    = opt.SEXCHR_WINSIZE;
+
+    bool haveSexChr = false;
+    if (chrRole != NULL)
+        for (unsigned int c = 0; c < chrRole->size(); c++)
+            if (chrRole->at(c) == CHR_SEX_SHARED) haveSexChr = true;
 
     //Chosen per population; the command-line value is the starting point, and
     //stays untouched when it was given explicitly.
@@ -178,6 +194,10 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     }
 
     cout << "Window size: " << winsize << endl;
+    //Said once, where the autosomal size is said, because a reader who sees
+    //only one number will assume it applied to everything.
+    if (SEXCHR_WINSIZE > 0 && haveSexChr)
+        LOG.log("Window size on the shared sex chromosome:", SEXCHR_WINSIZE);
 
     if(AUTO_OVERLAP_FRAC){
         OVERLAP_FRAC = selectOverlapFrac(variantDensity, winsize);
@@ -187,19 +207,22 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
 
     if(WEIGHTED){
         cerr << "Calculating LD matrix.\n";
-        ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads, LD_SUBSAMPLE);
+        ldDataByChr = calcLDData(hapDataByChr, freqDataByChr, mapDataByChr, genoFreqDataByChr, centro, winsize, MAX_GAP, PHASED, numThreads, LD_SUBSAMPLE,
+                                 SEXCHR_WINSIZE, chrRole);
         if(!PHASED) releaseGenoFreq(genoFreqDataByChr);
         winDataByChr = calcwLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
                                        GLDataByChr, ldDataByChr,
                                        centro, winsize, error,
-                                       MAX_GAP, USE_GL, M, mu, numThreads);
+                                       MAX_GAP, USE_GL, M, mu, numThreads,
+                                       SEXCHR_WINSIZE, chrRole);
         releaseLDData(ldDataByChr);
     }
     else{
         winDataByChr = calcLODWindows(hapDataByChr, freqDataByChr, mapDataByChr,
                                       GLDataByChr,
                                       centro, winsize, error,
-                                      MAX_GAP, USE_GL);
+                                      MAX_GAP, USE_GL,
+                                      SEXCHR_WINSIZE, chrRole);
     }
     releaseHapData(hapDataByChr);
     if (freqDataByChr != NULL) releaseFreqData(freqDataByChr);
@@ -244,17 +267,22 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         //is what Cotter et al. (2024) did and for the same reason.  Report
         //what the sex chromosome alone would have given, so the assumption is
         //visible rather than implicit.
+        const int sexWin = (SEXCHR_WINSIZE > 0) ? SEXCHR_WINSIZE : winsize;
         reportSexChrLODCutoff(winDataByChr, indData, chrRole,
-                              (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, LOD_CUTOFF);
+                              (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : sexWin), sexWin,
+                              SEXCHR_CUTOFF_SET ? SEXCHR_LOD_CUTOFF : LOD_CUTOFF,
+                              SEXCHR_CUTOFF_SET);
     }
     else cout << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
+    if (SEXCHR_CUTOFF_SET && haveSexChr)
+        LOG.log("User defined LOD score cutoff on the shared sex chromosome:", SEXCHR_LOD_CUTOFF);
 
     cout << "Assembling ROH windows\n";
     //Assemble ROH for each individual in each pop
     ROHLength *rohLength;
     vector< ROHData * > *rohDataByInd = assembleROHWindows(winDataByChr, mapDataByChr, indData,
                                         centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC, CM,
-                                        chrRole);
+                                        chrRole, SEXCHR_LOD_CUTOFF, SEXCHR_CUTOFF_SET, SEXCHR_WINSIZE);
 
     releaseWinData(winDataByChr);
     
@@ -325,6 +353,9 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     res.overlapFrac = OVERLAP_FRAC;
     res.lodCutoff   = LOD_CUTOFF;
     res.boundSizes  = boundSizes;
+    res.haveSexChr  = haveSexChr;
+    res.sexWinsize  = (SEXCHR_WINSIZE > 0) ? SEXCHR_WINSIZE : winsize;
+    res.sexLodCutoff = SEXCHR_CUTOFF_SET ? SEXCHR_LOD_CUTOFF : LOD_CUTOFF;
     if (writeStatus != 0) res.status = POP_ERROR;
     return res;
 }
@@ -892,6 +923,21 @@ int main(int argc, char *argv[])
         }
     }
 
+    //Checked here rather than in the option parser: whether the run has a
+    //shared sex chromosome depends on the data and on --autosomes-only and
+    //--chr, none of which the command line alone can answer.  Silently
+    //ignoring the flags would leave the user believing the sex chromosome was
+    //called at the value they gave.
+    if ((opt.SEXCHR_CUTOFF_SET || opt.SEXCHR_WINSIZE > 0) &&
+        !sexModel.anyOfRole(CHR_SEX_SHARED))
+    {
+        LOG.err("ERROR:", opt.SEXCHR_CUTOFF_SET ? ARG_SEXCHR_LOD_CUTOFF : ARG_SEXCHR_WINSIZE, false);
+        LOG.err(" was given, but no shared sex chromosome is being analysed.");
+        LOG.err("\tSee --sex-system and --sex-chr; --autosomes-only and --chr can also");
+        LOG.err("\tremove it from the run.");
+        return 1;
+    }
+
     //++++++++++Pipeline begins++++++++++
     //Each population is analysed on its own: its own allele frequencies, its
     //own window size, its own LOD cutoff and its own size classes.  Anything
@@ -1065,6 +1111,14 @@ int main(int argc, char *argv[])
             v.str(""); v << pop.winsize;      resolved.push_back(make_pair("winsize", v.str()));
             v.str(""); v << pop.overlapFrac;  resolved.push_back(make_pair("overlap_frac", v.str()));
             v.str(""); v << pop.lodCutoff;    resolved.push_back(make_pair("lod_cutoff", v.str()));
+            //Only when the run had one: on an autosome-only run these would
+            //be the autosomal numbers wearing another name, which reads as a
+            //sex chromosome having been analysed.
+            if (pop.haveSexChr)
+            {
+                v.str(""); v << pop.sexWinsize;   resolved.push_back(make_pair("sexchr_winsize", v.str()));
+                v.str(""); v << pop.sexLodCutoff; resolved.push_back(make_pair("sexchr_lod_cutoff", v.str()));
+            }
             v.str(""); v << KDE_THIN_STEP;    resolved.push_back(make_pair("kde_thin_step", v.str()));
             v.str(""); v << mapDataByChr->size(); resolved.push_back(make_pair("chromosomes_analysed", v.str()));
             v.str(""); v << "[";

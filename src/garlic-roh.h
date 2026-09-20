@@ -129,7 +129,9 @@ vector< WinData * > *calcLODWindows(vector< HapData * > *hapDataByChr,
                                     vector< GenoLikeData * > *GLDataByChr,
                                     centromere *centro,
                                     int winsize, double error,
-                                    int MAX_GAP, bool USE_GL);
+                                    int MAX_GAP, bool USE_GL,
+                                    int sexWinsize = 0,
+                                    const vector<ChrRole> *role = NULL);
 
 vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                                      vector< FreqData * > *freqDataByChr,
@@ -139,7 +141,9 @@ vector< WinData * > *calcwLODWindows(vector< HapData * > *hapDataByChr,
                                      centromere *centro,
                                      int winsize, double error,
                                      int MAX_GAP, bool USE_GL, 
-                                     int M, double mu, int numThreads);
+                                     int M, double mu, int numThreads,
+                                     int sexWinsize = 0,
+                                     const vector<ChrRole> *role = NULL);
 
 vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         vector< MapData * > *mapDataByChr,
@@ -158,7 +162,14 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         //sex chromosome, and one chromosome's
                                         //worth of tracts cannot support a
                                         //three-component fit anyway.
-                                        const vector<ChrRole> *role = NULL);
+                                        const vector<ChrRole> *role = NULL,
+                                        //The shared sex chromosome's own
+                                        //cutoff and window size, when it was
+                                        //given one.  A cutoff belongs to the
+                                        //window size it was estimated at, so
+                                        //these travel together.
+                                        double sexCutoff = 0, bool haveSexCutoff = false,
+                                        int sexWinsize = 0);
 
 ROHLength *initROHLength(int size);
 void releaseROHLength(ROHLength *rohLength);
@@ -189,7 +200,7 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
 //which is the normal outcome on one chromosome and is not an error.
 bool reportSexChrLODCutoff(vector< WinData * > *winDataByChr, IndData *indData,
                            const vector<ChrRole> *role, int step, int wsize,
-                           double autosomalCutoff);
+                           double appliedCutoff, bool cutoffIsItsOwn = false);
 
 //Sets MISSING on every window of an individual that cannot carry a run of
 //homozygosity on that chromosome.  convertWinData2DoubleData already skips

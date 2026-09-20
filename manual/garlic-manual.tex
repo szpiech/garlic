@@ -415,6 +415,21 @@ have given, so the assumption is visible.  This follows
 windows from part of a cohort usually cannot locate a second minimum in the
 density.
 
+That is the default rather than the only option.  A cohort where the reported
+diagnostic shows the autosomal cutoff is badly placed on the sex chromosome can
+be given another with {\tt --sexchr-lod-cutoff}, and a different window size
+with {\tt --sexchr-winsize}; both apply to the shared sex chromosome alone and
+leave every autosomal call exactly where it was.  They are values you supply
+rather than a switch asking {\tt garlic} to re-estimate, because the reason the
+autosomal cutoff is the default is that the estimate on that chromosome usually
+fails --- the diagnostic is where the value comes from.  A LOD score cutoff
+belongs to the window size it was estimated at, so {\tt --sexchr-winsize}
+requires {\tt --sexchr-lod-cutoff}: the autosomal cutoff no longer describes
+windows of another size.  Both are recorded in {\tt <out>.params.json} as
+{\tt sexchr\_winsize} and {\tt sexchr\_lod\_cutoff}, which hold the values that
+were applied whether or not the flags were given, so the record says what
+happened without a reader having to reconstruct it from the command line.
+
 Who is diploid there is established by a check that always runs.  Each
 individual's heterozygosity on that chromosome is compared against
 {\tt --het-rate-bounds} (0.02 and 0.10 by default): below the first it reads as
