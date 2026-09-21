@@ -194,7 +194,7 @@ all : garlic$(EXE)
 OBJS = garlic-main.o garlic-data.o param_t.o garlic-roh.o garlic-kde.o \
        garlic-cli.o garlic-errlog.o gmm.o BoundFinder.o gzstream.o \
        garlic-centromeres.o garlic-pbar.o garlic-math.o \
-       garlic-options.o
+       garlic-options.o garlic-features.o
 
 garlic$(EXE) : $(OBJS)
 	$(CC) -o garlic$(EXE) $(OBJS) -lz $(LINK_OPTS)

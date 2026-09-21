@@ -191,6 +191,10 @@ void releaseROHData(vector< ROHData * > *rohDataByInd);
 string makeROHFilename(string outfile);
 string sizeClassLabel(int k);
 vector<string> makeClassColors(int nclass);
+//Which size class a run of this length falls in, given the boundaries in
+//force.  Shared with the feature counter so a classified genotype is bucketed
+//by exactly the class letter the .roh.bed carries for the same run.
+int rohSizeClassIndex(double size, const vector<double> &bounds);
 
 double selectLODCutoff(KDEResult *kdeResult, int wisize, bool &ok);
 double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wisize, bool &ok,

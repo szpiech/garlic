@@ -864,7 +864,10 @@ vector<string> makeClassColors(int nclass)
 }
 
 //Class index for a ROH of this size, using the same rule as writeROHData.
-static int rohSizeClassIndex(double size, vector<double> &bounds)
+//Not static any more: the feature counter buckets each classified genotype by
+//the size class of the run containing it, and a second copy of this rule
+//would be free to drift away from the one the .roh.bed was written with.
+int rohSizeClassIndex(double size, const vector<double> &bounds)
 {
     for (unsigned int i = 0; i < bounds.size(); i++)
         if (size < bounds[i]) return int(i);

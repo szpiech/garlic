@@ -16,7 +16,10 @@
 #include "garlic-data.h"
 #include "garlic-kde.h"
 #include "garlic-centromeres.h"
+#include "garlic-features.h"
 #include <cstdio>
+#include <cstdlib>
+#include <fstream>
 #include <cstring>
 #include <cmath>
 #include <string>
@@ -1249,6 +1252,297 @@ static void test_plToError()
     #undef PL3
 }
 
+// ------------------------------------------------ feature counting --------
+// Where a classified site falls, for one individual.  The distinction these
+// cases protect is NONE against UNASSESSED: the Perl this replaces folded
+// them together, so every site on a chromosome the user had excluded from the
+// analysis was reported as "not in a run of homozygosity", which inflates the
+// outside-ROH count by however much of the genome was left out.
+
+static void test_bucketAt()
+{
+    ROHIndex::ChrInfo ci;
+    ci.lo = 1000; ci.hi = 9000;
+    ci.gapLo = 4000; ci.gapHi = 4500;
+    ci.role = CHR_AUTOSOME;
+    ci.excluded.push_back(Interval(8000, 8100));
+
+    ROHIndex::ChrTracts t;
+    t.start.push_back(1500); t.stop.push_back(2000); t.cls.push_back(0);
+    t.start.push_back(5000); t.stop.push_back(6000); t.cls.push_back(2);
+
+    // A chromosome that was never analysed.  Not NONE: nothing here is
+    // evidence either way.
+    ck(ROHIndex::bucketAt(&t, NULL, ZYG_UNKNOWN, 1600) == BUCKET_UNASSESSED,
+       "bucketAt: no chromosome info -> UNASSESSED");
+
+    // Outside the span the markers cover, in either direction.
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 999)  == BUCKET_UNASSESSED,
+       "bucketAt: before the first analysed marker -> UNASSESSED");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 9001) == BUCKET_UNASSESSED,
+       "bucketAt: past the last analysed marker -> UNASSESSED");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 1000) != BUCKET_UNASSESSED,
+       "bucketAt: the first analysed marker itself is in the span");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 9000) != BUCKET_UNASSESSED,
+       "bucketAt: the last analysed marker itself is in the span");
+
+    // The assembly gap and an excluded region, both inclusive at their ends
+    // exactly as inGap and ExcludedRegions are.
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 4000) == BUCKET_UNASSESSED,
+       "bucketAt: assembly gap start -> UNASSESSED");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 4500) == BUCKET_UNASSESSED,
+       "bucketAt: assembly gap end -> UNASSESSED");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 4250) == BUCKET_UNASSESSED,
+       "bucketAt: inside the assembly gap -> UNASSESSED");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 8050) == BUCKET_UNASSESSED,
+       "bucketAt: inside an excluded region -> UNASSESSED");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 8000) == BUCKET_UNASSESSED,
+       "bucketAt: excluded region start -> UNASSESSED");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 8100) == BUCKET_UNASSESSED,
+       "bucketAt: excluded region end -> UNASSESSED");
+
+    // Inside a run, at both endpoints and in the middle, returning the class
+    // the run was assigned rather than a fixed letter.
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 1500) == 0,
+       "bucketAt: first base of a run -> its class");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 2000) == 0,
+       "bucketAt: last base of a run -> its class");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 1750) == 0,
+       "bucketAt: inside a run -> its class");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 5500) == 2,
+       "bucketAt: inside the second run -> its own class");
+
+    // In the callable span but in no run.
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 1400) == BUCKET_NONE,
+       "bucketAt: before the first run -> NONE");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 2001) == BUCKET_NONE,
+       "bucketAt: one past a run -> NONE");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 3000) == BUCKET_NONE,
+       "bucketAt: between two runs -> NONE");
+    ck(ROHIndex::bucketAt(&t, &ci, ZYG_UNKNOWN, 7000) == BUCKET_NONE,
+       "bucketAt: after the last run -> NONE");
+    ck(ROHIndex::bucketAt(NULL, &ci, ZYG_UNKNOWN, 3000) == BUCKET_NONE,
+       "bucketAt: individual with no runs on this chromosome -> NONE");
+
+    // An individual with one copy of the chromosome.  Distinct from
+    // UNASSESSED because the caller must also refuse to read the genotype: a
+    // hemizygous call written as a doubled allele looks like a homozygote.
+    ROHIndex::ChrInfo sx = ci;
+    sx.role = CHR_SEX_SHARED;
+    ck(ROHIndex::bucketAt(&t, &sx, ZYG_HETEROGAMETIC, 1750) == BUCKET_INELIGIBLE,
+       "bucketAt: heterogametic on the shared sex chromosome -> INELIGIBLE");
+    ck(ROHIndex::bucketAt(&t, &sx, ZYG_HOMOGAMETIC, 1750) == 0,
+       "bucketAt: homogametic on the shared sex chromosome is called normally");
+
+    // A chromosome nobody is diploid on is ineligible whatever the zygosity.
+    ROHIndex::ChrInfo dg = ci;
+    dg.role = CHR_SEX_DEGENERATE;
+    ck(ROHIndex::bucketAt(&t, &dg, ZYG_HOMOGAMETIC, 1750) == BUCKET_INELIGIBLE,
+       "bucketAt: degenerate sex chromosome -> INELIGIBLE");
+}
+
+// The index built from one population's calls: individual lookup by ID, the
+// per-chromosome resolution the streaming readers use, and the refusal that
+// the Perl never made.
+static void test_ROHIndex()
+{
+    vector< MapData * > *mapDataByChr = new vector< MapData * >;
+    MapData *m1 = initMapData(3);
+    m1->chr = "chr21";
+    m1->physicalPos[0] = 1000; m1->physicalPos[1] = 5000; m1->physicalPos[2] = 9000;
+    mapDataByChr->push_back(m1);
+    // A chromosome carrying one locus is not analysed -- writeFROH leaves it
+    // out of the denominator for the same reason -- so its sites must not
+    // come back NONE.
+    MapData *m2 = initMapData(1);
+    m2->chr = "chr22";
+    m2->physicalPos[0] = 2000;
+    mapDataByChr->push_back(m2);
+
+    IndData *indData = initIndData(2);
+    indData->indID[0] = "IND1"; indData->pop[0] = "POPA";
+    indData->indID[1] = "IND2"; indData->pop[1] = "POPA";
+
+    vector< ROHData * > *rohDataByInd = new vector< ROHData * >;
+    ROHData *r0 = new ROHData;
+    r0->indID = "IND1";
+    // Deliberately out of order: bucketAt binary-searches, so addPopulation
+    // has to sort rather than trust the order it was handed.
+    r0->chr.push_back(0); r0->start.push_back(6000); r0->stop.push_back(7000); r0->length.push_back(1001);
+    r0->chr.push_back(0); r0->start.push_back(1500); r0->stop.push_back(2000); r0->length.push_back(501);
+    rohDataByInd->push_back(r0);
+    ROHData *r1 = new ROHData;
+    r1->indID = "IND2";
+    rohDataByInd->push_back(r1);
+
+    vector<double> bounds;
+    bounds.push_back(1000.0);     // < 1000 is class A, else class B
+
+    ROHIndex idx;
+    ck(idx.addPopulation("POPA", rohDataByInd, mapDataByChr, bounds,
+                         indData, NULL, NULL, NULL) == 0,
+       "ROHIndex: a population is added");
+    ck(idx.nind() == 2, "ROHIndex: both individuals are in the index");
+    ck(idx.npop() == 1, "ROHIndex: one population");
+    ck(idx.nclass(0) == 2, "ROHIndex: one boundary gives two size classes");
+    ck(idx.indexOf("IND1") == 0 && idx.indexOf("IND2") == 1,
+       "ROHIndex: individuals are found by ID");
+    // The check the Perl never made: an ID that is not in the call set.
+    ck(idx.indexOf("NOT_A_SAMPLE") == -1,
+       "ROHIndex: an unknown ID is reported, not silently treated as callable");
+
+    vector<const ROHIndex::ChrTracts *> tracts;
+    vector<const ROHIndex::ChrInfo *> info;
+    // Resolved by canonical key, so the counting file may spell the
+    // chromosome differently from the calling file.
+    idx.resolveChr("21", tracts, info);
+    ck(info[0] != NULL && info[1] != NULL, "ROHIndex: chr21 resolves from the key 21");
+    ck(tracts[0] != NULL && tracts[0]->start.size() == 2,
+       "ROHIndex: the individual's two runs are indexed");
+    ck(tracts[0]->start[0] == 1500 && tracts[0]->start[1] == 6000,
+       "ROHIndex: runs are sorted by start");
+    ck(tracts[1] == NULL, "ROHIndex: an individual with no runs has no tracts");
+    ck(info[0]->lo == 1000 && info[0]->hi == 9000,
+       "ROHIndex: the analysed span is the first and last marker");
+
+    ck(ROHIndex::bucketAt(tracts[0], info[0], idx.zygoOf(0), 1750) == 0,
+       "ROHIndex: a 501 bp run is class A");
+    ck(ROHIndex::bucketAt(tracts[0], info[0], idx.zygoOf(0), 6500) == 1,
+       "ROHIndex: a 1001 bp run is class B");
+    ck(ROHIndex::bucketAt(tracts[1], info[1], idx.zygoOf(1), 6500) == BUCKET_NONE,
+       "ROHIndex: an individual with no runs is NONE inside the span");
+
+    idx.resolveChr("22", tracts, info);
+    ck(info[0] == NULL, "ROHIndex: a chromosome with one locus is not analysed");
+    idx.resolveChr("7", tracts, info);
+    ck(info[0] == NULL, "ROHIndex: a chromosome absent from the run is not analysed");
+
+    // The same ID in two populations would make one population's counts
+    // overwrite the other's.  Nothing else in garlic looks for it: duplicate
+    // IDs are refused within a file, not across the population split.
+    quietErrors(true);
+    ck(idx.addPopulation("POPB", rohDataByInd, mapDataByChr, bounds,
+                         indData, NULL, NULL, NULL) == -1,
+       "ROHIndex: an individual in two populations is refused");
+    quietErrors(false);
+
+    delete r0; delete r1; delete rohDataByInd;
+    releaseIndData(indData);
+    releaseMapData(mapDataByChr);
+}
+
+// The feature file.  Return codes only: the wording of each refusal is
+// asserted in test/run_tests.sh, where it is what the user actually sees.
+static string tmpPath(const char *name)
+{
+    const char *d = getenv("TMPDIR");
+    if (d == NULL || d[0] == '\0') d = getenv("TMP");
+    if (d == NULL || d[0] == '\0') d = "/tmp";
+    string p(d);
+    if (!p.empty() && p[p.size() - 1] != '/' && p[p.size() - 1] != '\\') p += "/";
+    return p + name;
+}
+
+static bool writeLines(const string &path, const char *text)
+{
+    ofstream f(path.c_str());
+    if (f.fail()) return false;
+    f << text;
+    f.close();
+    return true;
+}
+
+static void test_FeatureTable()
+{
+    const string good = tmpPath("garlic_ut_features_good.txt");
+    // Comments, a blank line, mixed chromosome spellings, a lower-case
+    // allele, and one site carrying two classes.
+    if (!writeLines(good,
+        "# chr pos allele class\n"
+        "chr21\t100\tT\tnonsynonymous\n"
+        "\n"
+        "chr21 100 T probably_damaging\n"
+        "21 200 a benign\n"
+        "  # indented comment\n"
+        "Chr21 300 G benign\n"))
+    {
+        ck(false, "FeatureTable: could not write the test file");
+        return;
+    }
+
+    FeatureTable ft;
+    ck(ft.read(good) == 0, "FeatureTable: a well-formed file reads");
+    ck(ft.nrows() == 4, "FeatureTable: four classified rows");
+    ck(ft.nsites() == 3, "FeatureTable: three distinct sites");
+    ck(ft.nclass() == 3, "FeatureTable: three distinct classes");
+    // Sorted, so the same annotation scheme gives the same columns whatever
+    // order the rows were written in.
+    ck(ft.classes()[0] == "benign" && ft.classes()[1] == "nonsynonymous" &&
+       ft.classes()[2] == "probably_damaging",
+       "FeatureTable: classes come back in sorted order");
+
+    // All three spellings landed on one chromosome.
+    const map<pos_t, vector<FeatureAllele> > *c = ft.chromosome("21");
+    ck(c != NULL, "FeatureTable: chr21, 21 and Chr21 are one chromosome");
+    if (c != NULL)
+    {
+        ck(c->size() == 3, "FeatureTable: three sites on that chromosome");
+        map<pos_t, vector<FeatureAllele> >::const_iterator it = c->find(100);
+        ck(it != c->end() && it->second.size() == 2,
+           "FeatureTable: a site may carry two classes");
+        it = c->find(200);
+        ck(it != c->end() && it->second.size() == 1 && it->second[0].allele == "A",
+           "FeatureTable: alleles are upper-cased for comparison");
+    }
+    ck(ft.chromosome("22") == NULL, "FeatureTable: an absent chromosome is NULL");
+    remove(good.c_str());
+
+    quietErrors(true);
+
+    const string dup = tmpPath("garlic_ut_features_dup.txt");
+    writeLines(dup, "chr21 100 T benign\nchr21 100 t benign\n");
+    FeatureTable f2;
+    ck(f2.read(dup) == -1, "FeatureTable: the same class twice at one site is refused");
+    remove(dup.c_str());
+
+    // The format the Perl scripts took.  Recognised so the message can say so.
+    const string old = tmpPath("garlic_ut_features_old.txt");
+    writeLines(old, "chr21:100 C T probably_damaging\n");
+    FeatureTable f3;
+    ck(f3.read(old) == -1, "FeatureTable: the old chr:pos format is refused");
+    remove(old.c_str());
+
+    const string badpos = tmpPath("garlic_ut_features_badpos.txt");
+    writeLines(badpos, "chr21 1e5 T benign\n");
+    FeatureTable f4;
+    ck(f4.read(badpos) == -1, "FeatureTable: an unparsable position is refused");
+    remove(badpos.c_str());
+
+    const string zeropos = tmpPath("garlic_ut_features_zeropos.txt");
+    writeLines(zeropos, "chr21 0 T benign\n");
+    FeatureTable f5;
+    ck(f5.read(zeropos) == -1, "FeatureTable: position 0 is refused (positions are 1-based)");
+    remove(zeropos.c_str());
+
+    const string ncol = tmpPath("garlic_ut_features_ncol.txt");
+    writeLines(ncol, "chr21 100 T benign extra\n");
+    FeatureTable f6;
+    ck(f6.read(ncol) == -1, "FeatureTable: five columns are refused");
+    remove(ncol.c_str());
+
+    const string blank = tmpPath("garlic_ut_features_blank.txt");
+    writeLines(blank, "# nothing but a comment\n\n");
+    FeatureTable f7;
+    ck(f7.read(blank) == -1, "FeatureTable: a file with no classified sites is refused");
+    remove(blank.c_str());
+
+    FeatureTable f8;
+    ck(f8.read(tmpPath("garlic_ut_features_absent.txt")) == -1,
+       "FeatureTable: a missing file is refused");
+
+    quietErrors(false);
+}
+
 // --------------------------------------------- logger overload coverage ----
 // A COMPILE-TIME check, never called.  int64_t is long long under LLP64
 // (macOS arm64, Windows) and long under LP64 (Linux, most BSDs), so an errlog
@@ -1314,6 +1608,9 @@ int main()
     test_getMapInfo();
     test_keepSites();
     test_parseGT();
+    test_bucketAt();
+    test_ROHIndex();
+    test_FeatureTable();
     printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }
