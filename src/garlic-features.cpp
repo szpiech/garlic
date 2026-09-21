@@ -582,6 +582,271 @@ int countFeaturesTPED(const string &tpedfile,
     return 0;
 }
 
+int countFeaturesVCF(const string &vcffile,
+                     bool PASS_ONLY,
+                     const FeatureTable &features,
+                     const ROHIndex &index,
+                     FeatureCounts &counts)
+{
+    igzstream fin;
+    fin.open(vcffile.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: Failed to open", vcffile);
+        return -1;
+    }
+
+    const int VCF_FIXED = 9;
+    string line, chr, lastChr, ref, alt, filt, fmt;
+    const map<pos_t, vector<FeatureAllele> > *featChr = NULL;
+    vector<const ROHIndex::ChrTracts *> tracts;
+    vector<const ROHIndex::ChrInfo *> info;
+    vector<int> colToInd;
+    vector<string> alleles;      //REF then each ALT, upper-cased
+    vector<int> rowAllele;       //allele index per feature row at this site
+    vector<int> needIdx;         //the distinct ones, usually a single entry
+    long long lineno = 0, sitesFound = 0;
+    bool haveHeader = false;
+
+    while (getline(fin, line))
+    {
+        lineno++;
+        if (line.size() >= 2 && line[0] == '#' && line[1] == '#') continue;
+
+        const char *p    = line.c_str();
+        const char *pEnd = p + line.size();
+        const char *tEnd;
+
+        if (!line.empty() && line[0] == '#')
+        {
+            vector<string> sampleIDs;
+            {
+                stringstream hs(line);
+                string tok;
+                for (int c = 0; c < VCF_FIXED && hs >> tok; c++) ;
+                while (hs >> tok) sampleIDs.push_back(tok);
+            }
+            if (sampleIDs.empty())
+            {
+                LOG.err("ERROR:", vcffile, false);
+                LOG.err(" has no sample columns.");
+                fin.close();
+                return -1;
+            }
+
+            colToInd.assign(sampleIDs.size(), -1);
+            vector<string> notCalled;
+            int nmatched = 0;
+            for (unsigned int i = 0; i < sampleIDs.size(); i++)
+            {
+                const int ri = index.indexOf(sampleIDs[i]);
+                colToInd[i] = ri;
+                if (ri < 0) notCalled.push_back(sampleIDs[i]);
+                else nmatched++;
+            }
+            if (nmatched == 0)
+            {
+                LOG.err("ERROR: no sample in", vcffile, false);
+                LOG.err(" has a run-of-homozygosity call in this run.");
+                LOG.err("\tThe two files name no individual in common, so every classified genotype");
+                LOG.err("\twould be counted as outside a run.  Check that the sample IDs match.");
+                fin.close();
+                return -1;
+            }
+            reportUnmatched(notCalled, "in " + vcffile + " have no ROH calls and are not counted");
+
+            int nsize = 0;
+            for (int pp = 0; pp < index.npop(); pp++)
+                if (index.nclass(pp) > nsize) nsize = index.nclass(pp);
+            counts.init(index.nind(), features.nclass(), nsize);
+            for (unsigned int i = 0; i < colToInd.size(); i++)
+                if (colToInd[i] >= 0) counts.seen[colToInd[i]] = true;
+
+            haveHeader = true;
+            continue;
+        }
+        if (line.empty()) continue;
+        if (!haveHeader)
+        {
+            LOG.err("ERROR: data before the #CHROM header at line", lineno, false);
+            LOG.err(" of", vcffile);
+            fin.close();
+            return -1;
+        }
+
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd); chr.assign(p, tEnd - p); p = tEnd;
+        if (chr.compare(lastChr) != 0)
+        {
+            lastChr = chr;
+            const string key = canonChrKey(chr);
+            featChr = features.chromosome(key);
+            index.resolveChr(key, tracts, info);
+        }
+        if (featChr == NULL) continue;
+
+        pos_t ppos;
+        {
+            p = skipBlank(p, pEnd);
+            char *q = NULL;
+            const double v = strtod(p, &q);
+            if (q == p)
+            {
+                LOG.err("ERROR: could not parse POS at line", lineno, false);
+                LOG.err(" of", vcffile);
+                fin.close();
+                return -1;
+            }
+            p = q;
+            ppos = pos_t(v);
+        }
+
+        map<pos_t, vector<FeatureAllele> >::const_iterator site = featChr->find(ppos);
+        if (site == featChr->end()) continue;
+
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd);                          p = tEnd;  //ID
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd); ref.assign(p, tEnd - p); p = tEnd;
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd); alt.assign(p, tEnd - p); p = tEnd;
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd);                          p = tEnd;  //QUAL
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd); filt.assign(p, tEnd - p);p = tEnd;
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd);                          p = tEnd;  //INFO
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd); fmt.assign(p, tEnd - p); p = tEnd;
+
+        //Honoured here as well as when calling, so one flag means one thing
+        //about how this run treats a VCF record.  A site dropped by it is
+        //reported as a classified site that was not found.
+        if (PASS_ONLY && filt.compare("PASS") != 0 && filt.compare(".") != 0) continue;
+
+        sitesFound++;
+
+        //REF is allele 0 and each ALT follows, which is what a GT names.
+        alleles.clear();
+        alleles.push_back(upperAscii(ref));
+        {
+            string cur;
+            for (unsigned int k = 0; k <= alt.size(); k++)
+            {
+                if (k == alt.size() || alt[k] == ',') { alleles.push_back(upperAscii(cur)); cur.clear(); }
+                else cur.push_back(alt[k]);
+            }
+        }
+
+        const vector<FeatureAllele> &rows = site->second;
+        rowAllele.assign(rows.size(), -1);
+        needIdx.clear();
+        int usable = 0;
+        for (unsigned int k = 0; k < rows.size(); k++)
+        {
+            for (unsigned int a = 0; a < alleles.size(); a++)
+                if (alleles[a].compare(rows[k].allele) == 0) { rowAllele[k] = int(a); break; }
+            if (rowAllele[k] < 0) continue;
+            usable++;
+            bool have = false;
+            for (unsigned int j = 0; j < needIdx.size(); j++)
+                if (needIdx[j] == rowAllele[k]) { have = true; break; }
+            if (!have) needIdx.push_back(rowAllele[k]);
+        }
+        counts.rowsUnusable += (long long)(rows.size() - usable);
+        counts.rowsSeen     += usable;
+
+        const int gtIndex = gtIndexOf(fmt);
+        if (gtIndex < 0)
+        {
+            //No genotypes to read, so the rows just counted cannot be
+            //evaluated for anybody.  Undo rather than leave the per-individual
+            //accounting unable to add up.
+            counts.rowsSeen -= usable;
+            counts.rowsUnusable += usable;
+            continue;
+        }
+        if (usable == 0) continue;
+
+        for (unsigned int i = 0; i < colToInd.size(); i++)
+        {
+            p = skipBlank(p, pEnd);
+            if (p == pEnd)
+            {
+                LOG.err("ERROR: line", lineno, false);
+                LOG.err(" of", vcffile, false);
+                LOG.err(" has genotypes for fewer than the header's samples.");
+                fin.close();
+                return -1;
+            }
+            tEnd = tokEnd(p, pEnd);
+            const char *sBeg = p, *sEnd = tEnd;
+            p = tEnd;
+
+            const int ri = colToInd[i];
+            if (ri < 0) continue;
+
+            const int bucket = ROHIndex::bucketAt(tracts[ri], info[ri],
+                                                  index.zygoOf(ri), ppos);
+            if (bucket == BUCKET_INELIGIBLE) { counts.hemi[ri] += usable; continue; }
+
+            int dosage, ploidy; bool fcopy, phased;
+            if (!parseGT(sBeg, sEnd, gtIndex, needIdx[0], dosage, fcopy, ploidy, phased))
+            {
+                LOG.err("ERROR: could not parse a genotype at line", lineno, false);
+                LOG.err(" of", vcffile);
+                fin.close();
+                return -1;
+            }
+            //Not diploid here: one allele is not a genotype, and reading it
+            //as one is how a hemizygous call becomes a spurious homozygote.
+            if (ploidy != 2)     { counts.hemi[ri]    += usable; continue; }
+            //Any allele of the call missing, including a half call: parseGT
+            //returns one of the negative codes and there is no genotype.
+            if (dosage < 0)      { counts.missing[ri] += usable; continue; }
+
+            const int col = (bucket >= 0) ? bucket
+                          : (bucket == BUCKET_NONE ? counts.colNone()
+                                                   : counts.colUnassessed());
+            for (unsigned int k = 0; k < rows.size(); k++)
+            {
+                if (rowAllele[k] < 0) continue;
+                int copies = dosage;
+                if (rowAllele[k] != needIdx[0])
+                {
+                    int d2, pl2; bool fc2, ph2;
+                    if (!parseGT(sBeg, sEnd, gtIndex, rowAllele[k], d2, fc2, pl2, ph2))
+                    {
+                        LOG.err("ERROR: could not parse a genotype at line", lineno, false);
+                        LOG.err(" of", vcffile);
+                        fin.close();
+                        return -1;
+                    }
+                    copies = d2;
+                }
+                counts.n[ri][rows[k].cls][col]++;
+                if (copies == 2)      counts.hom[ri][rows[k].cls][col]++;
+                else if (copies == 1) counts.het[ri][rows[k].cls][col]++;
+            }
+        }
+    }
+    fin.close();
+
+    if (!haveHeader)
+    {
+        LOG.err("ERROR: no #CHROM header found in", vcffile, false);
+        LOG.err(". Is it a VCF?");
+        return -1;
+    }
+
+    counts.sitesNotFound = features.nsites() - sitesFound;
+
+    vector<string> notCounted;
+    for (int i = 0; i < index.nind(); i++)
+        if (!counts.seen[i]) notCounted.push_back(index.indID(i));
+    reportUnmatched(notCounted, "have ROH calls but no genotypes in " + vcffile);
+
+    LOG.log("Classified sites found in the counting genotypes:", (long long)sitesFound);
+    LOG.log("Classified sites not found:", counts.sitesNotFound);
+    if (counts.rowsUnusable > 0)
+        LOG.log("Classified rows skipped (allele at neither REF nor ALT, or no GT):",
+                counts.rowsUnusable);
+
+    return 0;
+}
+
 //---- the table -------------------------------------------------------------
 
 static string bucketLabel(int col, int nclass)

@@ -1336,12 +1336,22 @@ int main(int argc, char *argv[])
     //it would drop exactly the rare functional sites this is asked about.
     if (countFeatures && writeStatus == 0)
     {
+        //A named counting file wins; otherwise the run counts from whatever
+        //it was called from, which is the usual case -- the classified
+        //variants are normally in the same data.
+        const bool countFromVCF = !opt.countVcffile.empty() ||
+                                  (opt.countTpedfile.empty() && opt.vcffile.compare(DEFAULT_VCF) != 0);
         const string countTped = opt.countTpedfile.empty() ? tpedfile : opt.countTpedfile;
         const string countTfam = opt.countTfamfile.empty() ? tfamfile : opt.countTfamfile;
+        const string countVcf  = opt.countVcffile.empty()  ? opt.vcffile : opt.countVcffile;
+        const string source    = countFromVCF ? countVcf : countTped;
         cout << "Counting classified genotypes.\n";
         FeatureCounts counts;
-        if (countFeaturesTPED(countTped, countTfam, TPED_MISSING,
-                              featureTable, rohIndex, counts) != 0)
+        const int crc = countFromVCF
+            ? countFeaturesVCF(countVcf, opt.VCF_PASS_ONLY, featureTable, rohIndex, counts)
+            : countFeaturesTPED(countTped, countTfam, TPED_MISSING,
+                                featureTable, rohIndex, counts);
+        if (crc != 0)
             writeStatus = 2;
         else
         {
@@ -1353,7 +1363,7 @@ int main(int argc, char *argv[])
                 const string path = (name.empty() ? outfile : outfile + "." + name)
                                     + ".counts.tsv";
                 if (writeFeatureCounts(path, featureTable, rohIndex, p, counts,
-                                       opt.featurefile, countTped, POOL) != 0)
+                                       opt.featurefile, source, POOL) != 0)
                     writeStatus = 2;
             }
         }

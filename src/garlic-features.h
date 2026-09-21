@@ -238,6 +238,21 @@ int countFeaturesTPED(const string &tpedfile,
                       const ROHIndex &index,
                       FeatureCounts &counts);
 
+//Streams a VCF, counting classified genotypes against the calls in index.
+//Sample names come from the #CHROM line, so there is no TFAM.
+//
+//Unlike the reader that CALLS runs of homozygosity, this one does not skip
+//indels or multiallelic sites: a classified variant is frequently one or the
+//other, and nothing here depends on the site being biallelic.  The classified
+//allele is matched against REF and every ALT, and a row naming an allele that
+//is at neither is reported rather than counted as absent.
+//Returns 0, or -1 after logging.
+int countFeaturesVCF(const string &vcffile,
+                     bool PASS_ONLY,
+                     const FeatureTable &features,
+                     const ROHIndex &index,
+                     FeatureCounts &counts);
+
 //One table per population, named like that population's other outputs.
 //outfile is the full path.  Returns 0, or -1 after logging.
 int writeFeatureCounts(const string &outfile,

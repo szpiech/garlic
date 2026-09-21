@@ -509,6 +509,15 @@ const string HELP_FEATURE_TPED = "A TPED to count classified genotypes from, ins
 \tThese genotypes take no part in calling, and no site filter is applied to\n\
 \tthem: monomorphic and rare sites are exactly what this counts.";
 
+const string ARG_FEATURE_VCF = "--vcf-counting";
+const string DEFAULT_FEATURE_VCF = "none";
+const string HELP_FEATURE_VCF = "A VCF to count classified genotypes from, instead of the file the run was\n\
+\tcalled from. Sample names come from its #CHROM line. Requires --features.\n\
+\t\n\
+\tUnlike the VCF the run is CALLED from, indels and multiallelic sites are\n\
+\tread here: the classified allele is matched against REF and every ALT, so a\n\
+\tclassification that is not a biallelic SNV still counts.";
+
 const string ARG_FEATURE_TFAM = "--tfam-counting";
 const string DEFAULT_FEATURE_TFAM = "none";
 const string HELP_FEATURE_TFAM = "The TFAM naming the samples in --tped-counting, in column order.\n\
@@ -604,6 +613,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_FEATURES, DEFAULT_FEATURES, "", HELP_FEATURES);
 	params->addFlag(ARG_FEATURE_TPED, DEFAULT_FEATURE_TPED, "", HELP_FEATURE_TPED);
 	params->addFlag(ARG_FEATURE_TFAM, DEFAULT_FEATURE_TFAM, "", HELP_FEATURE_TFAM);
+	params->addFlag(ARG_FEATURE_VCF, DEFAULT_FEATURE_VCF, "", HELP_FEATURE_VCF);
 
 	//A bare invocation is a usage error, not a successful no-op run.
 	if (argc < 2)

@@ -308,12 +308,28 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     opt.featurefile   = params->getStringFlag(ARG_FEATURES);
     opt.countTpedfile = params->getStringFlag(ARG_FEATURE_TPED);
     opt.countTfamfile = params->getStringFlag(ARG_FEATURE_TFAM);
+    opt.countVcffile  = params->getStringFlag(ARG_FEATURE_VCF);
     if (opt.featurefile.compare(DEFAULT_FEATURES) == 0)   opt.featurefile.clear();
     if (opt.countTpedfile.compare(DEFAULT_FEATURE_TPED) == 0) opt.countTpedfile.clear();
     if (opt.countTfamfile.compare(DEFAULT_FEATURE_TFAM) == 0) opt.countTfamfile.clear();
+    if (opt.countVcffile.compare(DEFAULT_FEATURE_VCF) == 0)   opt.countVcffile.clear();
     {
         const bool haveCountTped = !opt.countTpedfile.empty();
         const bool haveCountTfam = !opt.countTfamfile.empty();
+        if (!opt.countVcffile.empty() && (haveCountTped || haveCountTfam))
+        {
+            LOG.err("ERROR:", ARG_FEATURE_VCF, false);
+            LOG.err(" cannot be combined with", haveCountTped ? ARG_FEATURE_TPED : ARG_FEATURE_TFAM, false);
+            LOG.err(": classified genotypes come from one file.");
+            return OPTIONS_USAGE_ERROR;
+        }
+        if (!opt.countVcffile.empty() && opt.featurefile.empty())
+        {
+            LOG.err("ERROR:", ARG_FEATURE_VCF, false);
+            LOG.err(" was given without", ARG_FEATURES, false);
+            LOG.err(", so there is nothing to count.");
+            return OPTIONS_USAGE_ERROR;
+        }
         if (haveCountTped != haveCountTfam)
         {
             LOG.err("ERROR:", haveCountTped ? ARG_FEATURE_TPED : ARG_FEATURE_TFAM, false);
@@ -344,18 +360,11 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
                 LOG.err(": that is a diagnostic over window sizes and calls no runs.");
                 return OPTIONS_USAGE_ERROR;
             }
-            if (opt.vcffile.compare(DEFAULT_VCF) != 0 && opt.countTpedfile.empty())
-            {
-                LOG.err("ERROR: counting classified genotypes from a VCF is not implemented yet.");
-                LOG.err("\tPass", ARG_FEATURE_TPED, false);
-                LOG.err(" and", ARG_FEATURE_TFAM, false);
-                LOG.err(" to count from a TPED instead.");
-                return OPTIONS_USAGE_ERROR;
-            }
             LOG.log("Feature file:", opt.featurefile);
             LOG.log("Counting classified genotypes from:",
-                    opt.countTpedfile.empty() ? string("the input this run is called from")
-                                              : opt.countTpedfile);
+                    !opt.countVcffile.empty()  ? opt.countVcffile :
+                    (!opt.countTpedfile.empty() ? opt.countTpedfile
+                                                : string("the input this run is called from")));
         }
     }
 

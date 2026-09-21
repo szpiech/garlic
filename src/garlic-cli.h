@@ -139,6 +139,10 @@ extern const string ARG_FEATURE_TPED;
 extern const string DEFAULT_FEATURE_TPED;
 extern const string HELP_FEATURE_TPED;
 
+extern const string ARG_FEATURE_VCF;
+extern const string DEFAULT_FEATURE_VCF;
+extern const string HELP_FEATURE_VCF;
+
 extern const string ARG_FEATURE_TFAM;
 extern const string DEFAULT_FEATURE_TFAM;
 extern const string HELP_FEATURE_TFAM;

@@ -82,6 +82,7 @@ struct GarlicOptions
     string          featurefile;
     string          countTpedfile;
     string          countTfamfile;
+    string          countVcffile;
 };
 
 //Return values of configureFromCommandLine.

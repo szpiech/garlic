@@ -2523,6 +2523,90 @@ feature_counts() {
         bad "--tped-counting wrote no counts file (see $FC/sep.stderr)"
     fi
 
+    # The same genotypes as a VCF must give the same table.  The two readers
+    # are independent code, and this is what keeps them from drifting.
+    gz "$EX/chr21.tfam.gz" | awk '{printf "\t%s", $2} END{print ""}' >"$FC/vcf.samples"
+    {
+        printf '##fileformat=VCFv4.2\n'
+        printf '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+        printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT'
+        cat "$FC/vcf.samples"
+        awk '{
+            delete seen; n = 0
+            for (i = 5; i <= NF; i++) if ($i != "0" && !($i in seen)) { seen[$i] = 1; a[++n] = $i }
+            if (n == 0) next
+            if (n == 1) { ref = a[1]; alt = (ref == "A" ? "C" : (ref == "C" ? "A" : (ref == "G" ? "T" : "G"))) }
+            else if (a[1] < a[2]) { ref = a[1]; alt = a[2] }
+            else                  { ref = a[2]; alt = a[1] }
+            line = $1 "\t" $4 "\t" $2 "\t" ref "\t" alt "\t.\tPASS\t.\tGT"
+            for (i = 5; i <= NF; i += 2) {
+                if ($i == "0" || $(i+1) == "0") g = "./."
+                else g = ($i == alt ? 1 : 0) "/" ($(i+1) == alt ? 1 : 0)
+                line = line "\t" g
+            }
+            print line
+        }' "$FC/data.chr22.tped"
+    } >"$FC/data.chr22.vcf"
+
+    $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+            --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+            --no-centromere --features "$FC/feat.new" \
+            --vcf-counting "$FC/data.chr22.vcf" \
+            --out "$FC/vc" --quiet --force >/dev/null 2>"$FC/vc.stderr"
+    if [ -f "$FC/vc.counts.tsv" ]; then
+        grep -v '^## genotype_source' "$FC/vc.counts.tsv" >"$FC/vc.nosrc"
+        if cmp -s "$FC/g.nosrc" "$FC/vc.nosrc"; then ok
+        else bad "counting the same genotypes from a VCF disagrees with the TPED path"; fi
+    else
+        bad "--vcf-counting wrote no counts file (see $FC/vc.stderr)"
+    fi
+
+    # An indel and a multiallelic site.  The reader that CALLS runs skips
+    # both; the counter must not, because a classified variant is frequently
+    # one or the other.  The genotypes cycle 0/0, 0/1, 1/1 over 45 samples,
+    # so 15 homozygotes and 15 heterozygotes are the arithmetic.
+    p1=$(awk 'NR==200 {print $4}' "$FC/data.chr22.tped")
+    p2=$(awk 'NR==400 {print $4}' "$FC/data.chr22.tped")
+    {
+        printf '##fileformat=VCFv4.2\n'
+        printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT'
+        cat "$FC/vcf.samples"
+        printf '22\t%s\t.\tA\tATTG\t.\tPASS\t.\tGT' "$p1"
+        awk 'BEGIN {for (i = 1; i <= 45; i++) printf "\t%s", (i%3==0 ? "0/0" : (i%3==1 ? "0/1" : "1/1")); print ""}'
+        printf '22\t%s\t.\tC\tG,T\t.\tPASS\t.\tGT' "$p2"
+        awk 'BEGIN {for (i = 1; i <= 45; i++) printf "\t%s", (i%3==0 ? "2/2" : (i%3==1 ? "0/2" : "0/0")); print ""}'
+    } >"$FC/multi.vcf"
+    printf '22 %s ATTG indel\n22 %s T trialt\n' "$p1" "$p2" >"$FC/feat.multi"
+    $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+            --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+            --no-centromere --features "$FC/feat.multi" --vcf-counting "$FC/multi.vcf" \
+            --out "$FC/mul" --quiet --force >/dev/null 2>"$FC/mul.stderr"
+    if [ -f "$FC/mul.counts.tsv" ]; then
+        got=$(awk -F'\t' '/^##/ {next}
+                          NR_H==0 {NR_H=1; for(i=1;i<=NF;i++) h[$i]=i; next}
+                          {   ih += $(h["indel_ALL_hom"]);  ie += $(h["indel_ALL_het"])
+                              th += $(h["trialt_ALL_hom"]); te += $(h["trialt_ALL_het"])
+                              nn += $(h["indel_ALL_n"]) + $(h["trialt_ALL_n"]) }
+                          END {print ih":"ie":"th":"te":"nn}' "$FC/mul.counts.tsv")
+        if [ "$got" = "15:15:15:15:90" ]; then ok
+        else bad "indel and multiallelic counting: got $got, expected 15:15:15:15:90"; fi
+    else
+        bad "counting an indel and a multiallelic site wrote no file (see $FC/mul.stderr)"
+    fi
+
+    expect_exit 1 "--vcf-counting with --tped-counting" \
+        $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+                --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+                --no-centromere --features "$FC/feat.new" \
+                --vcf-counting "$FC/data.chr22.vcf" --tped-counting "$FC/data.chr22.tped" \
+                --tfam-counting "$FC/data.chr22.tfam" --out "$FC/bad6" --quiet --force
+
+    expect_exit 1 "--vcf-counting without --features" \
+        $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+                --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+                --no-centromere --vcf-counting "$FC/data.chr22.vcf" \
+                --out "$FC/bad7" --quiet --force
+
     # Sample IDs that match nothing must stop the run.  Left to itself this is
     # the failure that produces a complete, plausible, wrong table: every
     # homozygote reported as outside a run.
