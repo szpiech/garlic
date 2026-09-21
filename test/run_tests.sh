@@ -2447,9 +2447,13 @@ feature_counts() {
 
     # THE ACCEPTANCE TEST.  Same .roh.bed, same genotypes, same homozygote
     # counts as the script being replaced.
+    # count_features_in_roh.pl was removed once this comparison had passed, so
+    # the skip below is the normal state of affairs and the golden checksum at
+    # the end of this stage is what pins the numbers now.  Dropping a copy of
+    # the script back into src/ re-enables the comparison.
     PL=$ROOT/src/count_features_in_roh.pl
     if [ ! -f "$PL" ] || ! command -v perl >/dev/null 2>&1; then
-        echo "  SKIP  count_features_in_roh.pl comparison: script or perl not present"
+        echo "  SKIP  count_features_in_roh.pl comparison: the script it validated against is gone"
     else
         ( cd "$FC" && perl "$PL" feat.old g.roh.bed data.chr22.tped 22 perl.out ) \
             >"$FC/perl.stdout" 2>"$FC/perl.stderr"

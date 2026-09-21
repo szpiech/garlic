@@ -259,11 +259,63 @@ chromStart is 0-based and chromEnd is exclusive, but garlic wrote the 1-based po
 the ROH's first variant, so chromEnd minus chromStart came out one less than the length in
 column 5 and a genome browser drew every ROH one base short. chromStart is now 0-based, so
 chromEnd minus chromStart equals column 5. Coordinates from earlier versions are shifted by
-one relative to these. The two count_features_in_roh.pl copies needed the complementary
-change and now build their interval as ($start+1, $end); under the old convention they were
-silently dropping the last base of every ROH. count_damaging_genotypes_in_roh.pl reads the
-same file and carries the same one-line change, but that script has never been tracked in
-this repository, so it is not distributed with it.
+one relative to these. Reading such a file back is handled: --roh-file recovers the
+convention from the file rather than from its version string, because v1.1.6a was released
+with both.
+
+--features counts classified genotypes inside and outside the calls, replacing
+count_features_in_roh.pl and count_damaging_genotypes_in_roh.pl, which have been removed.
+The classification is four columns -- <chr> <pos> <allele> <class> -- with an arbitrary
+number of arbitrary class labels, and a site may carry more than one so that two annotation
+schemes can classify the same variant.  The old format's first column packed chromosome and
+position as chr:pos; convert a file with
+
+  awk '{split($1,a,":"); print a[1], a[2], $3, $4}' old.txt > new.txt
+
+and note that the classified allele is the third column, which is where those scripts read
+it from as well.
+
+Output is <out>.counts.tsv, one row per individual, with three numbers for every (class,
+bucket): hom, homozygous for the classified allele; het, one copy; and n, the classified
+sites the individual has a genotype at.  n is new and it is the point -- without a
+denominator, "more deleterious homozygotes inside runs" cannot be separated from "more sites
+inside runs".  The buckets are the size classes the population was actually analysed with,
+so a --nclust of more than three no longer loses every call past the third class, as the
+Perl's hardcoded A/B/C did.  A site where no run could have been called for anyone -- an
+unanalysed chromosome, an assembly gap, an excluded region, outside the marker span -- is
+UNASSESSED rather than NONE; folding those together inflates the outside-runs count by
+however much of the genome the analysis left out.
+
+Four differences from the scripts are worth stating, because each was a silent wrong answer
+rather than a missing feature:
+
+- An individual in the genotype file with no calls in the ROH file had every homozygote
+  counted as outside a run, with no warning, because the Perl's interval lookup
+  autovivified an empty list.  A sample-ID mismatch therefore produced a complete,
+  plausible, entirely wrong table.  garlic now reports individuals each file has and the
+  other does not, and stops if they have none in common.
+- Calls in a fourth or later size class were counted into no column at all.
+- The tracked copies began their chromosome loop at a hardcoded chromosome 22, so as
+  distributed they counted chromosome 22 only.
+- Gzipped input was honoured when reading the sample list but not when reading the
+  genotypes, so a .tped.gz was parsed as binary.
+
+Counting happens in the run that makes the calls, so there is no intermediate file and no
+coordinate convention to agree on.  The genotypes are re-read from the input rather than
+taken from garlic's filtered matrix, which by then has had monomorphic sites dropped per
+population, has been pruned by --chr and --autosomes-only and has had excluded regions
+removed -- it would have discarded exactly the rare functional sites this counts.  When the
+classified variants live in a different file from the calls, --tped-counting with
+--tfam-counting, or --vcf-counting, reads them; the two files need not share a site.  From a
+VCF, indels and multiallelic sites are counted (the calling reader skips both), and the
+classified allele is matched against REF and every ALT, so a class carried by the reference
+allele is expressible -- the old format could not say that at all.
+
+--roh-file counts against a .roh.bed that already exists, calling nothing.  A .roh.bed does
+not record which chromosomes were analysed, how far the markers reached, or what the size
+class letters mean, so that mode cannot mark a site UNASSESSED and reports its size class
+boundaries as unknown; the header says so.  Counting inside the calling run knows all three.
+
 
 Wrong answers, produced silently and with exit 0:
 
@@ -468,6 +520,11 @@ strings. Do not edit by hand.
 --error <double>: The assumed genotyping error rate.
 	Default: -1
 
+--features <string>: A file classifying sites, four whitespace-separated columns: <chr> <pos> <allele> <class>. Lines beginning '#' are comments.
+The class label is arbitrary text and there may be any number of them (deleterious/tolerated, synonymous/nonsynonymous, whatever the annotation gives). A site may appear more than once, so two annotation schemes can classify the same variant; the same class twice at one site is an error. Chromosome names are matched ignoring case and a 'chr' prefix.
+For each individual, garlic then counts the classified genotypes falling inside runs of homozygosity of each size class and outside them, and writes <out>.counts.tsv. Genotypes are read from the input the run was called from, or from --tped-counting if that is given.
+	Default: none
+
 --force <bool>: Overwrite existing output files. Without this, garlic refuses to clobber an existing <out>.roh.bed.
 	Default: false
 
@@ -584,6 +641,11 @@ Rows are matched by sample ID, never by file order. Every sample in the data mus
 --resample <int>: Number of resamples for estimating allele frequencies. When set to 0 (default), garlic will use allele frequencies as calculated from the data.
 	Default: 0
 
+--roh-file <string>: Count classified genotypes against calls in an existing garlic .roh.bed instead of calling them. No ROH are called, so --tped and --vcf are not used; give the genotypes with --tped-counting and --tfam-counting, or with --vcf-counting, and the classification with --features.
+A .roh.bed records where the runs are, not which chromosomes were analysed or what the size class letters mean, so the table cannot mark a site UNASSESSED and its size class boundaries are reported as unknown. Counting inside the run that makes the calls knows both.
+garlic 1.1.6a was released with two different chromStart conventions under the same version string, so the convention is recovered from the file itself and reported.
+	Default: none
+
 --seed <int>: Random seed, for reproducible runs. Affects --kde-subsample, --ld-subsample and --resample. If 0 (default), a nondeterministic seed is drawn and written to the log file so the run can be repeated exactly.
 	Default: 0
 
@@ -608,6 +670,9 @@ Rows are matched by sample ID, never by file order. Every sample in the data mus
 --tfam <string>: A tfam formatted file containing population and individual IDs.
 	Default: none
 
+--tfam-counting <string>: The TFAM naming the samples in --tped-counting, in column order. Individuals are matched to the ROH calls by ID; one present in only one of the two files is reported and left out of the table.
+	Default: none
+
 --tgls <string>: A tgls file containing one per-genotype likelihood value per individual, in the same row order as the tped.  See --gl-type for what the values must mean: for PL and GL this is NOT the VCF convention.
 	Default: none
 
@@ -617,11 +682,19 @@ Rows are matched by sample ID, never by file order. Every sample in the data mus
 --tped <string>: A tped formatted file containing map and genotype information.
 	Default: none
 
+--tped-counting <string>: A TPED to count classified genotypes from, instead of the file the run was called from. Use it when the calls come from array data and the classified variants are sequenced -- the two need not share a single site. Requires --tfam-counting and --features.
+These genotypes take no part in calling, and no site filter is applied to them: monomorphic and rare sites are exactly what this counts.
+	Default: none
+
 --tped-missing <char>: Single character missing data code for TPED files.
 	Default: 0
 
 --vcf <string>: A VCF file (plain or gzipped) to read genotypes from, instead of --tped. Biallelic SNVs with a GT field are used; multiallelic sites, indels and symbolic ALTs are skipped and the counts reported. Sample names come from the #CHROM line, so --tfam is neither needed nor accepted; use --pop to supply population labels.
 Sites must be grouped by chromosome. Ploidy must be 2, except on a chromosome declared with --sex-system or --sex-chr, where a haploid call is read as hemizygous. With --phased every call must use '|'.
+	Default: none
+
+--vcf-counting <string>: A VCF to count classified genotypes from, instead of the file the run was called from. Sample names come from its #CHROM line. Requires --features.
+Unlike the VCF the run is CALLED from, indels and multiallelic sites are read here: the classified allele is matched against REF and every ALT, so a classification that is not a biallelic SNV still counts.
 	Default: none
 
 --vcf-pass-only <bool>: Skip sites whose FILTER column is neither PASS nor '.'. Without this, such sites are KEPT and their number is reported, because a FILTER column reflects the caller's thresholds rather than garlic's.

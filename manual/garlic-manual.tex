@@ -547,6 +547,93 @@ so is the same name appearing twice, which means one chromosome whose rows are
 not contiguous --- {\tt garlic} starts a new chromosome whenever the chromosome
 column changes and would otherwise analyse it as two.
 
+\subsection{Counting classified genotypes}
+\label{sec:features}
+
+\noindent A common use of a set of runs of homozygosity is to ask whether
+genotypes of some class --- deleterious, non-synonymous, whatever an annotation
+supplies --- are found inside them more often than outside. {\tt --features}
+does that counting as part of the run that makes the calls, and writes
+{\tt <out>.counts.tsv}.
+
+The classification is a file of four whitespace-separated columns, the
+chromosome, the position, the allele that carries the classification, and the
+class label:
+
+\begin{lstlisting}
+#chr   pos        allele  class
+chr21  15481365   T       probably_damaging
+chr21  15481365   T       nonsynonymous
+21     15502312   A       benign
+\end{lstlisting}
+
+\noindent The label is arbitrary text and there may be any number of distinct
+labels. A site may appear more than once, as the first two rows above do, so
+two annotation schemes can classify the same variant; the categories are not
+required to be mutually exclusive. The same class twice at one site is an
+error rather than a silent overwrite. Chromosome names are matched ignoring
+case and a {\tt chr} prefix, and the allele is compared as a string, so an
+indel allele from a sequenced call set works as well as a single base.
+
+For every individual and every class, the table gives three numbers in each
+bucket: {\tt hom}, homozygous for the classified allele; {\tt het}, carrying
+one copy; and {\tt n}, the classified sites at which that individual has a
+genotype at all. The last is the denominator, and it is what separates ``more
+deleterious homozygotes inside runs'' from ``more sites inside runs''. The
+buckets are the size classes the population was analysed with, then
+{\tt NONE}, then {\tt UNASSESSED}, then {\tt ALL}; the count inside runs of
+homozygosity is {\tt ALL} less {\tt NONE} less {\tt UNASSESSED}.
+
+{\tt UNASSESSED} is a site where no run could have been called for anybody: a
+chromosome that was not analysed, one carrying fewer than two loci, an
+assembly gap, a region excluded by {\tt --par}, or a position outside the span
+the markers cover. It is kept apart from {\tt NONE} because folding the two
+together inflates the outside-runs count by however much of the genome the
+analysis left out. Two further columns account for the rest of each
+individual's classified sites: {\tt n\_hemi}, sites on a chromosome where that
+individual is not diploid, and {\tt n\_missing}, sites it has no call for.
+Every classified row lands in exactly one of those places, so
+$\sum {\tt ALL\_n} + {\tt n\_missing} + {\tt n\_hemi}$ is the same for every
+individual the genotypes covered.
+
+The genotypes are read from the file, raw. They are deliberately not the
+filtered matrix {\tt garlic} calls from: that has had monomorphic sites
+dropped population by population, has been pruned by {\tt --chr} and
+{\tt --autosomes-only} and has had excluded regions removed, and counting from
+it would discard exactly the rare functional sites the question is about. By
+default the input the run was called from is read a second time. When the
+classified variants live elsewhere --- calls from a genotyping array,
+classifications from sequencing --- give that file with
+{\tt --tped-counting} and {\tt --tfam-counting}, or with {\tt --vcf-counting};
+the two files need not share a single site. Individuals are matched by
+identifier, and one present in only one of the two files is reported rather
+than counted as having no runs.
+
+\subsubsection{Counting against calls that already exist}
+
+\noindent {\tt --roh-file} counts against a {\tt .roh.bed} written earlier, or
+published, instead of calling anything. It needs {\tt --features} and one of
+the counting genotype flags, and it accepts no calling input.
+
+Less is knowable this way, and the table says so rather than leaving it to be
+inferred. A {\tt .roh.bed} records where the runs are; it does not record which
+chromosomes were analysed, how far the markers reached, or what the size class
+letters mean. So nothing can be marked {\tt UNASSESSED}, every site outside a
+run is {\tt NONE}, and the size class boundaries are reported as unknown.
+Counting inside the run that makes the calls knows all three, which is the
+reason to prefer it where there is a choice.
+
+One wrinkle is worth knowing about. Version 1.1.6a was released with two
+different {\tt chromStart} conventions under the same version string, so the
+version in a file's track line does not say which one it uses. {\tt garlic}
+works it out from the file instead: a conforming BED has
+${\tt chromEnd} - {\tt chromStart}$ equal to the length column, and the older
+convention has it one less. The answer is counted over every call rather than
+taken from the first, a file that is half each is refused as two files
+concatenated, and the convention that was used is recorded in the output
+header. Under {\tt --cm} the length column is a genetic distance and settles
+nothing; that case warns and names its assumption.
+
 \subsection{Controlling GARLIC}
 
 \noindent The remaining flags control window construction, LOD score
@@ -560,6 +647,13 @@ accepted -- and to miss every flag added since.
 \section{Change Log}
 
 \begin{lstlisting}
+--features counts classified genotypes inside and outside the calls, replacing the
+count_features_in_roh.pl and count_damaging_genotypes_in_roh.pl scripts, which are removed.
+See "Counting classified genotypes" under Program Options. Any number of arbitrary class
+labels, a site may carry several, and the table reports hom, het and a denominator n per
+(class, size class) with a separate UNASSESSED bucket for sites where no run could have been
+called. --roh-file counts against a .roh.bed that already exists.
+
 A sex chromosome is no longer analysed as an autosome; a run containing one stops until
 --sex-system says which sex code is heterogametic. See "Sex chromosomes" under Program Options.
 Frequencies there come from everyone with the heterogametic sex contributing one allele, calling

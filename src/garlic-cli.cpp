@@ -513,8 +513,8 @@ const string ARG_ROH_FILE = "--roh-file";
 const string DEFAULT_ROH_FILE = "none";
 const string HELP_ROH_FILE = "Count classified genotypes against calls in an existing garlic .roh.bed\n\
 \tinstead of calling them. No ROH are called, so --tped and --vcf are not used;\n\
-\tgive the genotypes with --tped-counting/--tfam-counting or --vcf-counting, and\n\
-\tthe classification with --features.\n\
+\tgive the genotypes with --tped-counting and --tfam-counting, or with\n\
+\t--vcf-counting, and the classification with --features.\n\
 \t\n\
 \tA .roh.bed records where the runs are, not which chromosomes were analysed or\n\
 \twhat the size class letters mean, so the table cannot mark a site UNASSESSED\n\
