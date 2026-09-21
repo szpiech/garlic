@@ -1881,7 +1881,13 @@ sex_chromosomes() {
     # The hint that follows it is three lines, and the `if` guarding them was
     # unbraced: only the first line was conditional, so the other two printed
     # on ANY chromosome.  Both halves are asserted -- the whole hint where it
-    # applies, and none of it where it does not.
+    # applies, and none of it where it does not.  On the chr7 fixture below the
+    # pre-fix binary emitted
+    #     ERROR: sample m1 at chr7:2000 has ploidy 3; garlic calls ROH from
+    #     diploid genotypes only.
+    #         --sex-system makes a haploid genotype there a hemizygous call rather
+    #         than an error.
+    # -- the two orphaned lines, without the sentence that introduces them.
     if grep -q "conventionally a sex chromosome" "$WORK/sx22.stderr" &&
        grep -q "sex-system makes a haploid genotype" "$WORK/sx22.stderr"; then ok
     else bad "the ploidy refusal on chrX lost the sex-chromosome hint"; fi
