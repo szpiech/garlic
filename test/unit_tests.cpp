@@ -1431,6 +1431,27 @@ static void test_ROHIndex()
     releaseMapData(mapDataByChr);
 }
 
+// Inverse of sizeClassLabel, which is how a class letter read back out of a
+// .roh.bed becomes a bucket again.  Round-tripping is the property that
+// matters: --nclust is unbounded, so the letters go past Z.
+static void test_sizeClassIndexFromLabel()
+{
+    for (int k = 0; k < 60; k++)
+        ck(ROHIndex::sizeClassIndexFromLabel(sizeClassLabel(k)) == k,
+           "sizeClassIndexFromLabel round-trips sizeClassLabel");
+    ck(ROHIndex::sizeClassIndexFromLabel("A")  == 0,  "label A is class 0");
+    ck(ROHIndex::sizeClassIndexFromLabel("Z")  == 25, "label Z is class 25");
+    ck(ROHIndex::sizeClassIndexFromLabel("AA") == 26, "label AA is class 26");
+    ck(ROHIndex::sizeClassIndexFromLabel("")   == -1, "an empty label is not a class");
+    ck(ROHIndex::sizeClassIndexFromLabel("a")  == -1, "a lower-case label is not one garlic writes");
+    ck(ROHIndex::sizeClassIndexFromLabel("A1") == -1, "a digit is not a class label");
+    // Any run of capitals is arithmetically a label, so the guard is on size
+    // rather than on spelling: garlic never writes one this long, and a file
+    // that carries one is not a .roh.bed.
+    ck(ROHIndex::sizeClassIndexFromLabel("ABCDEFGH") == -1,
+       "an absurdly long label is refused rather than becoming a huge class index");
+}
+
 // The feature file.  Return codes only: the wording of each refusal is
 // asserted in test/run_tests.sh, where it is what the user actually sees.
 static string tmpPath(const char *name)
@@ -1611,6 +1632,7 @@ int main()
     test_bucketAt();
     test_ROHIndex();
     test_FeatureTable();
+    test_sizeClassIndexFromLabel();
     printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

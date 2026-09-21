@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <sstream>
 #include <fstream>
+#include <set>
+#include <limits>
 #include <cstdlib>
 #include <cerrno>
 
@@ -198,8 +200,9 @@ int ROHIndex::addPopulation(const string &popLabel,
 {
     const int p = int(pops.size());
     pops.push_back(PopEntry());
-    pops[p].label  = popLabel;
-    pops[p].bounds = bounds;
+    pops[p].label   = popLabel;
+    pops[p].bounds  = bounds;
+    pops[p].nclassN = int(bounds.size()) + 1;
 
     //What was analysed, per chromosome.  A chromosome carrying fewer than two
     //loci is not analysed -- writeFROH leaves it out of the denominator for
@@ -311,6 +314,297 @@ void ROHIndex::resolveChr(const string &chrKey,
         map<string, ChrTracts>::const_iterator it = inds[i].byChr.find(chrKey);
         if (it != inds[i].byChr.end()) tracts[i] = &(it->second);
     }
+}
+
+//---- counting against calls that already exist -----------------------------
+
+int ROHIndex::sizeClassIndexFromLabel(const string &label)
+{
+    if (label.empty()) return -1;
+    long long idx = 0;
+    for (unsigned int i = 0; i < label.size(); i++)
+    {
+        const char c = label[i];
+        if (c < 'A' || c > 'Z') return -1;
+        idx = idx * 26 + (c - 'A' + 1);
+        if (idx > 1000000) return -1;       //not a label garlic would write
+    }
+    return int(idx - 1);
+}
+
+//Pulls the individual and population out of a track line.  The Perl's regex
+//was /^track .+Ind: (.+) Pop:(.+) ROH.+/, which is greedy on both captures
+//and misparses an ID that itself contains " Pop:"; this anchors on the LAST
+//occurrence instead.  Returns false when the line is not a track line garlic
+//wrote.
+static bool parseTrackLine(const string &line, string &id, string &pop)
+{
+    const string key = "name=\"Ind: ";
+    size_t a = line.find(key);
+    if (a == string::npos) return false;
+    a += key.size();
+    size_t b = line.find('"', a);
+    if (b == string::npos) return false;
+
+    string inner = line.substr(a, b - a);           //<id> Pop:<pop> ROH
+    const string tail = " ROH";
+    if (inner.size() >= tail.size() &&
+        inner.compare(inner.size() - tail.size(), tail.size(), tail) == 0)
+        inner.erase(inner.size() - tail.size());
+
+    const string sep = " Pop:";
+    size_t c = inner.rfind(sep);
+    if (c == string::npos) return false;
+    id  = inner.substr(0, c);
+    pop = inner.substr(c + sep.size());
+    return !id.empty();
+}
+
+int ROHIndex::addFromBed(const string &bedfile, string &coordNote)
+{
+    igzstream fin;
+    fin.open(bedfile.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: Failed to open", bedfile);
+        return -1;
+    }
+
+    //One row as read, before the coordinate convention is known.
+    struct Row { int ind; string chrKey; pos_t s, e; int cls; };
+    vector<Row> rows;
+    vector<string> idOrder, popOfInd;
+    map<string, int> idIndex;
+
+    //Which convention the file uses, counted rather than trusted.  A
+    //conforming BED has chromEnd - chromStart == the length in column 5;
+    //files written before d5946c4 wrote the 1-based start verbatim, so the
+    //difference is one less.  The version in the track line cannot be used:
+    //v1.1.6a was released with both conventions.
+    long long nConforming = 0, nLegacy = 0, nUndecidable = 0;
+
+    string line, id, pop;
+    long long lineno = 0;
+    int curInd = -1;
+    int maxCls = 0;
+
+    while (getline(fin, line))
+    {
+        lineno++;
+        if (line.empty()) continue;
+        if (line.compare(0, 6, "track ") == 0 || line.compare(0, 6, "track\t") == 0)
+        {
+            if (!parseTrackLine(line, id, pop))
+            {
+                LOG.err("ERROR: could not read the individual from the track line at line",
+                        lineno, false);
+                LOG.err(" of", bedfile);
+                LOG.err("\tExpected: track name=\"Ind: <id> Pop:<pop> ROH\" ...");
+                fin.close();
+                return -1;
+            }
+            map<string, int>::iterator it = idIndex.find(id);
+            if (it != idIndex.end())
+            {
+                //Two track blocks for one individual would make the second
+                //silently replace or duplicate the first.
+                LOG.err("ERROR:", bedfile, false);
+                LOG.err(" has more than one track for individual", id, false);
+                LOG.err(".");
+                fin.close();
+                return -1;
+            }
+            curInd = int(idOrder.size());
+            idIndex[id] = curInd;
+            idOrder.push_back(id);
+            popOfInd.push_back(pop);
+            continue;
+        }
+        if (line[0] == '#' || line.compare(0, 7, "browser") == 0) continue;
+        if (curInd < 0)
+        {
+            LOG.err("ERROR: a call at line", lineno, false);
+            LOG.err(" of", bedfile, false);
+            LOG.err(" comes before any track line, so it belongs to no individual.");
+            fin.close();
+            return -1;
+        }
+
+        string chr, cls;
+        double startv = 0, endv = 0, lenv = 0;
+        {
+            stringstream ss(line);
+            if (!(ss >> chr >> startv >> endv >> cls >> lenv))
+            {
+                LOG.err("ERROR: line", lineno, false);
+                LOG.err(" of", bedfile, false);
+                LOG.err(" does not have the five columns a garlic .roh.bed has");
+                LOG.err("\t(chrom, chromStart, chromEnd, class, length).");
+                fin.close();
+                return -1;
+            }
+        }
+
+        const int k = sizeClassIndexFromLabel(cls);
+        if (k < 0)
+        {
+            LOG.err("ERROR:", cls, false);
+            LOG.err(" at line", lineno, false);
+            LOG.err(" of", bedfile, false);
+            LOG.err(" is not a size class label garlic writes (A, B, ... Z, AA, ...).");
+            fin.close();
+            return -1;
+        }
+        if (k > maxCls) maxCls = k;
+
+        Row r;
+        r.ind    = curInd;
+        r.chrKey = canonChrKey(chr);
+        r.s      = pos_t(startv);
+        r.e      = pos_t(endv);
+        r.cls    = k;
+        rows.push_back(r);
+
+        //Only a physical length can settle the convention.  Under --cm
+        //column 5 is a genetic distance and says nothing about the
+        //coordinates, which is why the answer is counted over rows rather
+        //than taken from the first one.
+        const pos_t span = r.e - r.s;
+        if (lenv >= 1.0 && lenv == double(pos_t(lenv)))
+        {
+            const pos_t len = pos_t(lenv);
+            if (span == len)          nConforming++;
+            else if (span == len - 1) nLegacy++;
+            else                      nUndecidable++;
+        }
+        else nUndecidable++;
+    }
+    fin.close();
+
+    if (rows.empty())
+    {
+        LOG.err("ERROR:", bedfile, false);
+        LOG.err(" contains no calls.");
+        return -1;
+    }
+
+    //A 0-based start needs +1 to become the 1-based position a genotype file
+    //reports; a legacy file already carries that position.
+    int shift = 1;
+    if (nConforming > 0 && nLegacy == 0)
+    {
+        shift = 1;
+        coordNote = "0-based chromStart (garlic 2.0.0 and the later 1.1.6a builds)";
+    }
+    else if (nLegacy > 0 && nConforming == 0)
+    {
+        shift = 0;
+        coordNote = "1-based chromStart (garlic 1.1.6a and earlier); read as written";
+        LOG.log("The ROH file uses the pre-2.0.0 coordinate convention (chromEnd - chromStart is length - 1).");
+    }
+    else if (nConforming > 0 && nLegacy > 0)
+    {
+        LOG.err("ERROR:", bedfile, false);
+        LOG.err(" is inconsistent about its coordinates:", nConforming, false);
+        LOG.err(" call(s) have chromEnd - chromStart equal to the length column and", nLegacy, false);
+        LOG.err(" have one less.");
+        LOG.err("\tIt cannot be read without knowing which is meant; it looks like two files joined.");
+        return -1;
+    }
+    else
+    {
+        //Every row was --cm, or the length column disagrees with both.
+        shift = 1;
+        coordNote = "assumed 0-based chromStart; the length column could not confirm it";
+        LOG.log("Calls whose length column settles no convention:", nUndecidable);
+        LOG.err("WARNING: the coordinate convention of " + bedfile + " could not be determined from");
+        LOG.err("\tits length column, which is what a --cm .roh.bed looks like.  Assuming the");
+        LOG.err("\tconforming 0-based chromStart that garlic 2.0.0 writes.  If the file came from");
+        LOG.err("\ta build older than d5946c4, every interval is one base out.");
+    }
+
+    //One population per distinct label, in order of first appearance.  A
+    //single label is unlabelled for naming, exactly as a single-population
+    //run is.
+    vector<string> popNames;
+    vector<int> popOfIdx(idOrder.size(), 0);
+    for (unsigned int i = 0; i < popOfInd.size(); i++)
+    {
+        int found = -1;
+        for (unsigned int k = 0; k < popNames.size(); k++)
+            if (popNames[k].compare(popOfInd[i]) == 0) { found = int(k); break; }
+        if (found < 0) { found = int(popNames.size()); popNames.push_back(popOfInd[i]); }
+        popOfIdx[i] = found;
+    }
+
+    for (unsigned int k = 0; k < popNames.size(); k++)
+    {
+        pops.push_back(PopEntry());
+        pops.back().label   = (popNames.size() == 1) ? string("") : popNames[k];
+        pops.back().nclassN = maxCls + 1;
+        //No boundaries: a .roh.bed records the class letters, not what they
+        //mean.  The header says so rather than inventing numbers.
+    }
+
+    for (unsigned int i = 0; i < idOrder.size(); i++)
+    {
+        inds.push_back(IndEntry());
+        inds.back().id         = idOrder[i];
+        inds.back().popDisplay = popOfInd[i];
+        inds.back().pop        = popOfIdx[i];
+        inds.back().zygo       = ZYG_UNKNOWN;
+        indOf[idOrder[i]]      = int(i);
+        pops[popOfIdx[i]].members.push_back(int(i));
+    }
+
+    //Every chromosome named in the file is "analysed" as far as anything here
+    //can tell, over a span that covers everything: a .roh.bed does not record
+    //where the markers reached, so no site can be shown to be UNASSESSED and
+    //everything outside a run is NONE.  The header states this.
+    //Gathered per individual so each one's tracts can be sorted.
+    vector< map<string, vector< pair<pos_t, pair<pos_t, int> > > > > byInd(idOrder.size());
+    set<string> chrSeen;
+    for (unsigned int r = 0; r < rows.size(); r++)
+    {
+        const Row &row = rows[r];
+        byInd[row.ind][row.chrKey].push_back(
+            make_pair(row.s + shift, make_pair(row.e, row.cls)));
+        chrSeen.insert(row.chrKey);
+    }
+
+    for (unsigned int p = 0; p < pops.size(); p++)
+    {
+        for (set<string>::const_iterator c = chrSeen.begin(); c != chrSeen.end(); ++c)
+        {
+            ChrInfo ci;
+            ci.lo = 0;
+            ci.hi = numeric_limits<pos_t>::max();
+            ci.role = CHR_AUTOSOME;
+            pops[p].chrInfo[*c] = ci;
+        }
+    }
+
+    for (unsigned int i = 0; i < idOrder.size(); i++)
+    {
+        map<string, vector< pair<pos_t, pair<pos_t, int> > > >::iterator g;
+        for (g = byInd[i].begin(); g != byInd[i].end(); ++g)
+        {
+            sort(g->second.begin(), g->second.end());
+            ChrTracts &t = inds[i].byChr[g->first];
+            for (unsigned int k = 0; k < g->second.size(); k++)
+            {
+                t.start.push_back(g->second[k].first);
+                t.stop.push_back(g->second[k].second.first);
+                t.cls.push_back(g->second[k].second.second);
+            }
+        }
+    }
+
+    builtFromBed = true;
+    LOG.log("Individuals in the ROH file:", int(idOrder.size()));
+    LOG.log("Calls read:", (long long)rows.size());
+    LOG.log("ROH coordinates:", coordNote);
+    return 0;
 }
 
 //---- the counts ------------------------------------------------------------
@@ -861,9 +1155,7 @@ int writeFeatureCounts(const string &outfile,
                        const ROHIndex &index,
                        int pop,
                        const FeatureCounts &counts,
-                       const string &featureFile,
-                       const string &genotypeSource,
-                       bool pooled)
+                       const FeatureRunInfo &runInfo)
 {
     ofstream out;
     //ios::binary for the reason writeROHData gives: without it the Windows
@@ -881,8 +1173,8 @@ int writeFeatureCounts(const string &outfile,
     const vector<double> &bounds = index.bounds(pop);
 
     out << "## garlic feature counts\n";
-    if (pooled) out << "## populations_pooled\ttrue\n";
-    out << "## feature_file\t" << featureFile << "\n";
+    if (runInfo.pooled) out << "## populations_pooled\ttrue\n";
+    out << "## feature_file\t" << runInfo.featureFile << "\n";
     out << "## feature_classes";
     for (unsigned int k = 0; k < cls.size(); k++) out << (k ? "," : "\t") << cls[k];
     out << "\n";
@@ -894,18 +1186,38 @@ int writeFeatureCounts(const string &outfile,
     //Said plainly because it is the difference between this table and one
     //made from garlic's internal matrix, which would have dropped exactly the
     //rare sites this counts.
-    out << "## genotype_source\t" << genotypeSource
+    out << "## genotype_source\t" << runInfo.genotypeSource
         << "\traw calls; no garlic site filter applied\n";
-    out << "## size_class_boundaries";
-    for (unsigned int k = 0; k < bounds.size(); k++) out << "\t" << bounds[k];
-    out << "\n";
+    if (!runInfo.rohSource.empty())
+    {
+        out << "## roh_source\t" << runInfo.rohSource
+            << "\tcalls read from this file; not made by this run\n";
+        out << "## roh_coordinates\t" << runInfo.coordNote << "\n";
+    }
+    if (index.fromBed())
+        //Not left blank: a reader comparing two tables has to know that a
+        //class letter here is only a letter, with no length behind it.
+        out << "## size_class_boundaries\tunknown\ta .roh.bed records the class "
+            << "letters, not the boundaries they came from\n";
+    else
+    {
+        out << "## size_class_boundaries";
+        for (unsigned int k = 0; k < bounds.size(); k++) out << "\t" << bounds[k];
+        out << "\n";
+    }
     out << "## buckets";
     for (int c = 0; c < nclass + 2; c++) out << (c ? "," : "\t") << bucketLabel(c, nclass);
     out << ",ALL\n";
     out << "## metrics\thom = homozygous for the classified allele; "
         << "het = one copy; n = genotyped sites\n";
-    out << "## unassessed\ta site where no run could have been called: a chromosome "
-        << "not analysed, an assembly gap, an excluded region, or outside the analysed span\n";
+    if (index.fromBed())
+        //The honest statement of what is lost by counting against a file.
+        //In a run that makes its own calls these are different things.
+        out << "## unassessed\tnot determinable from a .roh.bed, which records where the runs "
+            << "are and not which chromosomes were analysed; every site outside a run is NONE\n";
+    else
+        out << "## unassessed\ta site where no run could have been called: a chromosome "
+            << "not analysed, an assembly gap, an excluded region, or outside the analysed span\n";
     out << "## in_roh\tALL minus NONE minus UNASSESSED\n";
     //An individual with one copy of a chromosome has no diploid genotype
     //there, so those sites are in no bucket.  Counted rather than dropped

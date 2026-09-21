@@ -2650,6 +2650,73 @@ feature_counts() {
                 --error 0.001 --freq-only --features "$FC/feat.new" \
                 --out "$FC/bad5" --quiet --force
 
+    # ---- counting against calls that already exist (--roh-file) ----
+    #
+    # The same calls, read back from the file garlic just wrote, must give the
+    # same homozygote counts as counting inside the run that made them.
+    $GARLIC --roh-file "$FC/g.roh.bed" --features "$FC/feat.new" \
+            --tped-counting "$FC/data.chr22.tped" --tfam-counting "$FC/data.chr22.tfam" \
+            --out "$FC/sa" --quiet --force >/dev/null 2>"$FC/sa.stderr"
+    if [ ! -f "$FC/sa.counts.tsv" ]; then
+        bad "--roh-file wrote no counts file (see $FC/sa.stderr)"
+    else
+        homcells() {
+            awk -F'\t' '/^##/ {next}
+                        NR_H==0 {NR_H=1; for (i=1;i<=NF;i++) h[i]=$i; next}
+                        {for (i=1;i<=NF;i++) if (h[i] ~ /_hom$/) print $1, h[i], $i}' "$1" | sort
+        }
+        homcells "$FC/g.counts.tsv"  >"$FC/g.hom"
+        homcells "$FC/sa.counts.tsv" >"$FC/sa.hom"
+        if cmp -s "$FC/g.hom" "$FC/sa.hom"; then ok
+        else bad "counting against the written .roh.bed disagrees with counting inside the run"; fi
+
+        # What the mode cannot know has to be said, not left blank.
+        if grep -q '^## size_class_boundaries	unknown' "$FC/sa.counts.tsv" &&
+           grep -q '^## unassessed	not determinable from a .roh.bed' "$FC/sa.counts.tsv"; then ok
+        else bad "the --roh-file header does not record what a .roh.bed cannot say"; fi
+    fi
+
+    # A .roh.bed written before d5946c4 has a 1-based chromStart, and garlic
+    # 1.1.6a was released with BOTH conventions -- so the version in the track
+    # line cannot distinguish them and the file itself has to.
+    awk 'BEGIN {OFS="\t"} /^track/ {print; next} {$2 = $2 + 1; print}' \
+        "$FC/g.roh.bed" >"$FC/legacy.roh.bed"
+    $GARLIC --roh-file "$FC/legacy.roh.bed" --features "$FC/feat.new" \
+            --tped-counting "$FC/data.chr22.tped" --tfam-counting "$FC/data.chr22.tfam" \
+            --out "$FC/lg" --quiet --force >/dev/null 2>"$FC/lg.stderr"
+    if [ ! -f "$FC/lg.counts.tsv" ]; then
+        bad "a pre-2.0.0 .roh.bed was not read (see $FC/lg.stderr)"
+    else
+        homcells "$FC/lg.counts.tsv" >"$FC/lg.hom"
+        if cmp -s "$FC/sa.hom" "$FC/lg.hom"; then ok
+        else bad "a pre-2.0.0 .roh.bed gives different counts -- the coordinate shift is wrong"; fi
+        if grep -q 'pre-2.0.0 coordinate convention' "$FC/lg.log"; then ok
+        else bad "reading a pre-2.0.0 .roh.bed did not say so in the log"; fi
+    fi
+
+    # Half one convention and half the other is two files concatenated, and
+    # there is no reading of it that is right.
+    { head -20 "$FC/g.roh.bed"; sed -n '21,40p' "$FC/legacy.roh.bed"; } >"$FC/mixed.roh.bed"
+    expect_exit 2 "a .roh.bed mixing both coordinate conventions" \
+        $GARLIC --roh-file "$FC/mixed.roh.bed" --features "$FC/feat.new" \
+                --tped-counting "$FC/data.chr22.tped" --tfam-counting "$FC/data.chr22.tfam" \
+                --out "$FC/mx" --quiet --force
+
+    expect_exit 1 "--roh-file without --features" \
+        $GARLIC --roh-file "$FC/g.roh.bed" \
+                --tped-counting "$FC/data.chr22.tped" --tfam-counting "$FC/data.chr22.tfam" \
+                --out "$FC/bad8" --quiet --force
+
+    expect_exit 1 "--roh-file without genotypes to count" \
+        $GARLIC --roh-file "$FC/g.roh.bed" --features "$FC/feat.new" \
+                --out "$FC/bad9" --quiet --force
+
+    expect_exit 1 "--roh-file together with a calling input" \
+        $GARLIC --roh-file "$FC/g.roh.bed" --features "$FC/feat.new" \
+                --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+                --tped-counting "$FC/data.chr22.tped" --tfam-counting "$FC/data.chr22.tfam" \
+                --out "$FC/bad10" --quiet --force
+
     # Golden: what pins the output once the Perl comparison above is gone.
     # The two header lines naming input paths carry $WORK, which contains the
     # test run's pid, so they are stripped before checksumming.

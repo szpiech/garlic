@@ -139,6 +139,10 @@ extern const string ARG_FEATURE_TPED;
 extern const string DEFAULT_FEATURE_TPED;
 extern const string HELP_FEATURE_TPED;
 
+extern const string ARG_ROH_FILE;
+extern const string DEFAULT_ROH_FILE;
+extern const string HELP_ROH_FILE;
+
 extern const string ARG_FEATURE_VCF;
 extern const string DEFAULT_FEATURE_VCF;
 extern const string HELP_FEATURE_VCF;
@@ -303,7 +307,7 @@ extern const string HELP_SEED;
 //status is set to one of the PARAM_* codes in param_t.h; on PARAM_OK the
 //returned pointer is valid, otherwise it is NULL.
 param_t *getCLI(int argc, char *argv[], int &status);
-bool checkOutfileClobber(string outfile, bool force);
+bool checkOutfileClobber(string outfile, bool force, string suffix = ".roh.bed");
 bool checkSeed(int seed);
 bool checkMaxWinsize(int maxWinsize, int winsize);
 bool checkPopFile(string popfile, string tpedfile, string vcffile);
@@ -327,7 +331,8 @@ bool checkFROHDenominator(const string &mode, int &denom, bool CM, bool FROH,
 bool checkSexChrEstimates(double cutoff, bool cutoffSet, int winsize, bool winsizeSet,
                           bool WINSIZE_EXPLORE, bool FREQ_ONLY);
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet);
-bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile);
+bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile,
+                        string rohfile);
 bool checkMapFile(string mapfile, bool WEIGHTED);
 bool checkThreads(int numThreads);
 bool checkError(double error, string tglsfile, bool wasSet, bool haveVCFLikelihoods);

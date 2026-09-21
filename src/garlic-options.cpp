@@ -70,7 +70,10 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     opt.popfile  = params->getStringFlag(ARG_POP);
     opt.vcffile  = params->getStringFlag(ARG_VCF);
     opt.VCF_PASS_ONLY = params->getBoolFlag(ARG_VCF_PASS_ONLY);
-    argerr = argerr || checkRequiredFiles(opt.tpedfile, opt.tfamfile, opt.vcffile, opt.tglsfile);
+    opt.rohfile = params->getStringFlag(ARG_ROH_FILE);
+    if (opt.rohfile.compare(DEFAULT_ROH_FILE) == 0) opt.rohfile.clear();
+    argerr = argerr || checkRequiredFiles(opt.tpedfile, opt.tfamfile, opt.vcffile,
+                                          opt.tglsfile, params->getStringFlag(ARG_ROH_FILE));
     argerr = argerr || checkPopFile(opt.popfile, opt.tpedfile, opt.vcffile);
     if (argerr) return OPTIONS_USAGE_ERROR;
     if (opt.vcffile.compare(DEFAULT_VCF) != 0) {
@@ -84,6 +87,99 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     LOG.log("TFAM file:", opt.tfamfile);
     LOG.log("TGLS file:", opt.tglsfile);
     if (opt.popfile.compare(DEFAULT_POP) != 0) LOG.log("Population file:", opt.popfile);
+
+    //Counting classified genotypes inside and outside the calls.  Validated
+    //here rather than where it runs, because it runs at the very end of the
+    //pipeline and a contradictory command line should not cost a full
+    //analysis first.
+    opt.featurefile   = params->getStringFlag(ARG_FEATURES);
+    opt.countTpedfile = params->getStringFlag(ARG_FEATURE_TPED);
+    opt.countTfamfile = params->getStringFlag(ARG_FEATURE_TFAM);
+    opt.countVcffile  = params->getStringFlag(ARG_FEATURE_VCF);
+    if (opt.featurefile.compare(DEFAULT_FEATURES) == 0)   opt.featurefile.clear();
+    if (opt.countTpedfile.compare(DEFAULT_FEATURE_TPED) == 0) opt.countTpedfile.clear();
+    if (opt.countTfamfile.compare(DEFAULT_FEATURE_TFAM) == 0) opt.countTfamfile.clear();
+    if (opt.countVcffile.compare(DEFAULT_FEATURE_VCF) == 0)   opt.countVcffile.clear();
+    {
+        const bool haveCountTped = !opt.countTpedfile.empty();
+        const bool haveCountTfam = !opt.countTfamfile.empty();
+        if (!opt.countVcffile.empty() && (haveCountTped || haveCountTfam))
+        {
+            LOG.err("ERROR:", ARG_FEATURE_VCF, false);
+            LOG.err(" cannot be combined with", haveCountTped ? ARG_FEATURE_TPED : ARG_FEATURE_TFAM, false);
+            LOG.err(": classified genotypes come from one file.");
+            return OPTIONS_USAGE_ERROR;
+        }
+        if (!opt.countVcffile.empty() && opt.featurefile.empty())
+        {
+            LOG.err("ERROR:", ARG_FEATURE_VCF, false);
+            LOG.err(" was given without", ARG_FEATURES, false);
+            LOG.err(", so there is nothing to count.");
+            return OPTIONS_USAGE_ERROR;
+        }
+        if (haveCountTped != haveCountTfam)
+        {
+            LOG.err("ERROR:", haveCountTped ? ARG_FEATURE_TPED : ARG_FEATURE_TFAM, false);
+            LOG.err(" needs", haveCountTped ? ARG_FEATURE_TFAM : ARG_FEATURE_TPED, false);
+            LOG.err(" as well: a TPED does not name its samples.");
+            return OPTIONS_USAGE_ERROR;
+        }
+        if (haveCountTped && opt.featurefile.empty())
+        {
+            LOG.err("ERROR:", ARG_FEATURE_TPED, false);
+            LOG.err(" was given without", ARG_FEATURES, false);
+            LOG.err(", so there is nothing to count.");
+            return OPTIONS_USAGE_ERROR;
+        }
+        if (!opt.rohfile.empty())
+        {
+            if (opt.featurefile.empty())
+            {
+                LOG.err("ERROR:", ARG_ROH_FILE, false);
+                LOG.err(" was given without", ARG_FEATURES, false);
+                LOG.err(", so there is nothing to count against those calls.");
+                return OPTIONS_USAGE_ERROR;
+            }
+            if (opt.countTpedfile.empty() && opt.countVcffile.empty())
+            {
+                LOG.err("ERROR:", ARG_ROH_FILE, false);
+                LOG.err(" needs genotypes to count: pass", ARG_FEATURE_TPED, false);
+                LOG.err(" with", ARG_FEATURE_TFAM, false);
+                LOG.err(", or", ARG_FEATURE_VCF, false);
+                LOG.err(".");
+                return OPTIONS_USAGE_ERROR;
+            }
+            LOG.log("ROH file:", opt.rohfile);
+        }
+        if (!opt.featurefile.empty())
+        {
+            LOG.log("Feature file:", opt.featurefile);
+            LOG.log("Counting classified genotypes from:",
+                    !opt.countVcffile.empty()  ? opt.countVcffile :
+                    (!opt.countTpedfile.empty() ? opt.countTpedfile
+                                                : string("the input this run is called from")));
+        }
+    }
+
+
+    //--roh-file makes no calls, so every flag that steers the analysis --
+    //window size, cutoff, size classes, threads, the RNG -- is irrelevant to
+    //it, and validating them would demand values the run never reads.  The
+    //command line is complete at this point for that mode, so it stops here.
+    if (!opt.rohfile.empty())
+    {
+        if (checkOutfileClobber(opt.outfile, params->getBoolFlag(ARG_FORCE), ".counts.tsv"))
+            return OPTIONS_USAGE_ERROR;
+        try { LOG.commit(); }
+        catch (...)
+        {
+            cerr << "ERROR: could not open the log for output basename "
+                 << opt.outfile << "\n";
+            return OPTIONS_RUNTIME_ERROR;
+        }
+        return OPTIONS_OK;
+    }
+
 
     opt.GL_TYPE = params->getStringFlag(ARG_GL_TYPE);
     argerr = argerr || checkGLType(opt.GL_TYPE, opt.tglsfile);
@@ -108,7 +204,11 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
 
     opt.centromereFile = params->getStringFlag(ARG_CENTROMERE_FILE);
     opt.NO_CENTROMERE = params->getBoolFlag(ARG_NO_CENTROMERE);
-    argerr = argerr || checkBuildAndCentromereFile(opt.BUILD, opt.centromereFile, opt.NO_CENTROMERE);
+    //--roh-file calls nothing, so it reads no assembly gap and needs no
+    //build: requiring one would make the user assert something the run never
+    //uses.  A contradictory pair of centromere flags is still refused.
+    if (opt.rohfile.empty())
+        argerr = argerr || checkBuildAndCentromereFile(opt.BUILD, opt.centromereFile, opt.NO_CENTROMERE);
     if (argerr) return OPTIONS_USAGE_ERROR;
     LOG.log("User defined centromere file:", opt.centromereFile);
 
@@ -301,70 +401,23 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     argerr = argerr || checkMaxWinsize(opt.MAX_WINSIZE, opt.winsize);
     if (argerr) return OPTIONS_USAGE_ERROR;
 
-    //Counting classified genotypes inside and outside the calls.  Validated
-    //here rather than where it runs, because it runs at the very end of the
-    //pipeline and a contradictory command line should not cost a full
-    //analysis first.
-    opt.featurefile   = params->getStringFlag(ARG_FEATURES);
-    opt.countTpedfile = params->getStringFlag(ARG_FEATURE_TPED);
-    opt.countTfamfile = params->getStringFlag(ARG_FEATURE_TFAM);
-    opt.countVcffile  = params->getStringFlag(ARG_FEATURE_VCF);
-    if (opt.featurefile.compare(DEFAULT_FEATURES) == 0)   opt.featurefile.clear();
-    if (opt.countTpedfile.compare(DEFAULT_FEATURE_TPED) == 0) opt.countTpedfile.clear();
-    if (opt.countTfamfile.compare(DEFAULT_FEATURE_TFAM) == 0) opt.countTfamfile.clear();
-    if (opt.countVcffile.compare(DEFAULT_FEATURE_VCF) == 0)   opt.countVcffile.clear();
+    //These two refusals need flags read further up: both describe runs that
+    //call no ROH, so there would be nothing to count against.
+    if (!opt.featurefile.empty())
     {
-        const bool haveCountTped = !opt.countTpedfile.empty();
-        const bool haveCountTfam = !opt.countTfamfile.empty();
-        if (!opt.countVcffile.empty() && (haveCountTped || haveCountTfam))
+        if (FREQ_ONLY)
         {
-            LOG.err("ERROR:", ARG_FEATURE_VCF, false);
-            LOG.err(" cannot be combined with", haveCountTped ? ARG_FEATURE_TPED : ARG_FEATURE_TFAM, false);
-            LOG.err(": classified genotypes come from one file.");
+            LOG.err("ERROR:", ARG_FEATURES, false);
+            LOG.err(" cannot be used with", ARG_FREQ_ONLY, false);
+            LOG.err(": no runs of homozygosity are called, so there is nothing to count against.");
             return OPTIONS_USAGE_ERROR;
         }
-        if (!opt.countVcffile.empty() && opt.featurefile.empty())
+        if (opt.WINSIZE_EXPLORE)
         {
-            LOG.err("ERROR:", ARG_FEATURE_VCF, false);
-            LOG.err(" was given without", ARG_FEATURES, false);
-            LOG.err(", so there is nothing to count.");
+            LOG.err("ERROR:", ARG_FEATURES, false);
+            LOG.err(" cannot be used with", ARG_WINSIZE_MULTI, false);
+            LOG.err(": that is a diagnostic over window sizes and calls no runs.");
             return OPTIONS_USAGE_ERROR;
-        }
-        if (haveCountTped != haveCountTfam)
-        {
-            LOG.err("ERROR:", haveCountTped ? ARG_FEATURE_TPED : ARG_FEATURE_TFAM, false);
-            LOG.err(" needs", haveCountTped ? ARG_FEATURE_TFAM : ARG_FEATURE_TPED, false);
-            LOG.err(" as well: a TPED does not name its samples.");
-            return OPTIONS_USAGE_ERROR;
-        }
-        if (haveCountTped && opt.featurefile.empty())
-        {
-            LOG.err("ERROR:", ARG_FEATURE_TPED, false);
-            LOG.err(" was given without", ARG_FEATURES, false);
-            LOG.err(", so there is nothing to count.");
-            return OPTIONS_USAGE_ERROR;
-        }
-        if (!opt.featurefile.empty())
-        {
-            if (FREQ_ONLY)
-            {
-                LOG.err("ERROR:", ARG_FEATURES, false);
-                LOG.err(" cannot be used with", ARG_FREQ_ONLY, false);
-                LOG.err(": no runs of homozygosity are called, so there is nothing to count against.");
-                return OPTIONS_USAGE_ERROR;
-            }
-            if (opt.WINSIZE_EXPLORE)
-            {
-                LOG.err("ERROR:", ARG_FEATURES, false);
-                LOG.err(" cannot be used with", ARG_WINSIZE_MULTI, false);
-                LOG.err(": that is a diagnostic over window sizes and calls no runs.");
-                return OPTIONS_USAGE_ERROR;
-            }
-            LOG.log("Feature file:", opt.featurefile);
-            LOG.log("Counting classified genotypes from:",
-                    !opt.countVcffile.empty()  ? opt.countVcffile :
-                    (!opt.countTpedfile.empty() ? opt.countTpedfile
-                                                : string("the input this run is called from")));
         }
     }
 
@@ -387,7 +440,9 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     //calls, then materialise <out>.log -- everything logged above has been held
     //in memory so that a rejected command line leaves no files behind.
     bool FORCE = params->getBoolFlag(ARG_FORCE);
-    if (checkOutfileClobber(opt.outfile, FORCE)) return OPTIONS_USAGE_ERROR;
+    if (checkOutfileClobber(opt.outfile, FORCE,
+                            opt.rohfile.empty() ? ".roh.bed" : ".counts.tsv"))
+        return OPTIONS_USAGE_ERROR;
     //commit(), not init(), is where the .log is actually opened -- init
     //deliberately opens nothing so a rejected command line leaves no files.
     //It throws 0 on failure and nothing caught it, so `--out <an unwritable

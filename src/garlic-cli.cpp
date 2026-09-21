@@ -509,6 +509,22 @@ const string HELP_FEATURE_TPED = "A TPED to count classified genotypes from, ins
 \tThese genotypes take no part in calling, and no site filter is applied to\n\
 \tthem: monomorphic and rare sites are exactly what this counts.";
 
+const string ARG_ROH_FILE = "--roh-file";
+const string DEFAULT_ROH_FILE = "none";
+const string HELP_ROH_FILE = "Count classified genotypes against calls in an existing garlic .roh.bed\n\
+\tinstead of calling them. No ROH are called, so --tped and --vcf are not used;\n\
+\tgive the genotypes with --tped-counting/--tfam-counting or --vcf-counting, and\n\
+\tthe classification with --features.\n\
+\t\n\
+\tA .roh.bed records where the runs are, not which chromosomes were analysed or\n\
+\twhat the size class letters mean, so the table cannot mark a site UNASSESSED\n\
+\tand its size class boundaries are reported as unknown. Counting inside the run\n\
+\tthat makes the calls knows both.\n\
+\t\n\
+\tgarlic 1.1.6a was released with two different chromStart conventions under the\n\
+\tsame version string, so the convention is recovered from the file itself and\n\
+\treported.";
+
 const string ARG_FEATURE_VCF = "--vcf-counting";
 const string DEFAULT_FEATURE_VCF = "none";
 const string HELP_FEATURE_VCF = "A VCF to count classified genotypes from, instead of the file the run was\n\
@@ -614,6 +630,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_FEATURE_TPED, DEFAULT_FEATURE_TPED, "", HELP_FEATURE_TPED);
 	params->addFlag(ARG_FEATURE_TFAM, DEFAULT_FEATURE_TFAM, "", HELP_FEATURE_TFAM);
 	params->addFlag(ARG_FEATURE_VCF, DEFAULT_FEATURE_VCF, "", HELP_FEATURE_VCF);
+	params->addFlag(ARG_ROH_FILE, DEFAULT_ROH_FILE, "", HELP_ROH_FILE);
 
 	//A bare invocation is a usage error, not a successful no-op run.
 	if (argc < 2)
@@ -700,10 +717,10 @@ void writeParamsJSON(string file, param_t *params, vector< pair<string,string> >
 }
 
 //Refuse to clobber a previous run's calls unless asked to.
-bool checkOutfileClobber(string outfile, bool force)
+bool checkOutfileClobber(string outfile, bool force, string suffix)
 {
 	if (force) return false;
-	string roh = outfile + ".roh.bed";
+	string roh = outfile + suffix;
 	ifstream probe(roh.c_str());
 	if (probe.good())
 	{
@@ -1011,17 +1028,31 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet)
 	return false;
 }
 
-bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile)
+bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile,
+                        string rohfile)
 {
 	bool haveTped = (tpedfile.compare(DEFAULT_TPED) != 0);
 	bool haveVcf  = (vcffile.compare(DEFAULT_VCF)   != 0);
 	bool haveTfam = (tfamfile.compare(DEFAULT_TFAM) != 0);
+	bool haveRoh  = (rohfile.compare(DEFAULT_ROH_FILE) != 0);
 
 	if (haveTped && haveVcf)
 	{
 		LOG.err("ERROR: --tped and --vcf are alternative sources of the same data; give one.");
 		return true;
 	}
+	//--roh-file calls nothing, so the calling input is not merely unnecessary
+	//there: giving it would say the run should call ROH and read them from a
+	//file at the same time.
+	if (haveRoh && (haveTped || haveVcf))
+	{
+		LOG.err("ERROR:", ARG_ROH_FILE, false);
+		LOG.err(" reads calls from a file, so no ROH are called and", haveTped ? ARG_TPED : ARG_VCF, false);
+		LOG.err(" is not used.");
+		LOG.err("\tGive the genotypes to count with --tped-counting/--tfam-counting or --vcf-counting.");
+		return true;
+	}
+	if (haveRoh) return false;
 	if (!haveTped && !haveVcf)
 	{
 		LOG.err("ERROR: Must provide genotypes, either --tped with --tfam, or --vcf.");

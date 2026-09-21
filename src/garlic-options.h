@@ -83,6 +83,8 @@ struct GarlicOptions
     string          countTpedfile;
     string          countTfamfile;
     string          countVcffile;
+    //--roh-file: count against calls that already exist, calling none.
+    string          rohfile;
 };
 
 //Return values of configureFromCommandLine.

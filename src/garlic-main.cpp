@@ -20,6 +20,65 @@ using namespace std;
 
 
 //----------------------------------------------------------------------------
+// Counting classified genotypes against a set of calls.
+//
+// Shared by the two ways of getting those calls: made by this run, or read
+// from an existing .roh.bed with --roh-file.  One pass over the genotypes
+// whatever the source, so several populations cost one read rather than one
+// each, and their tables come from the same parse of the same sites.
+//
+// The genotypes are read from the file, raw.  Deliberately NOT garlic's
+// internal matrix: by the time calls exist that has been filtered for
+// monomorphic sites per population, pruned by --chr and --autosomes-only, had
+// excluded regions dropped and had hemizygous calls recoded -- and released.
+// Counting from it would drop exactly the rare functional sites this is asked
+// about.  Returns 0, or 2 to be carried to the exit status.
+//----------------------------------------------------------------------------
+static int runFeatureCounting(const GarlicOptions &opt,
+                              const FeatureTable &featureTable,
+                              const ROHIndex &rohIndex,
+                              const string &outfile,
+                              bool pooled,
+                              const string &coordNote)
+{
+    //A named counting file wins; otherwise the run counts from whatever it
+    //was called from, which is the usual case -- the classified variants are
+    //normally in the same data.
+    const bool countFromVCF = !opt.countVcffile.empty() ||
+                              (opt.countTpedfile.empty() &&
+                               opt.vcffile.compare(DEFAULT_VCF) != 0);
+    const string countTped = opt.countTpedfile.empty() ? opt.tpedfile : opt.countTpedfile;
+    const string countTfam = opt.countTfamfile.empty() ? opt.tfamfile : opt.countTfamfile;
+    const string countVcf  = opt.countVcffile.empty()  ? opt.vcffile  : opt.countVcffile;
+
+    FeatureRunInfo runInfo;
+    runInfo.featureFile    = opt.featurefile;
+    runInfo.genotypeSource = countFromVCF ? countVcf : countTped;
+    runInfo.rohSource      = opt.rohfile;
+    runInfo.coordNote      = coordNote;
+    runInfo.pooled         = pooled;
+
+    cout << "Counting classified genotypes.\n";
+    FeatureCounts counts;
+    const int rc = countFromVCF
+        ? countFeaturesVCF(countVcf, opt.VCF_PASS_ONLY, featureTable, rohIndex, counts)
+        : countFeaturesTPED(countTped, countTfam, opt.TPED_MISSING,
+                            featureTable, rohIndex, counts);
+    if (rc != 0) return 2;
+
+    for (int p = 0; p < rohIndex.npop(); p++)
+    {
+        //Named like that population's other outputs: unlabelled for a single
+        //population, <out>.<POP>.counts.tsv otherwise.
+        const string &name = rohIndex.popName(p);
+        const string path = (name.empty() ? outfile : outfile + "." + name) + ".counts.tsv";
+        if (writeFeatureCounts(path, featureTable, rohIndex, p, counts, runInfo) != 0)
+            return 2;
+    }
+    return 0;
+}
+
+//----------------------------------------------------------------------------
 // One population's analysis.
 //
 // Everything from the window size through the written calls, for one set of
@@ -421,6 +480,21 @@ int main(int argc, char *argv[])
         LOG.log(" in", (long long)featureTable.nrows(), false);
         LOG.log(" rows across", int(featureTable.nclass()), false);
         LOG.log(" classes.");
+    }
+
+    //--roh-file: count against calls that already exist and call none.  This
+    //returns before any genotype matrix, map, centromere table or genetic map
+    //is touched, because none of them has anything to say about calls that
+    //were made elsewhere.
+    if (!opt.rohfile.empty())
+    {
+        string coordNote;
+        if (rohIndex.addFromBed(opt.rohfile, coordNote) != 0) { delete params; return 2; }
+        const int rc = runFeatureCounting(opt, featureTable, rohIndex, opt.outfile,
+                                          false, coordNote);
+        delete params;
+        cout << "Finished.\n";
+        return rc;
     }
 
     //References rather than copies, so the pipeline below reads and writes the
@@ -1335,39 +1409,7 @@ int main(int argc, char *argv[])
     //dropped and had hemizygous calls recoded -- and released.  Counting from
     //it would drop exactly the rare functional sites this is asked about.
     if (countFeatures && writeStatus == 0)
-    {
-        //A named counting file wins; otherwise the run counts from whatever
-        //it was called from, which is the usual case -- the classified
-        //variants are normally in the same data.
-        const bool countFromVCF = !opt.countVcffile.empty() ||
-                                  (opt.countTpedfile.empty() && opt.vcffile.compare(DEFAULT_VCF) != 0);
-        const string countTped = opt.countTpedfile.empty() ? tpedfile : opt.countTpedfile;
-        const string countTfam = opt.countTfamfile.empty() ? tfamfile : opt.countTfamfile;
-        const string countVcf  = opt.countVcffile.empty()  ? opt.vcffile : opt.countVcffile;
-        const string source    = countFromVCF ? countVcf : countTped;
-        cout << "Counting classified genotypes.\n";
-        FeatureCounts counts;
-        const int crc = countFromVCF
-            ? countFeaturesVCF(countVcf, opt.VCF_PASS_ONLY, featureTable, rohIndex, counts)
-            : countFeaturesTPED(countTped, countTfam, TPED_MISSING,
-                                featureTable, rohIndex, counts);
-        if (crc != 0)
-            writeStatus = 2;
-        else
-        {
-            for (int p = 0; p < rohIndex.npop() && writeStatus == 0; p++)
-            {
-                //Named like that population's other outputs: unlabelled for a
-                //single population, <out>.<POP>.counts.tsv otherwise.
-                const string &name = rohIndex.popName(p);
-                const string path = (name.empty() ? outfile : outfile + "." + name)
-                                    + ".counts.tsv";
-                if (writeFeatureCounts(path, featureTable, rohIndex, p, counts,
-                                       opt.featurefile, source, POOL) != 0)
-                    writeStatus = 2;
-            }
-        }
-    }
+        writeStatus = runFeatureCounting(opt, featureTable, rohIndex, outfile, POOL, string(""));
 
     //The scaffold is read by every population's filtering and interpolation,
     //so it is released here rather than after the first one.

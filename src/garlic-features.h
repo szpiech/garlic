@@ -149,7 +149,13 @@ public:
     int  zygoOf(int i)            const { return inds[i].zygo; }
     const string &popName(int p)  const { return pops[p].label; }
     const vector<double> &bounds(int p) const { return pops[p].bounds; }
-    int  nclass(int p)            const { return int(pops[p].bounds.size()) + 1; }
+    //Stored rather than derived from the boundaries: when the calls come
+    //from a .roh.bed the boundaries are not in the file and the class count
+    //is whatever letters it used.
+    int  nclass(int p)            const { return pops[p].nclassN; }
+    //True when this index was built from a .roh.bed rather than from calls
+    //made in this run, which limits what the table can say.
+    bool fromBed()                const { return builtFromBed; }
     //Individuals of one population, in the order they were added.
     const vector<int> &indsOf(int p) const { return pops[p].members; }
 
@@ -161,9 +167,24 @@ public:
                     vector<const ChrTracts *> &tracts,
                     vector<const ChrInfo *> &info) const;
 
+    //Builds the index from a .roh.bed instead of from a run's own calls, for
+    //counting against calls that already exist.  Strictly less is knowable
+    //this way and the table says so: a .roh.bed records where the runs are,
+    //not which chromosomes were analysed, how far the markers reached, or
+    //what the size class letters mean -- so nothing can be UNASSESSED and
+    //every site outside a run is NONE.
+    //
+    //coordNote comes back describing which coordinate convention was used;
+    //it goes in the output header.  Returns 0, or -1 after logging.
+    int addFromBed(const string &bedfile, string &coordNote);
+
     //One of the BUCKET_ codes, or a size class index.  Static and taking only
     //what it reads, so it is testable without building an index.
     static int bucketAt(const ChrTracts *t, const ChrInfo *ci, int zygo, pos_t pos);
+
+    //Inverse of sizeClassLabel: A->0, Z->25, AA->26.  -1 when the label is
+    //not one garlic would have written.
+    static int sizeClassIndexFromLabel(const string &label);
 
     //The individual's own population label, which is what goes in the table's
     //pop column.  Not the same string as popName(): that one is empty for a
@@ -185,13 +206,19 @@ private:
     {
         string label;
         vector<double> bounds;
+        int nclassN;
         map<string, ChrInfo> chrInfo;
         vector<int> members;
+        PopEntry() : nclassN(1) {}
     };
 
     vector<IndEntry> inds;
     vector<PopEntry> pops;
     map<string, int> indOf;
+    bool builtFromBed;
+
+public:
+    ROHIndex() : builtFromBed(false) {}
 };
 
 //---- the counts ------------------------------------------------------------
@@ -253,6 +280,20 @@ int countFeaturesVCF(const string &vcffile,
                      const ROHIndex &index,
                      FeatureCounts &counts);
 
+//What the run did, for the table's header.  A counts file is not
+//self-describing without it: which classification, which genotypes, and --
+//when the calls came from a file rather than from this run -- which file and
+//how its coordinates were read.
+struct FeatureRunInfo
+{
+    string featureFile;
+    string genotypeSource;
+    string rohSource;    //empty when the calls were made by this run
+    string coordNote;    //how a .roh.bed's coordinate convention was settled
+    bool   pooled;
+    FeatureRunInfo() : pooled(false) {}
+};
+
 //One table per population, named like that population's other outputs.
 //outfile is the full path.  Returns 0, or -1 after logging.
 int writeFeatureCounts(const string &outfile,
@@ -260,8 +301,6 @@ int writeFeatureCounts(const string &outfile,
                        const ROHIndex &index,
                        int pop,
                        const FeatureCounts &counts,
-                       const string &featureFile,
-                       const string &genotypeSource,
-                       bool pooled);
+                       const FeatureRunInfo &runInfo);
 
 #endif
