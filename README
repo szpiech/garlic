@@ -100,7 +100,16 @@ archives and vendored headers from the repository, and with them the main obstac
 building on a cluster.
 
 ---CHANGES---
-UNRELEASED - Correctness, performance, and command line work.
+2.0.0 - Correctness, performance, and command line work.
+
+A major version because this release is NOT backward compatible with files written by
+v1.1.6a: .roh.bed now emits conforming BED coordinates (chromStart is 0-based, so it is
+one less than before and chromEnd - chromStart is the length), the F_ROH table is one row
+per individual instead of one per size class, and a run with more than one population
+label writes one set of outputs per population instead of one pooled set.  Scripts that
+parse those files need the changes described below.  Note that v1.1.6a was released more
+than once with different .roh.bed coordinates, so the version in a file's track line does
+not tell you which convention it uses; --roh-file works it out from the file itself.
 
 *** BEHAVIOUR CHANGE: a sex chromosome is no longer analysed as an autosome, and a run that
 contains one stops until it is told what to do with it. ***  A hemizygous genotype is written
@@ -400,7 +409,7 @@ This update also introduces a new command-line flag --overlap-frac which is desi
 least OVERLAP_FRAC (default 0.25) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
 
-garlic v1.1.6a -- a program to call runs of homozygosity in genetic data.
+garlic v2.0.0 -- a program to call runs of homozygosity in genetic data.
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.
 
 Citations:
