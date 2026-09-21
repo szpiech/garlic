@@ -131,7 +131,10 @@ extern const string ARG_CENTROMERE_FILE;
 extern const string DEFAULT_CENTROMERE_FILE;
 extern const string HELP_CENTROMERE_FILE;
 
-/*
+extern const string ARG_FEATURES;
+extern const string DEFAULT_FEATURES;
+extern const string HELP_FEATURES;
+
 extern const string ARG_FEATURE_TPED;
 extern const string DEFAULT_FEATURE_TPED;
 extern const string HELP_FEATURE_TPED;
@@ -139,11 +142,6 @@ extern const string HELP_FEATURE_TPED;
 extern const string ARG_FEATURE_TFAM;
 extern const string DEFAULT_FEATURE_TFAM;
 extern const string HELP_FEATURE_TFAM;
-
-extern const string ARG_FEATURES;
-extern const string DEFAULT_FEATURES;
-extern const string HELP_FEATURES;
-*/
 
 extern const string ARG_M;
 extern const int DEFAULT_M;

@@ -301,6 +301,64 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     argerr = argerr || checkMaxWinsize(opt.MAX_WINSIZE, opt.winsize);
     if (argerr) return OPTIONS_USAGE_ERROR;
 
+    //Counting classified genotypes inside and outside the calls.  Validated
+    //here rather than where it runs, because it runs at the very end of the
+    //pipeline and a contradictory command line should not cost a full
+    //analysis first.
+    opt.featurefile   = params->getStringFlag(ARG_FEATURES);
+    opt.countTpedfile = params->getStringFlag(ARG_FEATURE_TPED);
+    opt.countTfamfile = params->getStringFlag(ARG_FEATURE_TFAM);
+    if (opt.featurefile.compare(DEFAULT_FEATURES) == 0)   opt.featurefile.clear();
+    if (opt.countTpedfile.compare(DEFAULT_FEATURE_TPED) == 0) opt.countTpedfile.clear();
+    if (opt.countTfamfile.compare(DEFAULT_FEATURE_TFAM) == 0) opt.countTfamfile.clear();
+    {
+        const bool haveCountTped = !opt.countTpedfile.empty();
+        const bool haveCountTfam = !opt.countTfamfile.empty();
+        if (haveCountTped != haveCountTfam)
+        {
+            LOG.err("ERROR:", haveCountTped ? ARG_FEATURE_TPED : ARG_FEATURE_TFAM, false);
+            LOG.err(" needs", haveCountTped ? ARG_FEATURE_TFAM : ARG_FEATURE_TPED, false);
+            LOG.err(" as well: a TPED does not name its samples.");
+            return OPTIONS_USAGE_ERROR;
+        }
+        if (haveCountTped && opt.featurefile.empty())
+        {
+            LOG.err("ERROR:", ARG_FEATURE_TPED, false);
+            LOG.err(" was given without", ARG_FEATURES, false);
+            LOG.err(", so there is nothing to count.");
+            return OPTIONS_USAGE_ERROR;
+        }
+        if (!opt.featurefile.empty())
+        {
+            if (FREQ_ONLY)
+            {
+                LOG.err("ERROR:", ARG_FEATURES, false);
+                LOG.err(" cannot be used with", ARG_FREQ_ONLY, false);
+                LOG.err(": no runs of homozygosity are called, so there is nothing to count against.");
+                return OPTIONS_USAGE_ERROR;
+            }
+            if (opt.WINSIZE_EXPLORE)
+            {
+                LOG.err("ERROR:", ARG_FEATURES, false);
+                LOG.err(" cannot be used with", ARG_WINSIZE_MULTI, false);
+                LOG.err(": that is a diagnostic over window sizes and calls no runs.");
+                return OPTIONS_USAGE_ERROR;
+            }
+            if (opt.vcffile.compare(DEFAULT_VCF) != 0 && opt.countTpedfile.empty())
+            {
+                LOG.err("ERROR: counting classified genotypes from a VCF is not implemented yet.");
+                LOG.err("\tPass", ARG_FEATURE_TPED, false);
+                LOG.err(" and", ARG_FEATURE_TFAM, false);
+                LOG.err(" to count from a TPED instead.");
+                return OPTIONS_USAGE_ERROR;
+            }
+            LOG.log("Feature file:", opt.featurefile);
+            LOG.log("Counting classified genotypes from:",
+                    opt.countTpedfile.empty() ? string("the input this run is called from")
+                                              : opt.countTpedfile);
+        }
+    }
+
     int seedFlag = params->getIntFlag(ARG_SEED);
     argerr = argerr || checkSeed(seedFlag);
     if (argerr) return OPTIONS_USAGE_ERROR;

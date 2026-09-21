@@ -483,21 +483,37 @@ const string HELP_SEED = "Random seed, for reproducible runs. Affects --kde-subs
 \t--ld-subsample and --resample. If 0 (default), a nondeterministic seed is drawn\n\
 \tand written to the log file so the run can be repeated exactly.";
 
-/*
+const string ARG_FEATURES = "--features";
+const string DEFAULT_FEATURES = "none";
+const string HELP_FEATURES = "A file classifying sites, four whitespace-separated columns:\n\
+\t<chr> <pos> <allele> <class>. Lines beginning '#' are comments.\n\
+\t\n\
+\tThe class label is arbitrary text and there may be any number of them\n\
+\t(deleterious/tolerated, synonymous/nonsynonymous, whatever the annotation\n\
+\tgives). A site may appear more than once, so two annotation schemes can\n\
+\tclassify the same variant; the same class twice at one site is an error.\n\
+\tChromosome names are matched ignoring case and a 'chr' prefix.\n\
+\t\n\
+\tFor each individual, garlic then counts the classified genotypes falling\n\
+\tinside runs of homozygosity of each size class and outside them, and writes\n\
+\t<out>.counts.tsv. Genotypes are read from the input the run was called\n\
+\tfrom, or from --tped-counting if that is given.";
+
 const string ARG_FEATURE_TPED = "--tped-counting";
-const string DEFAULT_FEATURE_TPED = "_none";
-const string HELP_FEATURE_TPED = "A TPED formatted file containing genotypes that are classified in the feature file.\n\
-Sites not in the feature file are ignored.";
+const string DEFAULT_FEATURE_TPED = "none";
+const string HELP_FEATURE_TPED = "A TPED to count classified genotypes from, instead of the file the run was\n\
+\tcalled from. Use it when the calls come from array data and the classified\n\
+\tvariants are sequenced -- the two need not share a single site. Requires\n\
+\t--tfam-counting and --features.\n\
+\t\n\
+\tThese genotypes take no part in calling, and no site filter is applied to\n\
+\tthem: monomorphic and rare sites are exactly what this counts.";
 
 const string ARG_FEATURE_TFAM = "--tfam-counting";
-const string DEFAULT_FEATURE_TFAM = "_none";
-const string HELP_FEATURE_TFAM = "A TFAM formatted file containing individuals listed in the corresponding TPED file.\n\
-Individuals without ROH calls are ignored.";
-
-const string ARG_FEATURES = "--features";
-const string DEFAULT_FEATURES = "_none";
-const string HELP_FEATURES = "A feature file giving classifications";
-*/
+const string DEFAULT_FEATURE_TFAM = "none";
+const string HELP_FEATURE_TFAM = "The TFAM naming the samples in --tped-counting, in column order.\n\
+\tIndividuals are matched to the ROH calls by ID; one present in only one of\n\
+\tthe two files is reported and left out of the table.";
 
 
 //Written by the Makefile so the stamp cannot go stale.  Absent when building
@@ -585,6 +601,9 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addListFlag(ARG_AUTO_OVERLAP_COEF, 0.0, "", HELP_AUTO_OVERLAP_COEF);
 	params->addFlag(ARG_GMM_MAX_ITER, DEFAULT_GMM_MAX_ITER, "", HELP_GMM_MAX_ITER);
 	params->addFlag(ARG_GMM_TOL, DEFAULT_GMM_TOL, "", HELP_GMM_TOL);
+	params->addFlag(ARG_FEATURES, DEFAULT_FEATURES, "", HELP_FEATURES);
+	params->addFlag(ARG_FEATURE_TPED, DEFAULT_FEATURE_TPED, "", HELP_FEATURE_TPED);
+	params->addFlag(ARG_FEATURE_TFAM, DEFAULT_FEATURE_TFAM, "", HELP_FEATURE_TFAM);
 
 	//A bare invocation is a usage error, not a successful no-op run.
 	if (argc < 2)

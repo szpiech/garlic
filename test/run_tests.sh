@@ -2370,6 +2370,216 @@ params_roundtrip() {
 # ---------------------------------------------------------------------------
 # 6. BED conformance
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Counting classified genotypes inside and outside the calls (--features).
+#
+# The acceptance test is the comparison against count_features_in_roh.pl,
+# which this replaces: same calls, same genotypes, same numbers.  It can only
+# be run while that script is still in the tree, so it is guarded rather than
+# assumed -- and the golden checksum below is what pins the output once the
+# script is gone.
+#
+# The fixture relabels chr21 as chr22 because the tracked Perl begins its
+# chromosome loop at a hardcoded `my $startchr = 22;` and cannot process
+# anything else.  --no-centromere goes with it: the hg18 chr22 gap
+# (11.3-14.2 Mb) overlaps chr21's coordinates, so without it garlic would
+# correctly call those sites UNASSESSED while the Perl, which knows nothing
+# about assembly gaps, called them NONE, and the comparison would fail for a
+# reason that is not a disagreement about counting.
+# ---------------------------------------------------------------------------
+feature_counts() {
+    echo "== feature counts =="
+    FC=$WORK/fc
+    mkdir -p "$FC"
+
+    gz "$EX/chr21.tped.gz" | awk 'BEGIN{OFS="\t"}{$1="22"; print}' >"$FC/data.chr22.tped"
+    gz "$EX/chr21.tfam.gz" >"$FC/data.chr22.tfam"
+    # One class per site: the Perl's hash holds one class per (site, allele),
+    # so a multi-class site is not something it can be compared on.
+    awk 'NR%40==7 {print "22", $4, $5, (NR%3==0?"benign":(NR%3==1?"nonsyn":"damaging"))}' \
+        "$FC/data.chr22.tped" >"$FC/feat.new"
+    # The old four-column layout: chr:pos, ref, the classified allele, class.
+    # 'N' for ref because the Perl files the class under the THIRD column and
+    # only tests the second for equality; N never occurs in this data.
+    awk '{print "chr22:"$2, "N", $3, $4}' "$FC/feat.new" >"$FC/feat.old"
+    nfeat=$(wc -l <"$FC/feat.new" | tr -d ' ')
+
+    $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+            --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+            --no-centromere --features "$FC/feat.new" \
+            --out "$FC/g" --quiet --force >"$FC/g.stdout" 2>"$FC/g.stderr"
+    if [ ! -f "$FC/g.counts.tsv" ]; then
+        bad "--features wrote no counts file (see $FC/g.stderr)"; return
+    fi
+    ok
+
+    # Not vacuous: something must actually have been counted inside a run.
+    inroh=$(awk -F'\t' '/^##/ {next} NR_H==0 {NR_H=1; for(i=1;i<=NF;i++) h[$i]=i; next}
+                        {n += $(h["benign_A_hom"]) + $(h["benign_B_hom"]) + $(h["benign_C_hom"])}
+                        END {print n+0}' "$FC/g.counts.tsv")
+    if [ "$inroh" -gt 0 ]; then ok
+    else bad "no classified homozygote fell inside a run of homozygosity -- the case is vacuous"; fi
+
+    # Every classified row lands in exactly one place, for every individual:
+    # a bucket, or missing, or not-diploid.  This is the accounting the Perl
+    # had no way to state, and it catches a genotype counted twice or lost.
+    badrows=$(awk -F'\t' -v want="$nfeat" '
+        /^##/ {next}
+        NR_H==0 {NR_H=1; for(i=1;i<=NF;i++) h[$i]=i; next}
+        {   t = $(h["benign_ALL_n"]) + $(h["damaging_ALL_n"]) + $(h["nonsyn_ALL_n"]) \
+              + $(h["n_missing"]) + $(h["n_hemi"])
+            if (t != want) n++ }
+        END {print n+0}' "$FC/g.counts.tsv")
+    if [ "$badrows" -eq 0 ]; then ok
+    else bad "$badrows individual(s) where the classified rows do not add up to $nfeat"; fi
+
+    # ALL is the sum of the buckets, so a reader can take "in ROH" as
+    # ALL - NONE - UNASSESSED without re-deriving it.
+    badsum=$(awk -F'\t' '
+        /^##/ {next}
+        NR_H==0 {NR_H=1; for(i=1;i<=NF;i++) h[$i]=i; next}
+        {   s = $(h["benign_A_n"]) + $(h["benign_B_n"]) + $(h["benign_C_n"]) \
+              + $(h["benign_NONE_n"]) + $(h["benign_UNASSESSED_n"])
+            if (s != $(h["benign_ALL_n"])) n++ }
+        END {print n+0}' "$FC/g.counts.tsv")
+    if [ "$badsum" -eq 0 ]; then ok
+    else bad "$badsum individual(s) where the bucket columns do not sum to ALL"; fi
+
+    # THE ACCEPTANCE TEST.  Same .roh.bed, same genotypes, same homozygote
+    # counts as the script being replaced.
+    PL=$ROOT/src/count_features_in_roh.pl
+    if [ ! -f "$PL" ] || ! command -v perl >/dev/null 2>&1; then
+        echo "  SKIP  count_features_in_roh.pl comparison: script or perl not present"
+    else
+        ( cd "$FC" && perl "$PL" feat.old g.roh.bed data.chr22.tped 22 perl.out ) \
+            >"$FC/perl.stdout" 2>"$FC/perl.stderr"
+        if [ ! -f "$FC/perl.out" ]; then
+            bad "count_features_in_roh.pl produced no output (see $FC/perl.stderr)"
+        else
+            # The Perl writes <class><bucket> columns and a leading, unnamed
+            # individual column; garlic writes <class>_<bucket>_hom among
+            # others.  Compared by NAME on both sides rather than by position.
+            awk 'NR==1 {for (i=1;i<=NF;i++) c[i]=$i; next}
+                 {for (i=2;i<=NF;i++) print $1, c[i-1], $i}' "$FC/perl.out" \
+                 | sort >"$FC/perl.flat"
+            awk -F'\t' '
+                /^##/ {next}
+                NR_H==0 {NR_H=1; for (i=1;i<=NF;i++) h[i]=$i; next}
+                {   for (i=1;i<=NF;i++) {
+                        n = h[i]
+                        if (n ~ /_hom$/) {
+                            sub(/_hom$/, "", n)
+                            # The Perl has no ALL and no UNASSESSED bucket.
+                            if (n ~ /_ALL$/ || n ~ /_UNASSESSED$/) continue
+                            sub(/_/, "", n)
+                            print $1, n, $i } } }' "$FC/g.counts.tsv" \
+                 | sort >"$FC/garlic.flat"
+            if [ ! -s "$FC/garlic.flat" ]; then
+                bad "no hom columns extracted from the counts file"
+            elif diff -q "$FC/perl.flat" "$FC/garlic.flat" >/dev/null 2>&1; then
+                ok
+            else
+                bad "garlic and count_features_in_roh.pl disagree: $(diff "$FC/perl.flat" "$FC/garlic.flat" | grep -c '^[<>]') differing cells"
+                diff "$FC/perl.flat" "$FC/garlic.flat" | sed -n '1,6p' | sed 's/^/        /'
+            fi
+        fi
+    fi
+
+    # A site on a chromosome that was not analysed is UNASSESSED, not NONE.
+    # Folding the two together is what inflates an outside-ROH count by
+    # however much of the genome the user left out.
+    gz "$EX/example.tped.gz" | awk '$1=="chr21" || $1=="21" {print $1, $4, $5, "onchr21"; exit}' \
+        >"$FC/feat.two"
+    gz "$EX/example.tped.gz" | awk '$1=="chr22" || $1=="22" {print $1, $4, $5, "onchr22"; exit}' \
+        >>"$FC/feat.two"
+    if [ "$(wc -l <"$FC/feat.two" | tr -d ' ')" -eq 2 ]; then
+        $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" --build hg18 \
+                --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 \
+                --chr chr21 --features "$FC/feat.two" \
+                --out "$FC/sub" --quiet --force >/dev/null 2>"$FC/sub.stderr"
+        u=$(awk -F'\t' '/^##/ {next} NR_H==0 {NR_H=1; for(i=1;i<=NF;i++) h[$i]=i; next}
+                        {n += $(h["onchr22_UNASSESSED_n"])} END {print n+0}' "$FC/sub.counts.tsv")
+        z=$(awk -F'\t' '/^##/ {next} NR_H==0 {NR_H=1; for(i=1;i<=NF;i++) h[$i]=i; next}
+                        {n += $(h["onchr22_NONE_n"])} END {print n+0}' "$FC/sub.counts.tsv")
+        if [ "$u" -gt 0 ] && [ "$z" -eq 0 ]; then ok
+        else bad "a site on an unanalysed chromosome: UNASSESSED=$u NONE=$z (want UNASSESSED>0, NONE=0)"; fi
+    else
+        echo "  SKIP  unanalysed-chromosome case: could not build a two-chromosome feature file"
+    fi
+
+    # Counting from a separate file must give what counting from the calling
+    # input gives, when the two files are the same genotypes.
+    $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+            --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+            --no-centromere --features "$FC/feat.new" \
+            --tped-counting "$FC/data.chr22.tped" --tfam-counting "$FC/data.chr22.tfam" \
+            --out "$FC/sep" --quiet --force >/dev/null 2>"$FC/sep.stderr"
+    if [ -f "$FC/sep.counts.tsv" ]; then
+        grep -v '^## genotype_source' "$FC/g.counts.tsv"   >"$FC/g.nosrc"
+        grep -v '^## genotype_source' "$FC/sep.counts.tsv" >"$FC/sep.nosrc"
+        if cmp -s "$FC/g.nosrc" "$FC/sep.nosrc"; then ok
+        else bad "--tped-counting over the calling file changed the counts"; fi
+    else
+        bad "--tped-counting wrote no counts file (see $FC/sep.stderr)"
+    fi
+
+    # Sample IDs that match nothing must stop the run.  Left to itself this is
+    # the failure that produces a complete, plausible, wrong table: every
+    # homozygote reported as outside a run.
+    sed 's/^\([^ 	]*\)\([ 	]\)\([^ 	]*\)/\1\2\3_OTHER/' "$FC/data.chr22.tfam" >"$FC/other.tfam"
+    expect_exit 2 "counting samples that match no ROH call" \
+        $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+                --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+                --no-centromere --features "$FC/feat.new" \
+                --tped-counting "$FC/data.chr22.tped" --tfam-counting "$FC/other.tfam" \
+                --out "$FC/mismatch" --quiet --force
+
+    # Feature-file refusals, where the wording is what the user sees.
+    printf 'chr22:13823791 N A benign\n' >"$FC/oldfmt.txt"
+    expect_exit 1 "a feature file still in the chr:pos format" \
+        $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+                --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+                --features "$FC/oldfmt.txt" --no-centromere --out "$FC/bad1" --quiet --force
+    if grep -q 'old count_features_in_roh.pl format' "$WORK/.expect_exit.err"; then ok
+    else bad "the old-format refusal does not say how to convert the file"; fi
+
+    printf '22 100 A benign\n22 100 A benign\n' >"$FC/dup.txt"
+    expect_exit 1 "the same class twice at one site" \
+        $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+                --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+                --features "$FC/dup.txt" --no-centromere --out "$FC/bad2" --quiet --force
+
+    expect_exit 1 "--tped-counting without --tfam-counting" \
+        $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+                --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+                --features "$FC/feat.new" --tped-counting "$FC/data.chr22.tped" \
+                --no-centromere --out "$FC/bad3" --quiet --force
+
+    expect_exit 1 "--tped-counting without --features" \
+        $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+                --winsize 60 --error 0.001 --lod-cutoff 1.44 --size-bounds 300000 1000000 \
+                --tped-counting "$FC/data.chr22.tped" --tfam-counting "$FC/data.chr22.tfam" \
+                --no-centromere --out "$FC/bad4" --quiet --force
+
+    expect_exit 1 "--features with --freq-only" \
+        $GARLIC --tped "$FC/data.chr22.tped" --tfam "$FC/data.chr22.tfam" \
+                --error 0.001 --freq-only --features "$FC/feat.new" \
+                --out "$FC/bad5" --quiet --force
+
+    # Golden: what pins the output once the Perl comparison above is gone.
+    # The two header lines naming input paths carry $WORK, which contains the
+    # test run's pid, so they are stripped before checksumming.
+    grep -v -e '^## feature_file' -e '^## genotype_source' "$FC/g.counts.tsv" >"$FC/g.golden"
+    got=$(sum "$FC/g.golden")
+    g=$GOLDEN/fc_chr22.counts.tsv.md5
+    if [ "$BLESS" = yes ]; then
+        echo "$got" >"$g"; ok
+    elif [ ! -f "$g" ]; then
+        bad "fc_chr22.counts.tsv: no golden checksum (run with --bless)"
+    elif [ "$got" = "$(cat "$g")" ]; then ok
+    else bad "fc_chr22.counts.tsv: $got != $(cat "$g") (output kept at $FC/g.counts.tsv)"; fi
+}
+
 bed_format() {
     echo "== bed format =="
     f=$WORK/c21_unweighted.roh.bed
@@ -2415,6 +2625,7 @@ outdir_paths
 exit_codes
 params_roundtrip
 bed_format
+feature_counts
 
 echo
 echo "$pass checks passed, $fail failure(s)"

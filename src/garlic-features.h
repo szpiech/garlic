@@ -165,10 +165,16 @@ public:
     //what it reads, so it is testable without building an index.
     static int bucketAt(const ChrTracts *t, const ChrInfo *ci, int zygo, pos_t pos);
 
+    //The individual's own population label, which is what goes in the table's
+    //pop column.  Not the same string as popName(): that one is empty for a
+    //single-population run, because it also names the output file.
+    const string &popDisplay(int i) const { return inds[i].popDisplay; }
+
 private:
     struct IndEntry
     {
         string id;
+        string popDisplay;
         int    pop;
         int    zygo;
         map<string, ChrTracts> byChr;
@@ -187,5 +193,60 @@ private:
     vector<PopEntry> pops;
     map<string, int> indOf;
 };
+
+//---- the counts ------------------------------------------------------------
+//
+//Three numbers per (individual, class, bucket).  hom is what the Perl
+//counted; n is the one that was missing, and without it "more deleterious
+//homozygotes inside runs" cannot be told apart from "more sites inside runs".
+//
+//Bucket columns are 0..nclass-1 for the size classes, then NONE, then
+//UNASSESSED.  ALL is their sum and is produced by the writer rather than
+//stored.
+
+struct FeatureCounts
+{
+    //[individual][class][bucket]
+    vector< vector< vector<long long> > > hom, het, n;
+    //Per individual, counted per classified ROW so that
+    //  sum(n) + missing + hemi == rowsSeen
+    //holds for every individual that the counting file carried.
+    vector<long long> missing, hemi;
+    //Whether the counting file had a column for this individual at all.
+    vector<bool> seen;
+
+    //Run-level accounting.
+    long long rowsSeen;        //classified rows found in the genotype file
+    long long rowsUnusable;    //rows garlic could not evaluate at their site
+    long long sitesNotFound;   //feature sites the genotype file never reached
+
+    int nclass;
+    int nbucket;
+    int colNone() const       { return nclass; }
+    int colUnassessed() const { return nclass + 1; }
+
+    void init(int nind, int nclasses, int nsizeclass);
+};
+
+//Streams a TPED, counting classified genotypes against the calls in index.
+//Reads raw calls: no site filter, no frequency estimation, no recoding.
+//Returns 0, or -1 after logging.
+int countFeaturesTPED(const string &tpedfile,
+                      const string &tfamfile,
+                      char TPED_MISSING,
+                      const FeatureTable &features,
+                      const ROHIndex &index,
+                      FeatureCounts &counts);
+
+//One table per population, named like that population's other outputs.
+//outfile is the full path.  Returns 0, or -1 after logging.
+int writeFeatureCounts(const string &outfile,
+                       const FeatureTable &features,
+                       const ROHIndex &index,
+                       int pop,
+                       const FeatureCounts &counts,
+                       const string &featureFile,
+                       const string &genotypeSource,
+                       bool pooled);
 
 #endif

@@ -3,6 +3,7 @@
 #include "gzstream.h"
 #include <algorithm>
 #include <sstream>
+#include <fstream>
 #include <cstdlib>
 #include <cerrno>
 
@@ -248,6 +249,8 @@ int ROHIndex::addPopulation(const string &popLabel,
         inds[ii].pop  = p;
         inds[ii].zygo = (indData != NULL && i < (unsigned int)indData->nind)
                         ? indData->zygo[i] : ZYG_UNKNOWN;
+        inds[ii].popDisplay = (indData != NULL && i < (unsigned int)indData->nind)
+                              ? indData->pop[i] : popLabel;
         indOf[id] = ii;
         pops[p].members.push_back(ii);
 
@@ -308,6 +311,388 @@ void ROHIndex::resolveChr(const string &chrKey,
         map<string, ChrTracts>::const_iterator it = inds[i].byChr.find(chrKey);
         if (it != inds[i].byChr.end()) tracts[i] = &(it->second);
     }
+}
+
+//---- the counts ------------------------------------------------------------
+
+void FeatureCounts::init(int nind, int nclasses, int nsizeclass)
+{
+    nclass  = nsizeclass;
+    nbucket = nsizeclass + 2;          //size classes, NONE, UNASSESSED
+    hom.assign(nind, vector< vector<long long> >(nclasses, vector<long long>(nbucket, 0)));
+    het = hom;
+    n   = hom;
+    missing.assign(nind, 0);
+    hemi.assign(nind, 0);
+    seen.assign(nind, false);
+    rowsSeen = 0;
+    rowsUnusable = 0;
+    sitesNotFound = 0;
+}
+
+//Reports the individuals each file has and the other does not.  The Perl
+//reported neither: an individual absent from the calls autovivified an empty
+//interval list and every one of its homozygotes was counted as outside ROH.
+static void reportUnmatched(const vector<string> &names, const string &what)
+{
+    if (names.empty()) return;
+    ostringstream ss;
+    ss << "WARNING: " << names.size() << " individual(s) " << what << ":";
+    for (unsigned int i = 0; i < names.size() && i < 5; i++) ss << " " << names[i];
+    if (names.size() > 5) ss << " ...";
+    LOG.err(ss.str());
+}
+
+//A token of a whitespace-separated line.  garlic-data.cpp has the same two
+//helpers as static inlines; they are three lines and not worth a header.
+static inline const char *skipBlank(const char *p, const char *e)
+{
+    while (p < e && (*p == ' ' || *p == '\t' || *p == '\r')) p++;
+    return p;
+}
+
+static inline const char *tokEnd(const char *p, const char *e)
+{
+    while (p < e && *p != ' ' && *p != '\t' && *p != '\r') p++;
+    return p;
+}
+
+static inline char upChar(char c)
+{
+    return (c >= 'a' && c <= 'z') ? char(c - 'a' + 'A') : c;
+}
+
+int countFeaturesTPED(const string &tpedfile,
+                      const string &tfamfile,
+                      char TPED_MISSING,
+                      const FeatureTable &features,
+                      const ROHIndex &index,
+                      FeatureCounts &counts)
+{
+    //The TFAM is read with garlic's own reader, so a malformed file and a
+    //duplicate ID are refused with the messages they are refused with
+    //everywhere else.
+    IndData *tfam = NULL;
+    try
+    {
+        int numInd = 0;
+        scanIndData3(tfamfile, numInd);
+        tfam = readIndData3(tfamfile, numInd);
+    }
+    catch (...)
+    {
+        logCurrentException("reading " + tfamfile);
+        if (tfam != NULL) releaseIndData(tfam);
+        return -1;
+    }
+
+    //Column -> individual in the call set.  This is the join the Perl did by
+    //hash lookup with no miss handling.
+    vector<int> colToInd(tfam->nind, -1);
+    vector<string> notCalled;
+    int nmatched = 0;
+    for (int i = 0; i < tfam->nind; i++)
+    {
+        const int ri = index.indexOf(tfam->indID[i]);
+        colToInd[i] = ri;
+        if (ri < 0) notCalled.push_back(tfam->indID[i]);
+        else nmatched++;
+    }
+    releaseIndData(tfam);
+
+    if (nmatched == 0)
+    {
+        LOG.err("ERROR: no individual in", tfamfile, false);
+        LOG.err(" has a run-of-homozygosity call in this run.");
+        LOG.err("\tThe two files name no individual in common, so every classified genotype");
+        LOG.err("\twould be counted as outside a run.  Check that the sample IDs match.");
+        return -1;
+    }
+    reportUnmatched(notCalled, "in " + tfamfile + " have no ROH calls and are not counted");
+
+    //Bucket columns are sized by the largest population's class count; a
+    //population with fewer simply leaves the last columns at zero.
+    int nsize = 0;
+    for (int p = 0; p < index.npop(); p++)
+        if (index.nclass(p) > nsize) nsize = index.nclass(p);
+    counts.init(index.nind(), features.nclass(), nsize);
+    //"The counting file carried a column for this individual", which is what
+    //decides whether a row is written -- not "a classified site was reached",
+    //which would drop everyone when the two files share no site.
+    for (unsigned int i = 0; i < colToInd.size(); i++)
+        if (colToInd[i] >= 0) counts.seen[colToInd[i]] = true;
+
+    igzstream fin;
+    fin.open(tpedfile.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: Failed to open", tpedfile);
+        return -1;
+    }
+
+    string line, chr, lastChr;
+    const map<pos_t, vector<FeatureAllele> > *featChr = NULL;
+    vector<const ROHIndex::ChrTracts *> tracts;
+    vector<const ROHIndex::ChrInfo *> info;
+    long long lineno = 0, sitesFound = 0;
+    const int nind = index.nind();
+
+    while (getline(fin, line))
+    {
+        lineno++;
+        const char *p    = line.c_str();
+        const char *pEnd = p + line.size();
+        const char *tEnd;
+
+        p = skipBlank(p, pEnd);
+        if (p == pEnd || *p == '#') continue;
+        tEnd = tokEnd(p, pEnd);
+        chr.assign(p, tEnd - p);
+        p = tEnd;
+
+        //Resolved once per chromosome rather than once per line.
+        if (chr.compare(lastChr) != 0)
+        {
+            lastChr = chr;
+            const string key = canonChrKey(chr);
+            featChr = features.chromosome(key);
+            index.resolveChr(key, tracts, info);
+        }
+        //Nothing classified on this chromosome: the genotype columns are
+        //never touched, which is what keeps a whole-genome file cheap.
+        if (featChr == NULL) continue;
+
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd); p = tEnd;   //locus name
+        p = skipBlank(p, pEnd); tEnd = tokEnd(p, pEnd); p = tEnd;   //genetic position
+
+        pos_t ppos;
+        {
+            p = skipBlank(p, pEnd);
+            char *q = NULL;
+            const double v = strtod(p, &q);
+            if (q == p)
+            {
+                LOG.err("ERROR: could not read a physical position at line", lineno, false);
+                LOG.err(" of", tpedfile);
+                fin.close();
+                return -1;
+            }
+            p = q;
+            ppos = pos_t(v);
+        }
+
+        map<pos_t, vector<FeatureAllele> >::const_iterator site = featChr->find(ppos);
+        if (site == featChr->end()) continue;
+        sitesFound++;
+
+        //A TPED allele is a single character, as everywhere else in garlic
+        //(loadTPEDData reads junk[0]).  A longer allele in the feature file --
+        //an indel from a VCF-derived annotation -- cannot be matched against
+        //one, and is reported rather than counted as absent.
+        const vector<FeatureAllele> &rows = site->second;
+        int usable = 0;
+        for (unsigned int k = 0; k < rows.size(); k++)
+            if (rows[k].allele.size() == 1) usable++;
+        counts.rowsUnusable += (long long)(rows.size() - usable);
+        counts.rowsSeen     += usable;
+        if (usable == 0) continue;
+
+        for (unsigned int i = 0; i < colToInd.size(); i++)
+        {
+            //Both allele columns are consumed whatever becomes of them, so
+            //the columns stay in step with the samples.
+            p = skipBlank(p, pEnd);
+            if (p == pEnd)
+            {
+                LOG.err("ERROR: line", lineno, false);
+                LOG.err(" of", tpedfile, false);
+                LOG.err(" has genotypes for fewer individuals than", tfamfile, false);
+                LOG.err(" names.");
+                fin.close();
+                return -1;
+            }
+            tEnd = tokEnd(p, pEnd);
+            const char a1 = *p;
+            p = tEnd;
+            p = skipBlank(p, pEnd);
+            if (p == pEnd)
+            {
+                LOG.err("ERROR: line", lineno, false);
+                LOG.err(" of", tpedfile, false);
+                LOG.err(" has an odd number of allele columns.");
+                fin.close();
+                return -1;
+            }
+            tEnd = tokEnd(p, pEnd);
+            const char a2 = *p;
+            p = tEnd;
+
+            const int ri = colToInd[i];
+            if (ri < 0) continue;
+
+            const int bucket = ROHIndex::bucketAt(tracts[ri], info[ri],
+                                                  index.zygoOf(ri), ppos);
+            //One copy of the chromosome: the pair is one allele written
+            //twice, so reading it as a homozygote is exactly the error this
+            //branch exists to avoid.
+            if (bucket == BUCKET_INELIGIBLE) { counts.hemi[ri] += usable; continue; }
+            if (a1 == TPED_MISSING || a2 == TPED_MISSING)
+            { counts.missing[ri] += usable; continue; }
+
+            const int col = (bucket >= 0) ? bucket
+                          : (bucket == BUCKET_NONE ? counts.colNone()
+                                                   : counts.colUnassessed());
+            const char u1 = upChar(a1), u2 = upChar(a2);
+            for (unsigned int k = 0; k < rows.size(); k++)
+            {
+                if (rows[k].allele.size() != 1) continue;
+                const char f = rows[k].allele[0];
+                const int copies = (u1 == f ? 1 : 0) + (u2 == f ? 1 : 0);
+                counts.n[ri][rows[k].cls][col]++;
+                if (copies == 2)      counts.hom[ri][rows[k].cls][col]++;
+                else if (copies == 1) counts.het[ri][rows[k].cls][col]++;
+            }
+        }
+
+        p = skipBlank(p, pEnd);
+        if (p != pEnd)
+        {
+            LOG.err("ERROR: line", lineno, false);
+            LOG.err(" of", tpedfile, false);
+            LOG.err(" has genotypes for more individuals than", tfamfile, false);
+            LOG.err(" names.");
+            fin.close();
+            return -1;
+        }
+    }
+    fin.close();
+
+    counts.sitesNotFound = features.nsites() - sitesFound;
+
+    vector<string> notCounted;
+    for (int i = 0; i < nind; i++)
+        if (!counts.seen[i]) notCounted.push_back(index.indID(i));
+    reportUnmatched(notCounted, "have ROH calls but no genotypes in " + tpedfile);
+
+    LOG.log("Classified sites found in the counting genotypes:", (long long)sitesFound);
+    LOG.log("Classified sites not found:", counts.sitesNotFound);
+    if (counts.rowsUnusable > 0)
+        LOG.log("Classified rows skipped (allele longer than a TPED allele):", counts.rowsUnusable);
+
+    return 0;
+}
+
+//---- the table -------------------------------------------------------------
+
+static string bucketLabel(int col, int nclass)
+{
+    if (col < nclass) return sizeClassLabel(col);
+    if (col == nclass) return "NONE";
+    return "UNASSESSED";
+}
+
+int writeFeatureCounts(const string &outfile,
+                       const FeatureTable &features,
+                       const ROHIndex &index,
+                       int pop,
+                       const FeatureCounts &counts,
+                       const string &featureFile,
+                       const string &genotypeSource,
+                       bool pooled)
+{
+    ofstream out;
+    //ios::binary for the reason writeROHData gives: without it the Windows
+    //CRT turns every \n into \r\n and the same run produces different bytes
+    //on different platforms.
+    out.open(outfile.c_str(), ios::binary);
+    if (out.fail())
+    {
+        LOG.err("ERROR: Failed to open", outfile);
+        return -1;
+    }
+
+    const int nclass = index.nclass(pop);
+    const vector<string> &cls = features.classes();
+    const vector<double> &bounds = index.bounds(pop);
+
+    out << "## garlic feature counts\n";
+    if (pooled) out << "## populations_pooled\ttrue\n";
+    out << "## feature_file\t" << featureFile << "\n";
+    out << "## feature_classes";
+    for (unsigned int k = 0; k < cls.size(); k++) out << (k ? "," : "\t") << cls[k];
+    out << "\n";
+    out << "## feature_sites\t" << features.nsites() << "\tsites, "
+        << features.nrows() << " classified rows\n";
+    out << "## feature_rows_seen\t" << counts.rowsSeen
+        << "\tclassified rows found in the genotypes; "
+        << counts.sitesNotFound << " sites were not found\n";
+    //Said plainly because it is the difference between this table and one
+    //made from garlic's internal matrix, which would have dropped exactly the
+    //rare sites this counts.
+    out << "## genotype_source\t" << genotypeSource
+        << "\traw calls; no garlic site filter applied\n";
+    out << "## size_class_boundaries";
+    for (unsigned int k = 0; k < bounds.size(); k++) out << "\t" << bounds[k];
+    out << "\n";
+    out << "## buckets";
+    for (int c = 0; c < nclass + 2; c++) out << (c ? "," : "\t") << bucketLabel(c, nclass);
+    out << ",ALL\n";
+    out << "## metrics\thom = homozygous for the classified allele; "
+        << "het = one copy; n = genotyped sites\n";
+    out << "## unassessed\ta site where no run could have been called: a chromosome "
+        << "not analysed, an assembly gap, an excluded region, or outside the analysed span\n";
+    out << "## in_roh\tALL minus NONE minus UNASSESSED\n";
+    //An individual with one copy of a chromosome has no diploid genotype
+    //there, so those sites are in no bucket.  Counted rather than dropped
+    //silently, because in a TPED a hemizygous call looks like a homozygote.
+    out << "## n_hemi\tclassified rows where the individual is not diploid; counted in no bucket\n";
+    out << "## n_missing\tclassified rows the individual has no call for\n";
+
+    out << "ind\tpop\tzygosity\tn_missing\tn_hemi";
+    for (unsigned int k = 0; k < cls.size(); k++)
+        for (int c = 0; c < nclass + 3; c++)
+        {
+            const string b = (c < nclass + 2) ? bucketLabel(c, nclass) : string("ALL");
+            out << "\t" << cls[k] << "_" << b << "_hom"
+                << "\t" << cls[k] << "_" << b << "_het"
+                << "\t" << cls[k] << "_" << b << "_n";
+        }
+    out << "\n";
+
+    const vector<int> &members = index.indsOf(pop);
+    for (unsigned int m = 0; m < members.size(); m++)
+    {
+        const int i = members[m];
+        //No genotypes for this individual: a row of zeros would say it has no
+        //classified homozygotes, which is not what was measured.
+        if (!counts.seen[i]) continue;
+
+        const int z = index.zygoOf(i);
+        out << index.indID(i) << "\t" << index.popDisplay(i) << "\t"
+            << (z == ZYG_HOMOGAMETIC ? "homogametic"
+               : (z == ZYG_HETEROGAMETIC ? "heterogametic" : "unknown"))
+            << "\t" << counts.missing[i] << "\t" << counts.hemi[i];
+
+        for (unsigned int k = 0; k < cls.size(); k++)
+        {
+            long long aHom = 0, aHet = 0, aN = 0;
+            for (int c = 0; c < nclass + 2; c++)
+            {
+                out << "\t" << counts.hom[i][k][c]
+                    << "\t" << counts.het[i][k][c]
+                    << "\t" << counts.n[i][k][c];
+                aHom += counts.hom[i][k][c];
+                aHet += counts.het[i][k][c];
+                aN   += counts.n[i][k][c];
+            }
+            out << "\t" << aHom << "\t" << aHet << "\t" << aN;
+        }
+        out << "\n";
+    }
+
+    out.close();
+    LOG.log("Classified genotype counts:", outfile);
+    return 0;
 }
 
 int ROHIndex::bucketAt(const ChrTracts *t, const ChrInfo *ci, int zygo, pos_t pos)

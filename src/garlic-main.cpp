@@ -12,6 +12,7 @@
 #include "garlic-kde.h"
 #include "param_t.h"
 #include "garlic-centromeres.h"
+#include "garlic-features.h"
 
 using namespace std;
 
@@ -70,7 +71,11 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
                                    double variantDensity,
                                    const vector<ChrRole> *chrRole,
                                    const ExcludedRegions *parRegions,
-                                   const ChrLengths *chrLengths)
+                                   const ChrLengths *chrLengths,
+                                   //Where this population's calls are recorded
+                                   //for --features.  NULL when nothing is being
+                                   //counted.
+                                   ROHIndex *rohIndex)
 {
     PopResult res;
     res.status = POP_OK;
@@ -345,6 +350,20 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         }
     }
     catch (...) { logCurrentException("writing the ROH calls"); writeStatus = 2; }
+
+    //Indexed, not counted, here: the classified genotypes are streamed ONCE
+    //for the whole run after every population has been analysed, so a file
+    //with several populations in it is read once rather than once each.  The
+    //index has to be built before the tracts are released, and after the size
+    //class boundaries are settled, because a call's bucket is its class.
+    if (rohIndex != NULL && writeStatus == 0)
+    {
+        if (rohIndex->addPopulation(popLabel, rohDataByInd, mapDataByChr,
+                                    boundSizes, indData, centro, parRegions,
+                                    chrRole) != 0)
+            writeStatus = 2;
+    }
+
     //Per-population state, released here rather than by the caller: with more
     //than one population these would otherwise accumulate across the run.
     releaseROHLength(rohLength);
@@ -387,6 +406,21 @@ int main(int argc, char *argv[])
         if (optStatus == OPTIONS_USAGE_ERROR) return 1;
         if (optStatus == OPTIONS_RUNTIME_ERROR) return 2;
         return 0;
+    }
+
+    //Classified sites are read before any genotype data is: a malformed
+    //feature file should cost nothing, and the counting pass itself does not
+    //run until the last population has been analysed.
+    const bool countFeatures = !opt.featurefile.empty();
+    FeatureTable featureTable;
+    ROHIndex rohIndex;
+    if (countFeatures)
+    {
+        if (featureTable.read(opt.featurefile) != 0) { delete params; return 1; }
+        LOG.log("Classified sites:", featureTable.nsites(), false);
+        LOG.log(" in", (long long)featureTable.nrows(), false);
+        LOG.log(" rows across", int(featureTable.nclass()), false);
+        LOG.log(" classes.");
     }
 
     //References rather than copies, so the pipeline below reads and writes the
@@ -1198,7 +1232,8 @@ int main(int argc, char *argv[])
                                           pHap, pFreq, pMap,
                                           pGL, pGF,
                                           pInd, centro, USE_GL, variantDensity,
-                                          &(sexModel.role), &par, &chrLengths);
+                                          &(sexModel.role), &par, &chrLengths,
+                                          countFeatures ? &rohIndex : NULL);
         //analyzePopulation has released pHap/pFreq/pGL/pGF by now; the map and
         //the per-population IndData are the caller's.
         if (!singlePop) { releaseIndData(pInd); releaseMapData(pMap); }
@@ -1284,6 +1319,43 @@ int main(int argc, char *argv[])
             v.str(""); v << (AUTO_BOUNDS ? "true" : "false");  resolved.push_back(make_pair("bounds_were_automatic", v.str()));
             try { writeParamsJSON(popOpt.outfile + ".params.json", params, resolved); }
             catch (...) { logCurrentException("writing the parameter record"); writeStatus = 2; }
+        }
+    }
+
+    //++++++++++Counting classified genotypes++++++++++
+    //
+    //One pass over the genotypes for the whole run, after every population's
+    //calls have been indexed, so the file is read once however many
+    //populations it holds -- and so the populations' tables are comparable by
+    //construction, having come from the same parse of the same sites.
+    //
+    //The genotypes are read from the file, raw.  Deliberately not garlic's
+    //internal matrix: by now that has been filtered for monomorphic sites per
+    //population, pruned by --chr and --autosomes-only, had excluded regions
+    //dropped and had hemizygous calls recoded -- and released.  Counting from
+    //it would drop exactly the rare functional sites this is asked about.
+    if (countFeatures && writeStatus == 0)
+    {
+        const string countTped = opt.countTpedfile.empty() ? tpedfile : opt.countTpedfile;
+        const string countTfam = opt.countTfamfile.empty() ? tfamfile : opt.countTfamfile;
+        cout << "Counting classified genotypes.\n";
+        FeatureCounts counts;
+        if (countFeaturesTPED(countTped, countTfam, TPED_MISSING,
+                              featureTable, rohIndex, counts) != 0)
+            writeStatus = 2;
+        else
+        {
+            for (int p = 0; p < rohIndex.npop() && writeStatus == 0; p++)
+            {
+                //Named like that population's other outputs: unlabelled for a
+                //single population, <out>.<POP>.counts.tsv otherwise.
+                const string &name = rohIndex.popName(p);
+                const string path = (name.empty() ? outfile : outfile + "." + name)
+                                    + ".counts.tsv";
+                if (writeFeatureCounts(path, featureTable, rohIndex, p, counts,
+                                       opt.featurefile, countTped, POOL) != 0)
+                    writeStatus = 2;
+            }
         }
     }
 

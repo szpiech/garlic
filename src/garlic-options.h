@@ -76,6 +76,12 @@ struct GarlicOptions
     //The seed actually used: --seed if given, otherwise the one drawn.  Recorded
     //in <out>.params.json so a replay reuses it.
     unsigned long int SEED;
+    //--features and the genotypes to count from.  Empty counting paths mean
+    //"the file this run was called from", which is the usual case: the
+    //classified variants are normally in the same data.
+    string          featurefile;
+    string          countTpedfile;
+    string          countTfamfile;
 };
 
 //Return values of configureFromCommandLine.
