@@ -90,10 +90,28 @@ GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 ifeq ($(PLATFORM),linux)
   ARCHFLAGS = -m64 -pthread
-  # -static is right for the bundled archives (the point of vendoring them is a
-  # binary that runs on a cluster without matching libraries).  Build with
-  # STATIC= to turn it off.
-  STATIC ?= -static
+  # DYNAMIC by default; build with STATIC=-static to opt in.
+  #
+  # This defaulted to -static, and the reason it gave was the bundled archives
+  # -- "the point of vendoring them is a binary that runs on a cluster without
+  # matching libraries".  Those archives are gone (see the note above: zlib
+  # comes from the toolchain on every platform now and nothing is linked out of
+  # lib/), so -static no longer means "use the copies we shipped".  It means
+  # "require the SYSTEM's static archives", and libc.a, libstdc++.a, libm.a,
+  # libpthread.a and libz.a are not installed by default on most distributions
+  # and are routinely absent on HPC clusters.  The default therefore turned a
+  # plain `make` into
+  #     /usr/bin/ld: cannot find -lz
+  #     /usr/bin/ld: cannot find -lstdc++
+  #     ... cannot find -lc
+  # on exactly the machines garlic is meant to run on.  A dynamic link needs
+  # nothing but the shared libraries the compiler already found.
+  #
+  # -static is still supported and still tested in CI.  It needs the static
+  # archives present: on Debian/Ubuntu that is zlib1g-dev plus libc6-dev and
+  # the distribution's libstdc++-*-dev, and on RHEL-family systems the
+  # glibc-static and libstdc++-static packages.
+  STATIC ?=
   #
   # std::thread needs more care under -static than pthread_create did.
   # libstdc++ decides at RUNTIME whether threading is available by testing a
@@ -227,6 +245,10 @@ FORCE :
 
 -include $(OBJS:.o=.d)
 
+# garlic-version.h in this list is not a source file: it is generated a few
+# rules up (see the garlic-version.h : FORCE rule) and is in .gitignore, so
+# clean removes it as the build artefact it is and the next build writes it
+# again.  Named here because a header in a `clean` rule reads like a mistake.
 clean :
 	rm -f *.o *.d garlic garlic.exe garlic-version.h garlic-version.h.tmp
 

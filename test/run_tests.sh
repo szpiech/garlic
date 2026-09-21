@@ -1878,6 +1878,25 @@ sex_chromosomes() {
         --out "$WORK/sx22" --force >/dev/null 2>"$WORK/sx22.stderr"
     if [ $? -ne 0 ] && grep -q "has ploidy 1" "$WORK/sx22.stderr"; then ok
     else bad "a haploid genotype was accepted without a declaration"; fi
+    # The hint that follows it is three lines, and the `if` guarding them was
+    # unbraced: only the first line was conditional, so the other two printed
+    # on ANY chromosome.  Both halves are asserted -- the whole hint where it
+    # applies, and none of it where it does not.
+    if grep -q "conventionally a sex chromosome" "$WORK/sx22.stderr" &&
+       grep -q "sex-system makes a haploid genotype" "$WORK/sx22.stderr"; then ok
+    else bad "the ploidy refusal on chrX lost the sex-chromosome hint"; fi
+    {
+        printf '##fileformat=VCFv4.2\n'
+        printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tm1\tm2\tf1\tf2\n'
+        printf 'chr7\t1000\ts1\tA\tG\t.\tPASS\t.\tGT\t0/1\t1/1\t0/1\t0/0\n'
+        printf 'chr7\t2000\ts2\tA\tG\t.\tPASS\t.\tGT\t0/1/1\t1/1\t1/1\t0/1\n'
+    } > "$WORK/auto3n.vcf"
+    "$GARLIC" --vcf "$WORK/auto3n.vcf" --pop "$WORK/sxhap.pop" --no-centromere --error 0.001 \
+        --winsize 2 --lod-cutoff 2.5 --size-bounds 100 200 \
+        --out "$WORK/auto3n" --force >/dev/null 2>"$WORK/auto3n.stderr"
+    if [ $? -ne 0 ] && grep -q "has ploidy 3" "$WORK/auto3n.stderr" &&
+       ! grep -q "sex-system" "$WORK/auto3n.stderr"; then ok
+    else bad "a non-diploid genotype on an autosome was advised to use --sex-system"; fi
     # Declared, it is a hemizygous call: a half call, which contributes its one
     # allele to the frequency and no genotype.
     "$GARLIC" --vcf "$WORK/sxhap.vcf" --pop "$WORK/sxhap.pop" --no-centromere --error 0.001 \

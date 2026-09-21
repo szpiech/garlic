@@ -18,8 +18,11 @@ jobs:
       matrix:
         include:
           - {os: ubuntu-latest, label: linux-x86_64, static: '', platform: ''}
-          # The DEFAULT linux link is -static, and until this entry existed no job
-          # built it: every one passed STATIC=.  That matters specifically for
+          # -static is OPT-IN on linux (it used to be the default, which broke a
+          # plain `make` on any machine without the system's static archives --
+          # most distributions and most clusters).  This entry is the only job
+          # that builds it, so without it the path would be untested.  That
+          # matters specifically for
           # std::thread, which decides at runtime whether threading is available by
           # testing a weak symbol -- in a static link that can come out unresolved
           # and the first thread constructor throws, at runtime, from a link that

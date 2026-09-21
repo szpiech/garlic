@@ -4342,10 +4342,20 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
                 LOG.err("; garlic calls ROH from diploid genotypes only.");
                 //The role table proper is built after the whole file is read,
                 //so all this can do is recognise a conventional name.
+                //Braced.  Without the braces only the first line was guarded,
+                //so a non-diploid genotype on an ORDINARY chromosome printed
+                //the last two lines of a sex-chromosome hint without the
+                //sentence that introduces them -- advising --sex-system for a
+                //chromosome that is not conventionally a sex chromosome, and
+                //with the explanation beheaded.  g++ reports it as
+                //-Wmisleading-indentation; clang needs that flag by name, which
+                //is why a -Wall build here did not show it.
                 if (isDetectedSexChrKey(canonChrKey(chr)) || isAmbiguousNumericChrKey(canonChrKey(chr)))
+                {
                     LOG.err("\tThis name is conventionally a sex chromosome. Declaring it with");
                     LOG.err("\t--sex-system makes a haploid genotype there a hemizygous call rather");
                     LOG.err("\tthan an error.");
+                }
                 throw 0;
             }
             if (PHASED && !isPhased)
