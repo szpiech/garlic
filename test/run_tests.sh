@@ -2376,6 +2376,50 @@ froh_denominator() {
     else bad "an assembly-denominator run did not replay from its parameter record"; fi
 }
 
+# ---------------------------------------------------------------------------
+# --help and the generated reference are grouped by topic rather than listed
+# alphabetically.  The grouping is declared separately from the flags (see
+# setHelpCategories in garlic-cli.cpp), so the thing worth testing is not the
+# taxonomy -- that is editorial -- but that it still accounts for every flag.
+help_grouping() {
+    echo "== help grouping =="
+    H=$WORK/help
+    mkdir -p "$H"
+
+    $GARLIC --help >"$H/help.out" 2>&1
+    $GARLIC --dump-docs txt >"$H/docs.out" 2>"$H/docs.err"
+    if [ $? -eq 0 ]; then ok; else bad "--dump-docs failed: $(cat "$H/docs.err")"; fi
+
+    # Nothing may be lost between the two: the reference documents exactly the
+    # flags the program prints, which is the property the whole mechanism
+    # exists to keep.
+    grep -oE "^--?[A-Za-z][-A-Za-z0-9]*" "$H/help.out" | sort -u >"$H/from_help"
+    grep -oE "^--?[A-Za-z][-A-Za-z0-9]*" "$H/docs.out" | sort    >"$H/from_docs"
+    if cmp -s "$H/from_help" "$H/from_docs"; then ok
+    else bad "the grouped reference and --help list different flags: $(diff "$H/from_help" "$H/from_docs" | tr '\n' ' ')"; fi
+
+    # Sorted -u against sorted: if a flag were in two groups the second file
+    # would carry it twice and the comparison above would already fail, but
+    # say so directly rather than by implication.
+    dups=$(sort "$H/from_docs" | uniq -d)
+    if [ -z "$dups" ]; then ok; else bad "flags in more than one help group: $dups"; fi
+
+    # A flag with no group is a documentation fault the program reports on
+    # itself; neither symptom may be present in a healthy tree.
+    if ! grep -q "Uncategorised" "$H/docs.out" "$H/help.out" &&
+       ! grep -q "does not match the flags" "$H/help.out"; then ok
+    else bad "a flag is in no help category (see the WARNING in --help)"; fi
+
+    # Grouped, not alphabetical: the headings exist and the flags under the
+    # first one are not simply the alphabetically first flags overall.
+    ngroup=$(grep -c "^----- " "$H/docs.out")
+    if [ "$ngroup" -ge 2 ]; then ok; else bad "the reference has $ngroup group headings"; fi
+    first=$(awk '/^--?[A-Za-z]/{print $1; exit}' "$H/docs.out")
+    alpha=$(head -1 "$H/from_docs")
+    if [ "$first" != "$alpha" ]; then ok
+    else bad "the reference still starts at the alphabetically first flag ($first)"; fi
+}
+
 params_roundtrip() {
     echo "== params round trip =="
     $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --map "$EX/chr21.map.gz" \
@@ -2803,6 +2847,7 @@ sex_chromosomes
 froh_denominator
 outdir_paths
 exit_codes
+help_grouping
 params_roundtrip
 bed_format
 feature_counts

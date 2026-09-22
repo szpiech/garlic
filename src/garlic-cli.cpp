@@ -632,6 +632,96 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_FEATURE_VCF, DEFAULT_FEATURE_VCF, "", HELP_FEATURE_VCF);
 	params->addFlag(ARG_ROH_FILE, DEFAULT_ROH_FILE, "", HELP_ROH_FILE);
 
+	//---- how --help and the generated reference are grouped ----------------
+	//
+	//Ordered roughly as a run meets them -- what you read in, what genome it
+	//is, how windows and LOD scores are formed, how runs are called and
+	//classified, what comes out -- rather than alphabetically, which put
+	//--M next to --auto-overlap-coef and told a newcomer nothing.  Flags are
+	//sorted within each group, so the editorial judgement is the grouping and
+	//nothing else.
+	//
+	//Adding a flag means naming it here too.  That is enforced, not trusted:
+	//a flag in no group makes --help say so and makes 'make docs' fail, and
+	//the docs job in CI runs 'make docs', so it cannot reach a release.
+	{
+		vector< pair< string, vector<string> > > cats;
+		vector<string> f;
+
+		f.clear();
+		f.push_back(ARG_TPED);        f.push_back(ARG_TFAM);
+		f.push_back(ARG_VCF);         f.push_back(ARG_VCF_PASS_ONLY);
+		f.push_back(ARG_TGLS);        f.push_back(ARG_GL_TYPE);
+		f.push_back(ARG_MAP);         f.push_back(ARG_FREQ_FILE);
+		f.push_back(ARG_TPED_MISSING);
+		cats.push_back(make_pair(string("Input files"), f));
+
+		f.clear();
+		f.push_back(ARG_POP);         f.push_back(ARG_POOL);
+		cats.push_back(make_pair(string("Populations"), f));
+
+		f.clear();
+		f.push_back(ARG_BUILD);       f.push_back(ARG_CENTROMERE_FILE);
+		f.push_back(ARG_NO_CENTROMERE); f.push_back(ARG_CHR);
+		f.push_back(ARG_CHR_LENGTHS); f.push_back(ARG_AUTOSOMES_ONLY);
+		f.push_back(ARG_SEX_SYSTEM);  f.push_back(ARG_SEX_CHR);
+		f.push_back(ARG_SEX_CHR_DEGENERATE); f.push_back(ARG_HAPLOID_CHR);
+		f.push_back(ARG_PAR);         f.push_back(ARG_PAR_FILE);
+		cats.push_back(make_pair(string("Genome and chromosomes"), f));
+
+		f.clear();
+		f.push_back(ARG_WINSIZE);     f.push_back(ARG_AUTO_WINSIZE);
+		f.push_back(ARG_AUTO_WINSIZE_STEP); f.push_back(ARG_AUTO_WINSIZE_THRESHOLD);
+		f.push_back(ARG_AUTO_WINSIZE_COEF); f.push_back(ARG_MAX_WINSIZE);
+		f.push_back(ARG_WINSIZE_MULTI); f.push_back(ARG_WEIGHTED);
+		f.push_back(ARG_M);           f.push_back(ARG_MU);
+		f.push_back(ARG_ERROR);       f.push_back(ARG_MAX_GAP);
+		f.push_back(ARG_PHASED);
+		cats.push_back(make_pair(string("LOD scores and windows"), f));
+
+		f.clear();
+		f.push_back(ARG_LOD_CUTOFF);  f.push_back(ARG_OVERLAP_FRAC);
+		f.push_back(ARG_AUTO_OVERLAP_FRAC); f.push_back(ARG_AUTO_OVERLAP_COEF);
+		f.push_back(ARG_SEXCHR_LOD_CUTOFF); f.push_back(ARG_SEXCHR_WINSIZE);
+		f.push_back(ARG_HET_RATE_BOUNDS); f.push_back(ARG_LD_SUBSAMPLE);
+		cats.push_back(make_pair(string("Calling runs of homozygosity"), f));
+
+		f.clear();
+		f.push_back(ARG_KDE_SUBSAMPLE); f.push_back(ARG_KDE_POINTS);
+		f.push_back(ARG_KDE_CUT);     f.push_back(ARG_KDE_THIN_STEP);
+		f.push_back(ARG_KDE_THINNING); f.push_back(ARG_MODE_SPAN);
+		cats.push_back(make_pair(string("Choosing the LOD cutoff automatically"), f));
+
+		f.clear();
+		f.push_back(ARG_BOUND_SIZE); f.push_back(ARG_NCLUST);
+		f.push_back(ARG_CM);          f.push_back(ARG_GMM_MAX_ITER);
+		f.push_back(ARG_GMM_TOL);
+		cats.push_back(make_pair(string("Size classification"), f));
+
+		f.clear();
+		f.push_back(ARG_FEATURES);    f.push_back(ARG_FEATURE_TPED);
+		f.push_back(ARG_FEATURE_TFAM); f.push_back(ARG_FEATURE_VCF);
+		f.push_back(ARG_ROH_FILE);
+		cats.push_back(make_pair(string("Counting classified genotypes"), f));
+
+		f.clear();
+		f.push_back(ARG_OUTFILE);     f.push_back(ARG_OUTDIR);
+		f.push_back(ARG_FROH);        f.push_back(ARG_FROH_DENOM);
+		f.push_back(ARG_FREQ_ONLY);   f.push_back(ARG_RAW_LOD);
+		f.push_back(ARG_FORCE);
+		cats.push_back(make_pair(string("Output"), f));
+
+		f.clear();
+		f.push_back(ARG_THREADS);     f.push_back(ARG_SEED);
+		f.push_back(ARG_RESAMPLE);    f.push_back(ARG_LOAD_PARAMS);
+		f.push_back(ARG_QUIET);       f.push_back(ARG_VERBOSE);
+		f.push_back(ARG_VERSION);     f.push_back(ARG_HELP);
+		f.push_back(ARG_HELP_SHORT);  f.push_back(ARG_DUMP_DOCS);
+		cats.push_back(make_pair(string("Run control"), f));
+
+		params->setHelpCategories(cats);
+	}
+
 	//A bare invocation is a usage error, not a successful no-op run.
 	if (argc < 2)
 	{

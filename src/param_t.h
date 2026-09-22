@@ -56,6 +56,22 @@ public:
   bool addListFlag(string flag, double value, string label, string description);
   bool addListFlag(string flag, char value, string label, string description);
 
+  //Help output is grouped rather than alphabetical: 77 flags in one flat list
+  //is a reference you can search, not one you can read, and a newcomer cannot
+  //tell from it which flags they must set and which have defaults that will do.
+  //
+  //The taxonomy is declared ONCE by the caller (see setHelpCategories in
+  //garlic-cli.cpp) rather than as an argument on each addFlag, so the whole
+  //grouping can be read and reordered in one place instead of being recovered
+  //by grepping seventy call sites.  The cost of that choice is that a new flag
+  //has to be named in two places, so it is enforced rather than trusted: a
+  //non-SILENT flag in no category, a category naming a flag that does not
+  //exist, and a flag named twice are all errors.  --help says so and
+  //--dump-docs fails, which makes the docs job in CI the backstop.
+  //
+  //Leaving this unset keeps the old flat alphabetical output.
+  void setHelpCategories(const vector< pair< string, vector<string> > > &cats);
+
   void printHelp();
 
   //Emit the flag reference in a documentation format, so README and the
@@ -120,6 +136,16 @@ private:
   map<string, string> help;
   map<string, bool> isSet;
   map<string, string> labels;
+
+  //Declared order of the help groups, each with the flags it holds.
+  vector< pair< string, vector<string> > > helpCats;
+
+  //helpCats resolved against the registered flags: SILENT ones dropped and
+  //each group sorted by flag name, so the grouping is editorial and the order
+  //within a group is not.  Every complaint -- an uncategorised flag, an
+  //unknown one, a duplicate -- goes into `problems`; an empty helpCats yields
+  //one unnamed group holding everything, which is the old flat output.
+  vector< pair< string, vector<string> > > groupedHelp(vector<string> &problems) const;
 
   bool goodDouble(string str);
   bool goodInt(string str);

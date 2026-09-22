@@ -17,6 +17,8 @@
 */
 #include "param_t.h"
 #include <iterator>
+#include <algorithm>
+#include <set>
 #include <cerrno>
 
 using namespace std;
@@ -225,20 +227,119 @@ bool param_t::addListFlag(string flag, const char value[], string label, string 
     return this->addListFlag(flag, string(value), label, description);
 }
 
+void param_t::setHelpCategories(const vector< pair< string, vector<string> > > &cats)
+{
+    helpCats = cats;
+}
+
+vector< pair< string, vector<string> > > param_t::groupedHelp(vector<string> &problems) const
+{
+    problems.clear();
+    vector< pair< string, vector<string> > > out;
+
+    //Everything that would be printed at all.  SILENT flags are not
+    //documented anywhere, so they are neither required to have a category nor
+    //allowed to be given one.
+    set<string> visible;
+    for (map<string, string>::const_iterator it = help.begin(); it != help.end(); ++it)
+    {
+        map<string, string>::const_iterator lb = labels.find(it->first);
+        if (lb != labels.end() && lb->second.compare("SILENT") == 0) continue;
+        visible.insert(it->first);
+    }
+
+    if (helpCats.empty())
+    {
+        //No taxonomy declared: one unnamed group, alphabetical, which is what
+        //this printed before grouping existed.
+        vector<string> all(visible.begin(), visible.end());
+        out.push_back(make_pair(string(""), all));
+        return out;
+    }
+
+    set<string> placed;
+    for (unsigned int c = 0; c < helpCats.size(); c++)
+    {
+        vector<string> members;
+        for (unsigned int k = 0; k < helpCats[c].second.size(); k++)
+        {
+            const string &f = helpCats[c].second[k];
+            if (visible.count(f) == 0)
+            {
+                //Either the flag does not exist or it is SILENT.  Both mean
+                //the taxonomy is describing something the program does not
+                //show, which is how a renamed flag would rot unnoticed.
+                problems.push_back("help category '" + helpCats[c].first + "' lists " + f +
+                                   ", which is not a documented flag");
+                continue;
+            }
+            if (placed.count(f) != 0)
+            {
+                problems.push_back(f + " appears in more than one help category");
+                continue;
+            }
+            placed.insert(f);
+            members.push_back(f);
+        }
+        if (members.empty())
+        {
+            problems.push_back("help category '" + helpCats[c].first + "' is empty");
+            continue;
+        }
+        sort(members.begin(), members.end());
+        out.push_back(make_pair(helpCats[c].first, members));
+    }
+
+    //Leftovers are REPORTED and still PRINTED.  Dropping them would make the
+    //grouping able to hide a working flag, which is a worse failure than the
+    //ugly heading: --dump-docs refuses to write a reference in this state, so
+    //the only place this group can appear is --help, where being visible and
+    //labelled as a fault is exactly right.
+    vector<string> orphans;
+    for (set<string>::const_iterator it = visible.begin(); it != visible.end(); ++it)
+        if (placed.count(*it) == 0)
+        {
+            problems.push_back(*it + " is in no help category (add it to setHelpCategories in garlic-cli.cpp)");
+            orphans.push_back(*it);
+        }
+    if (!orphans.empty())
+    {
+        sort(orphans.begin(), orphans.end());
+        out.push_back(make_pair(string("Uncategorised"), orphans));
+    }
+
+    return out;
+}
+
 void param_t::printHelp()
 {
-    map<string, string>::iterator it;
-
     cerr << preamble << endl;
 
     cerr << "----------Command Line Arguments----------\n\n";
 
-    for (it = help.begin(); it != help.end(); it++)
+    vector<string> problems;
+    vector< pair< string, vector<string> > > groups = groupedHelp(problems);
+
+    for (unsigned int c = 0; c < groups.size(); c++)
     {
-        if (labels[(*it).first].compare("SILENT") != 0)
+        if (!groups[c].first.empty())
+            cerr << "----- " << groups[c].first << " -----\n\n";
+        for (unsigned int k = 0; k < groups[c].second.size(); k++)
         {
-            cerr << (*it).first << " " << (*it).second << "\n\n";
+            const string &f = groups[c].second[k];
+            cerr << f << " " << help.find(f)->second << "\n\n";
         }
+    }
+
+    //Loud rather than silent: the failure mode being guarded against is a flag
+    //that exists and works but is documented nowhere, and the person who can
+    //fix it is whoever just added it.
+    if (!problems.empty())
+    {
+        cerr << "----------\n";
+        cerr << "WARNING: the help grouping does not match the flags the program has:\n";
+        for (unsigned int i = 0; i < problems.size(); i++) cerr << "\t" << problems[i] << "\n";
+        cerr << "\tEvery flag above is still accepted; this is a documentation fault.\n";
     }
 
     return;
@@ -397,32 +498,63 @@ bool param_t::writeHelpDoc(ostream &out, string format)
                              //Descriptions contain unbreakable tokens such as
                              //slope*log(density), which overflowed the text block
                              //(10 overfull hboxes) without \sloppy.
-                             << "% Do not edit by hand.\n\\begingroup\\sloppy\n\\begin{description}\n";
+                             //No description list is opened here: each group
+                             //opens and closes its own below, and an empty
+                             //description before the first heading is a LaTeX
+                             //error rather than merely untidy.
+                             << "% Do not edit by hand.\n\\begingroup\\sloppy\n";
     else out << "This section is generated by 'make docs' from the program's own help\n"
              << "strings. Do not edit by hand.\n\n";
 
-    map<string, string>::iterator it;
-    for (it = help.begin(); it != help.end(); it++)
+    //A documentation fault is fatal here, unlike in --help.  'make docs' is
+    //the only thing keeping README and the manual in step with the program,
+    //so a flag that belongs to no group must stop the regeneration rather
+    //than quietly produce a reference that omits it.
+    vector<string> problems;
+    vector< pair< string, vector<string> > > groups = groupedHelp(problems);
+    if (!problems.empty())
     {
-        if (labels[it->first].compare("SILENT") == 0) continue;
-        string type, desc, def;
-        splitHelpEntry(it->second, type, desc, def);
-        if (format == "txt")
-        {
-            out << it->first << " <" << type << ">: " << unwrap(desc, true) << "\n";
-            if (!def.empty()) out << "\tDefault: " << unwrap(def, true) << "\n";
-            out << "\n";
-        }
-        else
-        {
-            out << "\\item[\\texttt{" << texEscape(it->first) << "}";
-            if (!type.empty()) out << " \\textnormal{\\textless{}" << texEscape(type) << "\\textgreater{}}";
-            out << "] " << texWrapFlags(texEscape(unwrap(desc)));
-            if (!def.empty()) out << " \\\\ \\textit{Default:} \\texttt{" << texEscape(unwrap(def)) << "}";
-            out << "\n";
-        }
+        cerr << "ERROR: the help grouping does not match the flags the program has:\n";
+        for (unsigned int i = 0; i < problems.size(); i++) cerr << "\t" << problems[i] << "\n";
+        cerr << "\tFix setHelpCategories in garlic-cli.cpp, then run 'make docs' again.\n";
+        return false;
     }
-    if (format == "tex") out << "\\end{description}\n\\endgroup\n";
+
+    for (unsigned int c = 0; c < groups.size(); c++)
+    {
+        const string &title = groups[c].first;
+        if (!title.empty())
+        {
+            if (format == "txt") out << "----- " << title << " -----\n\n";
+            //Outside the list: a heading inside a description would be
+            //typeset as though it were an item's body.  Unnumbered, so ten
+            //group headings do not land in the table of contents.
+            else out << "\\subsection*{" << texEscape(title) << "}\n";
+        }
+        if (format == "tex") out << "\\begin{description}\n";
+        for (unsigned int k = 0; k < groups[c].second.size(); k++)
+        {
+            const string &flag = groups[c].second[k];
+            string type, desc, def;
+            splitHelpEntry(help.find(flag)->second, type, desc, def);
+            if (format == "txt")
+            {
+                out << flag << " <" << type << ">: " << unwrap(desc, true) << "\n";
+                if (!def.empty()) out << "\tDefault: " << unwrap(def, true) << "\n";
+                out << "\n";
+            }
+            else
+            {
+                out << "\\item[\\texttt{" << texEscape(flag) << "}";
+                if (!type.empty()) out << " \\textnormal{\\textless{}" << texEscape(type) << "\\textgreater{}}";
+                out << "] " << texWrapFlags(texEscape(unwrap(desc)));
+                if (!def.empty()) out << " \\\\ \\textit{Default:} \\texttt{" << texEscape(unwrap(def)) << "}";
+                out << "\n";
+            }
+        }
+        if (format == "tex") out << "\\end{description}\n";
+    }
+    if (format == "tex") out << "\\endgroup\n";
     return true;
 }
 
