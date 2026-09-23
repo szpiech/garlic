@@ -44,7 +44,7 @@
 
 \section{Introduction}
 
-Extended tracts of homozygosity in individual genomes manifest as a result of haplotypes inherited identical by descent (IBD) from both biological parents. These runs of homozygosity (ROH) are important genomic features, with their length distributions and genomic locations informative about population history and useful for the mapping of recessive loci contributing to Mendelian and complex diseases. However, precisely because the length distribution of ROH is affected by population history, a simple one-size-fits-all genotype-counting approach to inferring ROH in multiple populations is ill-advised. Here, we present a model-based method and accompanying software package for inferring ROH in microarray-derived SNP genotype that incorporates population-specific parameters and genotyping error rates as described in \cite{PembertonEtAl12:AJHG}. Version 1.1.0 includes several updates, including a method for reweighting LOD scores by gaps between SNPs, the option to report ROH lengths in cM, and the ability to provide per-genotype error rates.
+Extended tracts of homozygosity in individual genomes manifest as a result of haplotypes inherited identical by descent (IBD) from both biological parents. These runs of homozygosity (ROH) are important genomic features, with their length distributions and genomic locations informative about population history and useful for the mapping of recessive loci contributing to Mendelian and complex diseases. However, precisely because the length distribution of ROH is affected by population history, a simple one-size-fits-all genotype-counting approach to inferring ROH in multiple populations is ill-advised. Here, we present a model-based method and accompanying software package for inferring ROH in microarray-derived SNP genotype that incorporates population-specific parameters and genotyping error rates as described in \cite{PembertonEtAl12:AJHG}. Version 1.1.0 added a method for reweighting LOD scores by gaps between SNPs, the option to report ROH lengths in cM, and the ability to provide per-genotype error rates.  Version 2.0.0 reads VCF input directly (Section~\ref{sec:vcf}), analyses each population in a file separately rather than pooling them (Section~\ref{sec:multipop}), calls runs on the shared sex chromosome instead of treating it as an autosome (Section~\ref{sec:sexchr}), and counts classified genotypes inside and outside the calls (Section~\ref{sec:features}).  It is not backward compatible with files written by v1.1.6a; the change log in Section~\ref{sec:changelog} says how.
 
 If you use GARLIC please cite the following articles,
 
@@ -54,49 +54,101 @@ TJ Pemberton, et al. (2012) Genomic patterns of homozygosity in worldwide human 
 
 \section{Obtaining {\tt GARLIC}}
 
-{\bf NOTE: In order to successfully run, windows users must have ann\_figtree\_version.dll and figtree.dll (provided) in the same folder as garlic.exe.}
+{\bf NOTE TO WINDOWS USERS: {\tt ann\_figtree\_version.dll} and {\tt figtree.dll} are no longer needed.}  Earlier versions required both alongside {\tt garlic.exe}; {\tt GARLIC} no longer links FIGTree or ANN, so a copy of {\tt garlic.exe} built from this version runs without them.
 
 {\tt GARLIC} pre-built binaries and source code are available at {\tt https://github.com/szpiech/garlic}.  To compile from source, change directories to the {\tt src/} directory and type {\tt make}; the Makefile detects the platform from {\tt uname}, so no editing is needed.  {\tt GARLIC}'s only external dependency is the zlib library ({\tt http://www.zlib.net/}), provided by the system on Linux and macOS, where the Makefile simply links {\tt -lz}.  Threading uses {\tt std::thread} from the C++11 standard library rather than calling pthreads directly; libstdc++ implements it over pthreads on Linux, so {\tt -pthread} is still passed there, but no pthreads library is named or vendored on any platform.  GNU GSL and FIGTree were required by earlier versions and are no longer used: FIGTree was replaced by a direct Gaussian sum, and GSL by {\tt src/garlic-math.cpp}, which reproduces the routines {\tt GARLIC} used bit for bit.  On Windows, zlib likewise comes from the MinGW toolchain ({\tt mingw-w64-x86\_64-zlib} under MSYS2's MINGW64); the 32-bit zlib that earlier versions vendored under {\tt lib/win32} has been removed, since a 64-bit MinGW cannot link it.  The windows version of {\tt GARLIC} is built in an MSYS2/MinGW environment ({\tt https://www.msys2.org/}); since the move to {\tt std::thread} it requires a MinGW GCC configured with the POSIX threading model, which is what provides {\tt std::thread} on that platform.
 
 \section{Basic Usage}
 
-GARLIC can be run by executing the following command.
+A run needs genotypes, an assembly, a genotyping error rate and a name for the
+output.  The bundled example is human SNP-array data on hg18 coordinates:
 ~\\\\
-{\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --auto-winsize --out example}
-~\\
-\noindent The example data is derived from human genotype chip data with hg18 coordinates ({\tt --build hg18}), and a priori we do not know how large to make our window so we use the built-in window size selection algorithm ({\tt --auto-winsize}).  All output files will be named starting with 'example' ({\tt --out example}).  This produces the following files:
+{\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 30 --auto-winsize --out example}
 ~\\\\
-{\tt example.error}
-~\\
-{\tt example.log}
-~\\
-{\tt example.60SNPs.kde}
-~\\
-{\tt example.freq.gz}
-~\\
-{\tt example.roh.bed}
+\noindent A priori we do not know how large to make the window, so this uses
+the built-in search ({\tt --auto-winsize}).  The search begins at the
+{\tt --winsize} value and increases, so a starting size is required --- giving
+{\tt --auto-winsize} alone is an error rather than a default.  All output is
+named starting with {\tt example} ({\tt --out example}), and on this data the
+search settles on 50 SNPs, producing:
+
+\begin{itemize}
+\item {\tt example.log} --- the run's parameters and progress;
+\item {\tt example.params.json} --- every flag's effective value together with
+      the window size, LOD cutoff, size-class boundaries and random seed the
+      run resolved, replayable with {\tt --load-params};
+\item {\tt example.freq.gz} --- the allele frequencies used;
+\item {\tt example.50SNPs.kde} --- the LOD score density at the selected window
+      size, which is part of the file name;
+\item {\tt example.roh.bed} --- the calls.
+\end{itemize}
+
+\noindent An {\tt example.error} file appears beside these only if something is
+actually written to it.  Adding {\tt --froh} writes {\tt example.froh.tsv}, one
+row per individual giving the autozygous total and the fraction of the genome
+it covers.
+
+The same run from a VCF needs no {\tt --tfam}, since a VCF names its samples,
+but it does need {\tt --pop} if the samples are not all one population:
 ~\\\\
-\noindent If the automatic window size selection algorithm fails, you can output the KDEs of the LOD score distribution for multiplw window sizes (without calling ROH) by using the {\tt --winsize-multi} argument, i.e.
+{\tt garlic --vcf cohort.vcf.gz --pop cohort.pop --build hg38 --error 0.001 --winsize 30 --auto-winsize --out cohort}
+~\\\\
+\noindent Both readers accept gzipped input directly, and a VCF may also be
+BGZF.  See Section~\ref{sec:vcf} for what {\tt garlic} reads from a VCF and
+Section~\ref{sec:multipop} for what happens when a file holds more than one
+population --- each is analysed separately, and the output names carry the
+population label.
+
+Two things stop a run that used to proceed, both because the old behaviour was
+silently wrong.  A chromosome that looks sex-linked is not analysed until
+{\tt --sex-system} says what to do with it (Section~\ref{sec:sexchr}), and an
+assembly must be named: {\tt --build}, a {\tt --centromere} file, or
+{\tt --no-centromere} if the assembly has no gap to avoid.
+
+\noindent If the automatic window size selection algorithm fails, you can
+output the KDEs of the LOD score distribution for multiple window sizes
+(without calling ROH) by using the {\tt --winsize-multi} argument, i.e.
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize-multi 30 40 50 60 70 80 90 --out example}
 ~\\\\
-\noindent This will generate KDEs for your inspection.  Once you've chosen a window size, you should rerun garlic specifying that size.  For example, if you choose a window size of 60 SNPs, then you would run
+\noindent This will generate KDEs for your inspection.  Once you've chosen a
+window size, you should rerun garlic specifying that size.  For example, if you
+choose a window size of 60 SNPs, then you would run
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --out example}
 ~\\\\
-\noindent If you already know what LOD score cutoff to use (say you are analyzing more individuals from a previously studied population), you can use the {\tt --lod-cutoff} argument, i.e. if your LOD score cutoff is known to be 2.5 then you would run
+\noindent If you already know what LOD score cutoff to use (say you are
+analyzing more individuals from a previously studied population), you can use
+the {\tt --lod-cutoff} argument, i.e. if your LOD score cutoff is known to be
+2.5 then you would run
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --out example --lod-cutoff 2.5}
 ~\\\\
-\noindent If you already know what size thresholds to use for size classificaation (say you are analyzing more individuals from a previously studied population), you can use the {\tt --size-bounds argument}, i.e. if your size thresholds are known to be 500000 and 1000000 for the boundaries between short/med and med/long, respectively, then you would run
+\noindent If you already know what size thresholds to use for size
+classification (say you are analyzing more individuals from a previously
+studied population), you can use the {\tt --size-bounds} argument, i.e. if your
+size thresholds are known to be 500000 and 1000000 for the boundaries between
+short/med and med/long, respectively, then you would run
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --out example --lod-cutoff 2.5 --size-bounds 500000 1000000}
 ~\\\\
-\noindent To run the wLOD, you must provide a map file and give the {\tt --weighted} flag:
+\noindent Supplying both is also how to reproduce an analysis made with an
+earlier version, whose automatic cutoff selection differed; the values to pass
+are in that run's log.
+~\\\\
+\noindent To run the wLOD, you must provide a map file and give the
+{\tt --weighted} flag:
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --map example.map.gz --weighted --build hg18 --winsize 60 --out example --error 0.001}
 ~\\\\
-\noindent Other command line arguments are described below.
+\noindent To count classified genotypes --- deleterious against tolerated, say
+--- inside and outside the calls, add {\tt --features} with a file classifying
+the sites (Section~\ref{sec:features}):
+~\\\\
+{\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --features classes.txt --out example}
+~\\\\
+\noindent Other command line arguments are described below, and all of them are
+listed with their types and defaults in Appendix~\ref{app:flags}.
 
 \section{Statistics implemented}
 
@@ -152,6 +204,7 @@ Using the command line flag {\tt --help}, will print a help dialog with a summar
 Genotypes are read from either a VCF ({\tt --vcf}) or a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}).  The two are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Consecutive loci are assumed to be in order with respect to their physical position, and all records for a chromosome must be contiguous --- what {\tt bcftools sort} produces.  If the file contains more than one population, each is analysed separately; see Section~\ref{sec:multipop}.  {\tt --pop} overrides the labels, which for a TPED/TFAM pair are otherwise taken from column 1 of the TFAM.
 
 \subsubsection{VCF input}
+\label{sec:vcf}
 
 Biallelic SNVs carrying a {\tt GT} field are used.  Multiallelic sites, indels, symbolic ALT alleles ({\tt *}, {\tt <NON\_REF>}) and records with no {\tt GT} in {\tt FORMAT} are skipped, and the counts are written to the log rather than passed over silently.  The {\tt FILTER} column is reported either way and only acted on under {\tt --vcf-pass-only}, since it records the variant caller's thresholds rather than {\tt garlic}'s.
 
@@ -187,13 +240,18 @@ The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED plus a {
 \begin{verbatim}
 	<sample id> <population> [sex]
 \end{verbatim}
-\noindent Matched by sample ID, never by position.  Note the column order is the opposite of a TFAM's first two columns; a TFAM-ordered file is diagnosed as such.  The optional third column uses PLINK sex coding and only makes the sex-chromosome warning specific.
-\noindent freq (optional, output during computation, can be generated without running the whole pipeline with {\tt --freq-only}): 
+\noindent Matched by sample ID, never by position.  Note the column order is the opposite of a TFAM's first two columns; a TFAM-ordered file is diagnosed as such.  The optional third column uses PLINK sex coding.  On a declared sex chromosome it is not merely cosmetic: a recorded sex is checked against the heterozygosity {\tt garlic} measures there, and the run stops if more than half the individuals contradict it (Section~\ref{sec:sexchr}).
+\noindent freq (optional; written by every run, or on its own with {\tt --freq-only}):
 \begin{verbatim}
 	CHR SNP POS ALLELE FREQ
-	<chr> <locus ID> <allele> <freq>
-\end{verbatim}	
-\noindent centromere file (required if no {\tt --build} is set):
+	<chr> <locus ID> <pos> <allele> <freq>
+\end{verbatim}
+\noindent With more than one population there is one frequency column per
+population headed by its label, in place of the single {\tt FREQ} column; a
+file carrying just one such column is applied to every population whatever
+that column is called.  See Section~\ref{sec:multipop}.
+
+\noindent centromere file (one of {\tt --build}, this file, or {\tt --no-centromere} is required):
 \begin{verbatim}
 	<chr> <centromere start> <centromere end>
 \end{verbatim}
@@ -236,7 +294,7 @@ CHR	SNP	POS	ALLELE	FREQ
 
 \subsubsection{{\tt --map}}
 
-{\tt --map <string>} Provide a scaffold genetic map, sites that aren't present within this file are interpolated.  Sites outside the bounds are filtered. This is required for wLOD calcualtions and any runs for which you wish to report ROH in units of cM. 
+{\tt --map <string>} Provide a scaffold genetic map, sites that aren't present within this file are interpolated.  Sites outside the bounds are filtered. This is required for wLOD calculations and any runs for which you wish to report ROH in units of cM. 
 Formatted: <chr> <snpid> <genetic pos> <physical pos>. http://zzz.bwh.harvard.edu/plink/data.shtml\#map (negative positions will cause errors)
 
 \subsection{Output Files}
@@ -645,6 +703,7 @@ it came to document {\tt --auto-winsize-size} -- a flag the program has never
 accepted -- and to miss every flag added since.
 
 \section{Change Log}
+\label{sec:changelog}
 
 \begin{lstlisting}
 --features counts classified genotypes inside and outside the calls, replacing the
