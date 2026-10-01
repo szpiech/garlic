@@ -119,6 +119,10 @@ extern const string ARG_FREQ_ONLY;
 extern const bool DEFAULT_FREQ_ONLY;
 extern const string HELP_FREQ_ONLY;
 
+extern const string ARG_STRATIFY_CUTOFF;
+extern const bool DEFAULT_STRATIFY_CUTOFF;
+extern const string HELP_STRATIFY_CUTOFF;
+
 extern const string ARG_KDE_SUBSAMPLE;
 extern const int DEFAULT_KDE_SUBSAMPLE;
 extern const string HELP_KDE_SUBSAMPLE;

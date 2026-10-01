@@ -239,7 +239,20 @@ For everything that reads a genotype rather than a likelihood --- the LD matrix 
 
 \paragraph{Two cautions.}  Give likelihoods, not posteriors.  ANGSD's {\tt -doPost} and {\tt -doGeno} output has a Hardy-Weinberg (or panel) prior already folded in, and feeding it here applies that prior a second time, which biases every site toward the non-autozygous state; {\tt garlic} cannot tell the two apart from the numbers alone.  And a beagle marker carries a physical position only, so {\tt --weighted} and {\tt --cm} still need {\tt --map}.
 
-\paragraph{What it does not fix.}  In simulation the likelihood input holds the called autozygous fraction at its true value down to $2\times$ where called genotypes lose the automatic cutoff.  Below about $2\times$ the evidence in a 60-SNP window is not enough to place a cutoff whatever the per-site model: the automatic cutoff fails or lands far from the truth, and even the best single threshold has a false-positive rate of several percent.  Methods that work there borrow information across windows or from a haplotype reference panel, which this design deliberately does not.  Cohorts of mixed depth are a separate problem --- the cutoff is estimated on windows pooled over all individuals, and the shallow ones are over-called --- addressed in a later section.
+\paragraph{What it does not fix.}  In simulation the likelihood input holds the called autozygous fraction at its true value down to $2\times$ where called genotypes lose the automatic cutoff.  Below about $2\times$ the evidence in a 60-SNP window is not enough to place a cutoff whatever the per-site model: the automatic cutoff fails or lands far from the truth, and even the best single threshold has a false-positive rate of several percent.  Methods that work there borrow information across windows or from a haplotype reference panel, which this design deliberately does not.  Cohorts of mixed depth are a separate problem --- the cutoff is estimated on windows pooled over all individuals, and the shallow ones are over-called --- addressed by {\tt --stratify-cutoff} (\S\ref{sec:stratify}).
+
+\subsubsection{Cohorts of mixed depth: {\tt --stratify-cutoff}}
+\label{sec:stratify}
+
+The automatic LOD score cutoff is the valley between the two modes of the window-LOD density pooled over every individual.  That is right when every individual carries the same evidence per window, and wrong when they do not: an individual at low depth, or with many missing genotypes, has both of its modes compressed toward zero, so a cutoff placed for the cohort calls most of its genome autozygous.  On a simulated genome-wide cohort with thirds at $2\times$, $4\times$ and $30\times$, the pooled cutoff called the $2\times$ third at $1.6$ times the length the same individuals' called genotypes gave, and the $30\times$ third at $1.1$ times.
+
+The location of an individual's non-autozygous LOD mode is a precise measure of the evidence its windows carry: on the bundled cohort it varies by $1.3$ LOD between individuals, against $18$ and $29$ LOD between the three depth classes above.  {\tt --stratify-cutoff} sorts the individuals by that mode, joins neighbours whose modes differ by less than a quarter of the smaller spread into a stratum, and applies the pooled rule within each stratum.  A cohort of uniform evidence is one stratum and gets exactly the pooled cutoff --- the calls are byte-identical, which the test suite checks --- and a mixed cohort splits by depth, each stratum's valley resting on tens of thousands of windows rather than one individual's.  On the simulated cohort above this brought the three thirds to $1.3$, $1.15$ and $1.07$ times the called-genotype length: the pooling artefact is removed, and what remains is the noisier emission at low depth, which no cutoff can undo.
+
+The per-individual mode, spread, stratum and applied cutoff are written to {\tt <out>.ind.tsv}; the {\tt .kde} file is the largest stratum's density; {\tt .params.json} records {\tt lod\_cutoff} as the number of strata and flags it as such.  A stratum of fewer than three individuals does not get a valley of its own --- one or two individuals' windows are too few for the rule, and such a stratum is as likely to be an individual whose lowest substantial mode is in fact its autozygous one (more than half autozygous on the analysed chromosomes; one of the 45 on chromosome 21 of the bundled data) --- and takes the largest stratum's cutoff, with a warning.  A stratum whose density has no valley borrows the other strata's median standardised valley through its own mode and spread.  The flag needs the automatic cutoff and does not subsample.
+
+Without the flag, {\tt garlic} still locates the modes and warns when the cohort would form more than one stratum, naming the strata, so that a mixed cohort analysed with one cutoff is at least a visible choice.
+
+Two approaches were tried and rejected before this one, and are recorded so they are not tried again: standardising every individual's windows by its own mode and spread and pooling the standardised windows --- the non-autozygous spread is set by allele-frequency heterogeneity across windows while the autozygous mode is set by information per site, so the two do not scale together and the standardised density has no common autozygous mode --- and a valley per individual, which on one individual's windows is too noisy ($10$--$26\%$ more genome called on the uniform bundled example).
 
 \subsubsection{File formats}
 \noindent tped/tfam (required):\\
@@ -790,6 +803,12 @@ Every run writes <out>.ind.tsv: per individual, the fraction of informative site
 median and 5th percentile of informative sites per window, the observed/expected
 heterozygote ratio in non-autozygous windows and, with --gl-beagle, a dropout estimate.
 Diagnostic only. See "The per-individual information report" under Output Files.
+
+--stratify-cutoff chooses the automatic LOD cutoff within strata of individuals that carry
+the same evidence per window (grouped by the location of their non-autozygous LOD mode), so a
+cohort of mixed depth is not over-called in its shallow members; a uniform cohort gets the
+pooled cutoff exactly. Without the flag, garlic warns when the cohort would form more than
+one stratum. See "Cohorts of mixed depth" under Input Files.
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 

@@ -223,6 +223,25 @@ const string ARG_FREQ_ONLY = "--freq-only";
 const bool DEFAULT_FREQ_ONLY = false;
 const string HELP_FREQ_ONLY = "If set, calculates a freq file from provided data and then exits. Uses minimal RAM.";
 
+const string ARG_STRATIFY_CUTOFF = "--stratify-cutoff";
+const bool DEFAULT_STRATIFY_CUTOFF = false;
+const string HELP_STRATIFY_CUTOFF = "Choose the automatic LOD cutoff within strata of individuals that carry the\n\
+\tsame evidence per window.  The cutoff is normally the valley between the two\n\
+\tmodes of the window LOD density pooled over everyone, which is right when\n\
+\tevery individual carries the same evidence per window and wrong when they\n\
+\tdo not: an individual at low depth, or with many missing genotypes, has\n\
+\tboth modes compressed toward zero and a cutoff placed for the cohort calls\n\
+\tmost of its genome autozygous.  The location of an individual's\n\
+\tnon-autozygous mode is a precise measure of that evidence, so with this\n\
+\tflag individuals are sorted by it and neighbours whose modes differ by less\n\
+\tthan a quarter of the smaller spread share a stratum; the pooled rule is\n\
+\tthen applied within each stratum.  A cohort of uniform depth is one stratum\n\
+\tand gets exactly the pooled cutoff; a mixed cohort splits by depth.  A\n\
+\tstratum whose density has no valley borrows the others' median standardised\n\
+\tvalley through its own mode and spread.  Per-individual mode, spread,\n\
+\tstratum and applied cutoff are written to <out>.ind.tsv; the .kde file is\n\
+\tthe largest stratum's.  Needs the automatic cutoff.";
+
 const string ARG_KDE_SUBSAMPLE = "--kde-subsample";
 const int DEFAULT_KDE_SUBSAMPLE = 0;
 const string HELP_KDE_SUBSAMPLE = "The number of individuals to randomly sample for LOD score KDE. If there\n\
@@ -614,6 +633,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_FREQ_ONLY, DEFAULT_FREQ_ONLY, "", HELP_FREQ_ONLY);
 	params->addListFlag(ARG_WINSIZE_MULTI, DEFAULT_WINSIZE_MULTI, "", HELP_WINSIZE_MULTI);
 	params->addFlag(ARG_KDE_SUBSAMPLE, DEFAULT_KDE_SUBSAMPLE , "", HELP_KDE_SUBSAMPLE);
+	params->addFlag(ARG_STRATIFY_CUTOFF, DEFAULT_STRATIFY_CUTOFF, "", HELP_STRATIFY_CUTOFF);
 	params->addFlag(ARG_LD_SUBSAMPLE, DEFAULT_LD_SUBSAMPLE , "", HELP_LD_SUBSAMPLE);
 	params->addFlag(ARG_AUTO_WINSIZE, DEFAULT_AUTO_WINSIZE, "", HELP_AUTO_WINSIZE);
 	params->addFlag(ARG_AUTO_WINSIZE_STEP, DEFAULT_AUTO_WINSIZE_STEP, "", HELP_AUTO_WINSIZE_STEP);
@@ -721,6 +741,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 		cats.push_back(make_pair(string("Calling runs of homozygosity"), f));
 
 		f.clear();
+		f.push_back(ARG_STRATIFY_CUTOFF);
 		f.push_back(ARG_KDE_SUBSAMPLE); f.push_back(ARG_KDE_POINTS);
 		f.push_back(ARG_KDE_CUT);     f.push_back(ARG_KDE_THIN_STEP);
 		f.push_back(ARG_KDE_THINNING); f.push_back(ARG_MODE_SPAN);

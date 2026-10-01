@@ -65,6 +65,9 @@ mk_tgls_one() {
 #   exact   every called genotype becomes a degenerate triplet (1 for the
 #           observed genotype, 0 elsewhere) and a missing one the flat triplet;
 #           garlic must reproduce the TPED run on this byte for byte.
+#   mixed   as lowcov, but the first third of the individuals at 0-2 reads,
+#           the second at 2-4 and the last at 8-12: a cohort of mixed depth,
+#           for --stratify-cutoff.
 #   lowcov  a deterministic pseudo-read model, so the marginalised emission is
 #           exercised on non-degenerate triplets with a golden checksum that
 #           does not depend on any awk's rand(): depth d = (NR*7 + i*3) mod 5,
@@ -94,7 +97,10 @@ mk_beagle() {
                 if (g == 0) printf "\t1\t0\t0"; else if (g == 1) printf "\t0\t1\t0"; else printf "\t0\t0\t1"
                 continue
             }
-            d = (NR * 7 + k * 3) % 5
+            if (mode == "mixed") {
+                # thirds of the cohort at low, middle and high evidence
+                if (k < n / 3) d = (NR * 7 + k * 3) % 3; else if (k < 2 * n / 3) d = 2 + (NR * 7 + k * 3) % 3; else d = 8 + (NR * 7 + k * 3) % 5
+            } else d = (NR * 7 + k * 3) % 5
             if (d == 0) { printf "\t0.333333\t0.333333\t0.333333"; continue }
             if (g == 0) nalt = 0; else if (g == 2) nalt = d; else { h = int(d / 2); nalt = ((NR + k) % 2 == 0) ? h : d - h }
             nref = d - nalt
@@ -210,6 +216,7 @@ c21_freqonly|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --er
 c21_tgls_gq30|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --tgls $WORK/gq30.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
 tgls_gq|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $WORK/gq30_genome.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
 c21_beagle_lowcov|--gl-beagle $WORK/c21.lowcov.beagle.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz ind.tsv
+c21_beagle_stratified|--gl-beagle $WORK/c21.mixed.beagle.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --size-bounds 500000 1000000 --stratify-cutoff|roh.bed ind.tsv
 "
 
 golden() {
@@ -2932,6 +2939,62 @@ beagle_input() {
     expect_exit 2 "beagle file without a header line" "$GARLIC" --gl-beagle "$WORK/nohdr.beagle.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/bg_e8"
 }
 
+
+# ---------------------------------------------------------------------------
+# --stratify-cutoff.
+#
+# On a cohort of uniform evidence it must be the pooled cutoff exactly: one
+# stratum, same valley, byte-identical calls.  On the mixed-depth fixture it
+# must find more than one stratum, and the pooled run on that fixture must
+# warn that it would.
+stratified_cutoff() {
+    echo "== --stratify-cutoff =="
+    [ -f "$EX/chr21.tped.gz" ] || { echo "  SKIP  chr21 fixture not present"; return; }
+    common="--build hg18 --winsize 60 --error 0.001 --size-bounds 500000 1000000 --quiet --force"
+    # Uniform evidence: the genome-wide example.  (chr21 alone is not uniform
+    # in this sense: one of its 45 individuals is mostly autozygous on that
+    # chromosome, which is the small-stratum case checked below.)
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" $common --out "$WORK/st_pooled" >/dev/null 2>"$WORK/st_pooled.err"
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" $common --stratify-cutoff --out "$WORK/st_strat" >/dev/null 2>"$WORK/st_strat.err"
+    if [ $? -ne 0 ]; then bad "--stratify-cutoff failed on the uniform example"; sed -n '1,3p' "$WORK/st_strat.err" | sed 's/^/        /'
+    else
+        if grep -q "LOD cutoff strata: 1$" "$WORK/st_strat.log"; then ok; else bad "uniform cohort should form exactly one stratum"; fi
+        if [ "$(sum "$WORK/st_pooled.roh.bed")" = "$(sum "$WORK/st_strat.roh.bed")" ]; then ok
+        else bad "one stratum must reproduce the pooled calls byte for byte"; fi
+        if grep -q "strata" "$WORK/st_pooled.err"; then bad "pooled run on a uniform cohort must not warn about strata"; else ok; fi
+    fi
+    # One individual apart from the rest: a stratum too small for its own
+    # valley, which must take the largest stratum's cutoff and say so.
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --stratify-cutoff --out "$WORK/st_c21" >/dev/null 2>"$WORK/st_c21.err"
+    if [ $? -ne 0 ]; then bad "--stratify-cutoff failed on chr21"; sed -n '1,3p' "$WORK/st_c21.err" | sed 's/^/        /'
+    elif grep -v '^##' "$WORK/st_c21.ind.tsv" | awk -F'\t' 'NR>1 && $NF=="largest_stratum" {n++} END {exit n>0 ? 0 : 1}'; then ok
+    else bad "chr21: expected at least one individual in a too-small stratum taking the largest stratum's cutoff"; fi
+    # Mixed depth: several strata, and the pooled run says so.
+    # shellcheck disable=SC2086
+    $GARLIC --gl-beagle "$WORK/c21.mixed.beagle.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/st_mixp" >/dev/null 2>"$WORK/st_mixp.err"
+    if grep -q "WARNING: the individuals do not all carry the same evidence" "$WORK/st_mixp.err"; then ok
+    else bad "pooled run on the mixed-depth fixture did not warn about evidence strata"; fi
+    # shellcheck disable=SC2086
+    $GARLIC --gl-beagle "$WORK/c21.mixed.beagle.gz" --tfam "$EX/chr21.tfam.gz" $common --stratify-cutoff --out "$WORK/st_mixs" >/dev/null 2>"$WORK/st_mixs.err"
+    if [ $? -ne 0 ]; then bad "--stratify-cutoff failed on the mixed-depth fixture"; sed -n '1,3p' "$WORK/st_mixs.err" | sed 's/^/        /'
+    else
+        n=$(sed -n 's/^LOD cutoff strata: \([0-9]*\)$/\1/p' "$WORK/st_mixs.log")
+        if [ -n "$n" ] && [ "$n" -ge 2 ]; then ok; else bad "mixed-depth fixture should form at least two strata (got '$n')"; fi
+        # The report carries the stratum columns and every row has a cutoff.
+        if grep -v '^##' "$WORK/st_mixs.ind.tsv" | head -1 | grep -q "lod_cutoff.*stratum.*cutoff_source"; then ok
+        else bad "ind.tsv lacks the stratum columns under --stratify-cutoff"; fi
+        if grep -q '"lod_cutoff_is_stratum_count": *true' "$WORK/st_mixs.params.json" 2>/dev/null \
+           || grep -q 'lod_cutoff_is_stratum_count' "$WORK/st_mixs.params.json" 2>/dev/null; then ok
+        else bad "params.json does not flag lod_cutoff as a stratum count"; fi
+    fi
+    # Refusals.
+    expect_exit 1 "--stratify-cutoff with --lod-cutoff" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --lod-cutoff 2.5 --stratify-cutoff --out "$WORK/st_e1"
+    expect_exit 1 "--stratify-cutoff with --kde-subsample" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --kde-subsample 10 --stratify-cutoff --out "$WORK/st_e2"
+}
+
 echo "  binary: $GARLIC"
 [ -x "$GARLIC" ] || { echo "ERROR: $GARLIC is not executable. Run make in src/ first."; exit 1; }
 echo "  version: $("$GARLIC" --version 2>&1 | head -1)"
@@ -2948,12 +3011,14 @@ mk_tgls "$WORK/gq30.tgls.gz" 30
 mk_tgls "$WORK/gq30_genome.tgls.gz" 30 "$EX/example.tped.gz"
 mk_beagle "$WORK/c21.exact.beagle.gz" exact
 mk_beagle "$WORK/c21.lowcov.beagle.gz" lowcov
+mk_beagle "$WORK/c21.mixed.beagle.gz" mixed
 
 unit_tests
 golden
 determinism
 likelihood_guards
 beagle_input
+stratified_cutoff
 ind_metadata
 vcf_input
 vcf_likelihoods

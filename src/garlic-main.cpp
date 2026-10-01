@@ -166,6 +166,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     const int    &M                = opt.M;
     const int    &NCLUST           = opt.NCLUST;
     const int    &KDE_SUBSAMPLE    = opt.KDE_SUBSAMPLE;
+    const bool   &STRATIFY_CUTOFF  = opt.STRATIFY_CUTOFF;
     const int    &LD_SUBSAMPLE     = opt.LD_SUBSAMPLE;
     const bool   &RAW_LOD          = opt.RAW_LOD;
     const bool   &PHASED           = opt.PHASED;
@@ -319,15 +320,63 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
         catch (...) { logCurrentException("writing the raw LOD windows"); res.status = POP_ERROR; return res; }
     }
 
+    //--stratify-cutoff: filled by the selector below, consumed by the
+    //assembly and the per-individual report.
+    vector<IndStandardization> indStd;
+    vector<double> indCutoff;
+
     if (AUTO_CUTOFF){
         //if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
         bool cutoffOK = true;
-        if(kdeResult == NULL)
+        if (STRATIFY_CUTOFF)
         {
-            LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK,
-                                         chrRole, CHR_AUTOSOME);
+            //The window-size search (kdeResult != NULL) chose its size on the
+            //pooled density; the cutoff is then re-selected here per stratum
+            //at that size.
+            int nStrata = selectLODCutoffStratified(winDataByChr, indData, makeKDEFilename(outfile, winsize),
+                                                    (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK,
+                                                    chrRole, CHR_AUTOSOME, indStd);
+            LOD_CUTOFF = nStrata;
+            if (cutoffOK)
+            {
+                indCutoff.resize(indStd.size());
+                for (unsigned int i = 0; i < indStd.size(); i++) indCutoff[i] = indStd[i].cutoff;
+            }
         }
-        else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize, cutoffOK);
+        else
+        {
+            if(kdeResult == NULL)
+            {
+                LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK,
+                                             chrRole, CHR_AUTOSOME);
+            }
+            else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize, cutoffOK);
+
+            //One cutoff for everyone assumes everyone carries the same evidence
+            //per window.  The location of an individual's non-autozygous mode
+            //says whether that holds; when the cohort splits into more than one
+            //stratum, the pooled valley is pulled by the shallow members and
+            //over-calls them.  Said here, where it can still be acted on.
+            if (cutoffOK)
+            {
+                vector<double> sm; vector<int> ss;
+                int n = countEvidenceStrata(winDataByChr, indData, (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize),
+                                            chrRole, CHR_AUTOSOME, sm, ss);
+                if (n > 1)
+                {
+                    LOG.err("WARNING: the individuals do not all carry the same evidence per window: their");
+                    LOG.err("\tnon-autozygous LOD modes fall into", n, false);
+                    LOG.errn(" strata (individuals at median mode:");
+                    for (int k = 0; k < n; k++)
+                    {
+                        LOG.err(k ? "," : "", ss[k], false);
+                        LOG.err(" at", sm[k], false);
+                    }
+                    LOG.err(").  One pooled cutoff over-calls the shallower stratum; see", ARG_STRATIFY_CUTOFF, false);
+                    LOG.err(" and <out>.ind.tsv.");
+                }
+            }
+        }
 
         //A failed KDE used to return -1, which main then used as the cutoff and
         //happily wrote a complete, plausible-looking .roh.bed from it.
@@ -337,22 +386,38 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
             res.status = POP_ERROR; return res;
         }
 
-        LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
+        if (STRATIFY_CUTOFF)
+        {
+            double lo = indStd[0].cutoff, hi = indStd[0].cutoff;
+            for (unsigned int i = 1; i < indStd.size(); i++)
+            { if (indStd[i].cutoff < lo) lo = indStd[i].cutoff; if (indStd[i].cutoff > hi) hi = indStd[i].cutoff; }
+            LOG.log("Per-individual LOD score cutoffs range from", lo, false);
+            LOG.log(" to", hi, false);
+            LOG.log("; see <out>.ind.tsv.");
+        }
+        else LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
         //Estimated on the autosomes and applied to the sex chromosome, which
         //is what Cotter et al. (2024) did and for the same reason.  Report
         //what the sex chromosome alone would have given, so the assumption is
         //visible rather than implicit.
         const int sexWin = (SEXCHR_WINSIZE > 0) ? SEXCHR_WINSIZE : winsize;
-        reportSexChrLODCutoff(winDataByChr, indData, chrRole,
-                              (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : sexWin), sexWin,
-                              SEXCHR_CUTOFF_SET ? SEXCHR_LOD_CUTOFF : LOD_CUTOFF,
-                              SEXCHR_CUTOFF_SET);
+        //The comparison is between one autosomal cutoff and what the sex
+        //chromosome alone gives; with a cutoff per individual there is no one
+        //number to compare, so the report is skipped and the log says so.
+        if (!STRATIFY_CUTOFF)
+            reportSexChrLODCutoff(winDataByChr, indData, chrRole,
+                                  (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : sexWin), sexWin,
+                                  SEXCHR_CUTOFF_SET ? SEXCHR_LOD_CUTOFF : LOD_CUTOFF,
+                                  SEXCHR_CUTOFF_SET);
+        else if (haveSexChr)
+            LOG.log("Shared sex chromosome called at each individual's stratum cutoff; the sex-chromosome cutoff report does not apply.");
     }
     else cout << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
     if (SEXCHR_CUTOFF_SET && haveSexChr)
         LOG.log("User defined LOD score cutoff on the shared sex chromosome:", SEXCHR_LOD_CUTOFF);
 
-    try { writeIndReport(outfile + ".ind.tsv", indReport, indData, winsize, LOD_CUTOFF, likelihoodInput); }
+    try { writeIndReport(outfile + ".ind.tsv", indReport, indData, winsize, LOD_CUTOFF, likelihoodInput,
+                         STRATIFY_CUTOFF && AUTO_CUTOFF ? &indStd : NULL); }
     catch (...) { logCurrentException("writing the per-individual report"); res.status = POP_ERROR; return res; }
     {
         //Half a window of information is where the LOD stops meaning what the
@@ -379,7 +444,8 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     ROHLength *rohLength;
     vector< ROHData * > *rohDataByInd = assembleROHWindows(winDataByChr, mapDataByChr, indData,
                                         centro, LOD_CUTOFF, &rohLength, winsize, MAX_GAP, OVERLAP_FRAC, CM,
-                                        chrRole, SEXCHR_LOD_CUTOFF, SEXCHR_CUTOFF_SET, SEXCHR_WINSIZE);
+                                        chrRole, SEXCHR_LOD_CUTOFF, SEXCHR_CUTOFF_SET, SEXCHR_WINSIZE,
+                                        indCutoff.empty() ? NULL : &indCutoff);
 
     releaseWinData(winDataByChr);
     
@@ -1435,6 +1501,10 @@ int main(int argc, char *argv[])
             v.str(""); v << pop.winsize;      resolved.push_back(make_pair("winsize", v.str()));
             v.str(""); v << pop.overlapFrac;  resolved.push_back(make_pair("overlap_frac", v.str()));
             v.str(""); v << pop.lodCutoff;    resolved.push_back(make_pair("lod_cutoff", v.str()));
+            //Under --stratify-cutoff that number is the COUNT of strata and
+            //the LOD cutoff differs per individual (<out>.ind.tsv); a reader
+            //must not take it for a LOD.
+            if (opt.STRATIFY_CUTOFF && opt.AUTO_CUTOFF) resolved.push_back(make_pair("lod_cutoff_is_stratum_count", "true"));
             //Only when the run had one: on an autosome-only run these would
             //be the autosomal numbers wearing another name, which reads as a
             //sex chromosome having been analysed.
