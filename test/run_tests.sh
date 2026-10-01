@@ -198,7 +198,7 @@ unweighted|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --win
 chr_subset|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --chr chr21 chr22|roh.bed
 multiclass|--tped $EX/example.tped.gz --tfam $EX/example.tfam --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 1e5 2e5 3e5 5e5 1e6 2e6 3e6 4e6 5e6 6e6 7e6|roh.bed
 tgls_gl|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $EX/example.tgls.gz --gl-type GL --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
-c21_unweighted|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz
+c21_unweighted|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz ind.tsv
 c21_autocutoff|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001|roh.bed
 c21_autowinsize|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --auto-winsize --winsize 30 --error 0.001|roh.bed
 c21_weighted|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --map $EX/chr21.map.gz --weighted --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
@@ -209,7 +209,7 @@ c21_rawlod|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --wins
 c21_freqonly|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --error 0.001 --freq-only|freq.gz
 c21_tgls_gq30|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --tgls $WORK/gq30.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
 tgls_gq|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $WORK/gq30_genome.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
-c21_beagle_lowcov|--gl-beagle $WORK/c21.lowcov.beagle.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz
+c21_beagle_lowcov|--gl-beagle $WORK/c21.lowcov.beagle.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz ind.tsv
 "
 
 golden() {
@@ -2895,11 +2895,27 @@ beagle_input() {
         else bad "EM frequencies on degenerate triplets differ from the counted ones"; fi
         tracts=$(grep -v '^track' "$WORK/bg_exact.roh.bed" | wc -l | tr -d ' ')
         if [ "$tracts" -gt 0 ]; then ok; else bad "beagle exact case called 0 ROH -- vacuous"; fi
+        # The per-individual report agrees too, except that dropout_hat is NA
+        # for called input and near 0 for degenerate triplets: there is no
+        # dropout to find, but the estimate is a maximiser over ~2,400
+        # expected hets per individual here, so a het deficit from sampling
+        # alone reads as a few hundredths (1/sqrt(2400) is 0.02).
+        grep -v '^##' "$WORK/bg_ref.ind.tsv"   | cut -f1-8 > "$WORK/bg_ref.ind.cols"
+        grep -v '^##' "$WORK/bg_exact.ind.tsv" | cut -f1-8 > "$WORK/bg_exact.ind.cols"
+        if [ -s "$WORK/bg_ref.ind.cols" ] && cmp -s "$WORK/bg_ref.ind.cols" "$WORK/bg_exact.ind.cols"; then ok
+        else bad "per-individual report differs between TPED and degenerate beagle input"; fi
+        if grep -v '^##' "$WORK/bg_ref.ind.tsv" | awk 'NR>1 && $9 != "NA" {bad=1} END {exit bad}' \
+           && grep -v '^##' "$WORK/bg_exact.ind.tsv" | awk 'NR>1 && ($9 == "NA" || $9 + 0 > 0.05) {bad=1} END {exit bad}'; then ok
+        else bad "dropout_hat should be NA for called input and below 0.05 for degenerate triplets"; fi
     fi
     # The low-coverage fixture has flat triplets; the log must count them.
     # shellcheck disable=SC2086
     $GARLIC --gl-beagle "$WORK/c21.lowcov.beagle.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/bg_low" >/dev/null 2>&1
     if grep -q "flat triplet" "$WORK/bg_low.log" 2>/dev/null; then ok; else bad "the log does not report flat (no-information) triplets"; fi
+    # Its report must show fewer informative sites than the window size and a
+    # dropout estimate of 0 -- the fixture has no reference bias.
+    if grep -v '^##' "$WORK/bg_low.ind.tsv" | awk 'NR>1 && ($4 >= 1 || $6 >= 60 || $9 == "NA" || $9 + 0 > 0.05) {bad=1} END {exit bad}'; then ok
+    else bad "low-coverage report: expected frac_informative < 1, p05 < winsize and dropout_hat below 0.05"; fi
 
     # Refusals.
     expect_exit 1 "--gl-beagle without --tfam" "$GARLIC" --gl-beagle "$WORK/c21.exact.beagle.gz" $common --out "$WORK/bg_e1"

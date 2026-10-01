@@ -355,6 +355,10 @@ size classes across the columns.  The denominator is stated in the header, as
 are the size-class boundaries actually used, so the fractions can be recomputed
 or compared across runs.
 
+\paragraph{The per-individual information report.}  Every run also writes {\tt <out>.ind.tsv} (per population when there are several), one row per individual.  A window's LOD is a sum over the sites in it, and a site that carries no information for an individual --- a missing genotype, or a flat likelihood triplet from a site with no reads --- contributes exactly 0, so two individuals with the same window size can be summing very different amounts of evidence.  The report records, per individual: {\tt n\_sites}, the analysed sites on chromosomes where the individual is diploid; {\tt frac\_informative}, the fraction of them with a called genotype or a non-flat triplet; {\tt snps\_per\_window\_median} and {\tt \_p05}, the median and 5th percentile of informative sites per window; {\tt n\_het\_expected}, the sum of $2p(1-p)$ over the sites used for the two statistics that follow; {\tt het\_obs\_exp}, observed over expected heterozygotes from called (or maximum-likelihood) genotypes; and, for {\tt --gl-beagle} only, {\tt dropout\_hat}, the profile-likelihood estimate of the probability that a true heterozygote was observed as a homozygote.  The last two are taken over the sites in windows whose LOD is below 0 --- a cutoff-free stand-in for ``not autozygous'', chosen so the report can be computed while the genotype matrices are still resident rather than holding them until the cutoff is known --- and so are not confounded by the individual's own autozygosity.  {\tt garlic} warns when an individual's 5th percentile falls below half the window size.
+
+Two cautions on reading it.  {\tt het\_obs\_exp} is the ordinary sample-quality statistic for called data; it is {\em not} a low-depth estimator --- at $2\times$ it reads about $0.5$ with no bias at all, because the maximum-likelihood call at one or two reads is a homozygote.  {\tt dropout\_hat}, which models the reads rather than the call, reads $0$ there, and rises with allelic dropout or reference bias (about $0.07$ at $4\times$ for an ALT read fraction of $0.35$ at heterozygotes, in simulation).  Both have sampling noise of roughly $1/\sqrt{\tt n\_het\_expected}$ --- a few hundredths on one chromosome, a few thousandths genome-wide --- so read them against the cohort rather than as absolutes.  Neither corrects anything: in simulation, read-level reference bias did not move the calls at $2\times$ and above, so no correction is applied; the report is there so that an individual whose data differ from the rest of the cohort is visible.
+
 There are two things that fraction can be taken of, and {\tt
 --froh-denominator} chooses between them.  {\tt analyzed}, the default and what
 {\tt garlic} has always done, is the span the markers cover: from the first to
@@ -476,7 +480,7 @@ without it every sample is labelled {\tt unknown} and the analysis is pooled.
 
 With one population the output file names are unchanged.  With more than one,
 the population label is inserted before the extension:
-{\tt <out>.<POP>.roh.bed}, {\tt <out>.<POP>.froh.tsv},
+{\tt <out>.<POP>.roh.bed}, {\tt <out>.<POP>.froh.tsv}, {\tt <out>.<POP>.ind.tsv},
 {\tt <out>.<POP>.params.json} and {\tt <out>.<POP>.<winsize>SNPs.kde}.  The
 {\tt .log}, {\tt .error} and {\tt .freq.gz} files are written once for the
 whole run.
@@ -781,6 +785,11 @@ sequence data" under Input Files.
 LOD's per-site term is averaged over the genotypes with the likelihood as weight, called
 genotypes reproduce a TPED run exactly, and allele frequencies come from an EM over the
 likelihoods. See "Genotype likelihood input" under Input Files.
+
+Every run writes <out>.ind.tsv: per individual, the fraction of informative sites, the
+median and 5th percentile of informative sites per window, the observed/expected
+heterozygote ratio in non-autozygous windows and, with --gl-beagle, a dropout estimate.
+Diagnostic only. See "The per-individual information report" under Output Files.
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 

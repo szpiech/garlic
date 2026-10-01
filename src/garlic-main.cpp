@@ -289,6 +289,16 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
                                       MAX_GAP, USE_GL,
                                       SEXCHR_WINSIZE, chrRole);
     }
+    //Computed here, while the genotype matrices are still resident, and
+    //written once the cutoff is known.  Its non-autozygous rule is cutoff-free
+    //(window LOD < 0) for exactly this reason: holding the matrices until the
+    //KDE has run would raise peak memory for a diagnostic.
+    const bool likelihoodInput = USE_GL && GLDataByChr != NULL && GLDataByChr->size() > 0
+                                 && GLDataByChr->at(0)->likelihood;
+    vector<IndReportRow> indReport = computeIndReport(hapDataByChr, freqDataByChr, GLDataByChr,
+                                                      winDataByChr, indData, winsize, error, USE_GL,
+                                                      chrRole);
+
     releaseHapData(hapDataByChr);
     if (freqDataByChr != NULL) releaseFreqData(freqDataByChr);
     if (USE_GL) releaseGLData(GLDataByChr);
@@ -341,6 +351,28 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     else cout << "User defined LOD score cutoff: " << LOD_CUTOFF << "\n";
     if (SEXCHR_CUTOFF_SET && haveSexChr)
         LOG.log("User defined LOD score cutoff on the shared sex chromosome:", SEXCHR_LOD_CUTOFF);
+
+    try { writeIndReport(outfile + ".ind.tsv", indReport, indData, winsize, LOD_CUTOFF, likelihoodInput); }
+    catch (...) { logCurrentException("writing the per-individual report"); res.status = POP_ERROR; return res; }
+    {
+        //Half a window of information is where the LOD stops meaning what the
+        //window size says it means; name the individuals, since the fix
+        //(depth, or a site list shared across the cohort) is per individual.
+        int nThin = 0; string thinNames;
+        for (unsigned int i = 0; i < indReport.size(); i++)
+            if (indReport[i].snpsPerWindowP05 < 0.5 * winsize)
+            {
+                if (nThin < 5) thinNames += (nThin ? ", " : "") + indData->indID[i];
+                nThin++;
+            }
+        if (nThin > 0)
+        {
+            LOG.err("WARNING:", nThin, false);
+            LOG.err(" individual(s) have fewer than half the window size in informative sites in 5% of");
+            LOG.err("\twindows or more (" + thinNames + (nThin > 5 ? ", ..." : "") + "); see <out>.ind.tsv.");
+            LOG.err("\tTheir window LODs sum less evidence than the window size implies.");
+        }
+    }
 
     cout << "Assembling ROH windows\n";
     //Assemble ROH for each individual in each pop

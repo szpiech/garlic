@@ -228,7 +228,7 @@ together gives each of them exactly what analysing it alone gives; they do not i
 
 With ONE population nothing changes: the file names, the numbers and the log are what they
 always were.  With more than one, the label is inserted before the extension --
-<out>.<POP>.roh.bed, <out>.<POP>.froh.tsv, <out>.<POP>.params.json,
+<out>.<POP>.roh.bed, <out>.<POP>.froh.tsv, <out>.<POP>.ind.tsv, <out>.<POP>.params.json,
 <out>.<POP>.<winsize>SNPs.kde -- while .log, .error and .freq.gz are written once for the run.
 Anything that globs <out>.roh.bed will need to account for that.
 
@@ -457,6 +457,19 @@ which have the Hardy-Weinberg prior already folded in. In simulation this holds 
 autozygous fraction at its true value down to 2x; below that the automatic cutoff cannot be
 placed whatever the input, and cohorts of mixed depth are over-called in their shallow
 members -- see the manual, "Genotype likelihood input".
+
+Every run writes <out>.ind.tsv, a per-individual information report. A window LOD is a sum
+over its sites, and a site with no information for an individual (missing genotype, or a
+flat likelihood triplet) contributes exactly 0, so two individuals with the same window size
+can be summing very different amounts of evidence. Per individual: the fraction of
+informative sites, the median and 5th percentile of informative sites per window, the
+observed/expected heterozygote ratio over windows whose LOD is below 0 (a cutoff-free
+stand-in for "not autozygous"), and, for --gl-beagle, dropout_hat, a profile-likelihood
+estimate of P(true het observed as hom) that is 0 without allelic dropout and rises with it.
+garlic warns when an individual's 5th percentile is below half the window size. The het
+ratio is a sample-quality statistic for called data and NOT a low-depth estimator (it reads
+~0.5 at 2x with no bias); dropout_hat is. Both carry sampling noise of about
+1/sqrt(n_het_expected), which the table states. Nothing is corrected from this report.
 
 05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers. ***I'm having trouble getting mscOS versions to compile, so the current binary for mscOS is still v1.6.0 and still has this bug.***
 

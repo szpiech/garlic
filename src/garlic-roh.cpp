@@ -532,6 +532,192 @@ double lodGL(const float *L, const double &freq, const double &error)
     return log10((L0 * a0 + L1 * a1 + L2 * a2) / (L0 * n0 + L1 * n1 + L2 * n2));
 }
 
+//Profile marginal log-likelihood of dropout d for one individual over the
+//sites listed, likelihood input only.  Confusion C[true][obs]: a true
+//heterozygote is observed as a homozygote with probability d (toward the
+//non-counted allele -- REF in ANGSD's polarity -- the direction reference
+//bias takes); a true homozygote is observed as a heterozygote with
+//probability `error`.  P(reads | true g) = sum_obs C[g][obs] L(obs).
+static double dropoutLogLik(double d, double error,
+                            const vector<const float *> &L, const vector<double> &f)
+{
+    const double c00 = 1 - error, c01 = error;
+    const double c10 = d, c11 = 1 - d;
+    const double c21 = error, c22 = 1 - error;
+    double ll = 0;
+    for (size_t k = 0; k < L.size(); k++)
+    {
+        const double p = f[k];
+        const double w0 = (1 - p) * (1 - p), w1 = 2 * p * (1 - p), w2 = p * p;
+        const double l0 = L[k][0], l1 = L[k][1], l2 = L[k][2];
+        const double t0 = c00 * l0 + c01 * l1;
+        const double t1 = c10 * l0 + c11 * l1;
+        const double t2 = c21 * l1 + c22 * l2;
+        const double z = w0 * t0 + w1 * t1 + w2 * t2;
+        if (z > 0) ll += log(z);
+    }
+    return ll;
+}
+
+static double percentile(vector<double> &v, double q)
+{
+    if (v.empty()) return 0.0 / 0.0;
+    sort(v.begin(), v.end());
+    double pos = q * (v.size() - 1);
+    size_t lo = size_t(pos);
+    if (lo + 1 >= v.size()) return v.back();
+    double frac = pos - lo;
+    return v[lo] * (1 - frac) + v[lo + 1] * frac;
+}
+
+vector<IndReportRow> computeIndReport(vector< HapData * > *hapDataByChr,
+                                      vector< FreqData * > *freqDataByChr,
+                                      vector< GenoLikeData * > *GLDataByChr,
+                                      vector< WinData * > *winDataByChr,
+                                      IndData *indData,
+                                      int winsize, double error, bool USE_GL,
+                                      const vector<ChrRole> *role)
+{
+    const int nind = indData->nind;
+    const bool LIKE = USE_GL && GLDataByChr != NULL && GLDataByChr->size() > 0 && GLDataByChr->at(0)->likelihood;
+    vector<IndReportRow> rows(nind);
+    const double NaN = 0.0 / 0.0;
+
+    for (int ind = 0; ind < nind; ind++)
+    {
+        IndReportRow &r = rows[ind];
+        r.nSites = 0; r.nInformative = 0;
+        r.hetObsExp = NaN; r.dropoutHat = NaN;
+        vector<double> perWindow;
+        double hetObs = 0, hetExp = 0;
+        vector<const float *> L; vector<double> fNA;
+
+        for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
+        {
+            //Only chromosomes where this individual is diploid count; a
+            //heterogametic individual's X windows are masked downstream.
+            if (role != NULL && chr < role->size() && role->at(chr) != CHR_AUTOSOME
+                    && !eligibleForCalling(role->at(chr), indData->zygo[ind])) continue;
+            HapData *hap = hapDataByChr->at(chr);
+            const int nloci = hap->nloci;
+            const double *freq = freqDataByChr->at(chr)->freq.data();
+            const float *like = LIKE ? GLDataByChr->at(chr)->like[0] : NULL;
+            const size_t lstride = LIKE ? 3 * size_t(GLDataByChr->at(chr)->nind) : 0;
+            WinData *win = winDataByChr->at(chr);
+
+            //Informative flags, and a sliding count over winsize.
+            vector<unsigned char> inf(nloci);
+            for (int i = 0; i < nloci; i++)
+            {
+                bool ok;
+                if (LIKE)
+                {
+                    const float *t = like + size_t(i) * lstride + 3 * size_t(ind);
+                    ok = !(t[0] == t[1] && t[1] == t[2]);
+                }
+                else ok = genoIsCalled(hap->data[i][ind]);
+                inf[i] = ok ? 1 : 0;
+                r.nSites++;
+                if (ok) r.nInformative++;
+            }
+            if (nloci >= winsize)
+            {
+                int c = 0;
+                for (int i = 0; i < winsize; i++) c += inf[i];
+                perWindow.push_back(c);
+                for (int i = 1; i + winsize <= nloci; i++)
+                {
+                    c += inf[i + winsize - 1] - inf[i - 1];
+                    perWindow.push_back(c);
+                }
+            }
+
+            //Non-autozygous sites: those whose window (the one starting at the
+            //site) has a LOD below 0.  The trailing winsize-1 sites have no
+            //window of their own and are left out.
+            for (int i = 0; i + winsize <= nloci && i < win->nloci; i++)
+            {
+                const double w = win->data[ind][i];
+                if (w == MISSING || !(w < 0)) continue;
+                const double p = freq[i];
+                if (p <= 0 || p >= 1) continue;
+                if (!inf[i]) continue;
+                if (LIKE)
+                {
+                    L.push_back(like + size_t(i) * lstride + 3 * size_t(ind));
+                    fNA.push_back(p);
+                    //The het ratio from the ML call is reported too, so the
+                    //two can be compared on the same sites.
+                }
+                const geno_t g = hap->data[i][ind];
+                if (genoIsCalled(g))
+                {
+                    hetObs += (g == 1);
+                    hetExp += 2 * p * (1 - p);
+                }
+            }
+        }
+
+        r.snpsPerWindowMedian = percentile(perWindow, 0.5);
+        r.snpsPerWindowP05    = percentile(perWindow, 0.05);
+        r.hetExpected = hetExp;
+        if (hetExp > 0) r.hetObsExp = hetObs / hetExp;
+
+        if (LIKE && L.size() >= 100)
+        {
+            //Golden-section search on [0, 0.9]; the profile is unimodal in d.
+            double a = 0.0, b = 0.9;
+            const double gr = (sqrt(5.0) - 1) / 2;
+            double c = b - gr * (b - a), dd = a + gr * (b - a);
+            double fc = dropoutLogLik(c, error, L, fNA), fd = dropoutLogLik(dd, error, L, fNA);
+            for (int it = 0; it < 40 && (b - a) > 1e-4; it++)
+            {
+                if (fc > fd) { b = dd; dd = c; fd = fc; c = b - gr * (b - a); fc = dropoutLogLik(c, error, L, fNA); }
+                else         { a = c;  c = dd; fc = fd; dd = a + gr * (b - a); fd = dropoutLogLik(dd, error, L, fNA); }
+            }
+            double dhat = 0.5 * (a + b);
+            //The edge is a real answer; report 0 rather than 0.00003.
+            if (dhat < 1e-3) dhat = 0;
+            r.dropoutHat = dhat;
+        }
+    }
+    return rows;
+}
+
+void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *indData,
+                    int winsize, double lodCutoff, bool likelihoodInput)
+{
+    ofstream out;
+    out.open(outfile.c_str(), ios::binary);
+    if (out.fail())
+    {
+        LOG.err("ERROR: Failed to open", outfile);
+        throw 0;
+    }
+    out << "## garlic per-individual information report\n";
+    out << "## winsize\t" << winsize << "\n";
+    out << "## lod_cutoff\t" << lodCutoff << "\n";
+    out << "## nonautozygous_rule\twindows with LOD < 0 (cutoff-free; used for het_obs_exp and dropout_hat)\n";
+    out << "## het_obs_exp\tobserved/expected heterozygotes from called or maximum-likelihood genotypes in those windows; a sample-quality statistic for called data, NOT a low-depth estimator\n";
+    if (likelihoodInput)
+        out << "## dropout_hat\tprofile-likelihood estimate of P(true het observed as hom) from the likelihood triplets in those windows; 0 means no detectable allelic dropout / reference bias; diagnostic only\n";
+    out << "## n_het_expected\tsum of 2p(1-p) over the sites behind het_obs_exp and dropout_hat; their sampling noise is about 1/sqrt(n_het_expected), so read both against the cohort, not as absolutes\n";
+    out << "ind\tpop\tn_sites\tfrac_informative\tsnps_per_window_median\tsnps_per_window_p05\tn_het_expected\thet_obs_exp\tdropout_hat\n";
+    for (unsigned int i = 0; i < rows.size(); i++)
+    {
+        const IndReportRow &r = rows[i];
+        out << indData->indID[i] << "\t" << indData->pop[i] << "\t" << r.nSites << "\t";
+        out << (r.nSites > 0 ? double(r.nInformative) / double(r.nSites) : 0.0) << "\t";
+        out << r.snpsPerWindowMedian << "\t" << r.snpsPerWindowP05 << "\t";
+        out << (long long)(r.hetExpected + 0.5) << "\t";
+        if (r.hetObsExp == r.hetObsExp) out << r.hetObsExp; else out << "NA";
+        out << "\t";
+        if (r.dropoutHat == r.dropoutHat) out << r.dropoutHat; else out << "NA";
+        out << "\n";
+    }
+    out.close();
+}
+
 vector< ROHData * > *initROHData(IndData *indData)
 {
     vector< ROHData * > *rohDataByInd = new vector< ROHData * >;

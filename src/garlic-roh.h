@@ -77,6 +77,46 @@ void setGMMParams(int maxIter, double tol);
 //popLabel is empty for a single-population run and pooled marks
 //--pool-populations, so a table can be told apart from one produced by a file
 //that really had a single population.
+//Per-individual information report, <out>.ind.tsv.
+//
+//What a window's LOD means depends on how many of its sites carried
+//information for THIS individual: a missing genotype (or a flat likelihood
+//triplet) contributes exactly 0, so two individuals with the same window size
+//can be summing very different amounts of evidence.  This records, per
+//individual: the fraction of sites with information, the median and 5th
+//percentile of informative sites per window, the observed/expected
+//heterozygote ratio over the sites in windows judged non-autozygous (window
+//LOD < 0, a cutoff-free rule so this can run before the genotype matrices are
+//released), and, for likelihood input only, the allelic-dropout estimate
+//d-hat: the maximiser of the profile marginal likelihood over those sites
+//under a confusion model where a true heterozygote is observed as a
+//homozygote with probability d.  d-hat is 0 for an unbiased individual and
+//rises with reference bias; it is a diagnostic, and nothing corrects for it.
+//The het ratio from called genotypes is NOT a low-depth estimator -- under
+//low depth it reads a large deficit with no bias at all -- which the manual
+//says; it is the ordinary sample-quality statistic for called data.
+struct IndReportRow
+{
+    long long nSites;        //analysed sites (autosomes + shared sex chromosome where diploid)
+    long long nInformative;  //called genotype / non-flat triplet
+    double    snpsPerWindowMedian;
+    double    snpsPerWindowP05;
+    double    hetExpected;   //sum of 2p(1-p) over the non-autozygous sites used: the sample size behind the two statistics below
+    double    hetObsExp;     //NaN when no expected hets
+    double    dropoutHat;    //NaN for non-likelihood input
+};
+
+vector<IndReportRow> computeIndReport(vector< HapData * > *hapDataByChr,
+                                      vector< FreqData * > *freqDataByChr,
+                                      vector< GenoLikeData * > *GLDataByChr,
+                                      vector< WinData * > *winDataByChr,
+                                      IndData *indData,
+                                      int winsize, double error, bool USE_GL,
+                                      const vector<ChrRole> *role);
+
+void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *indData,
+                    int winsize, double lodCutoff, bool likelihoodInput);
+
 void writeFROH(string outfile,
                vector< ROHData * > *rohDataByInd,
                vector< MapData * > *mapDataByChr,
