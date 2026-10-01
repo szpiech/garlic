@@ -117,6 +117,8 @@ choose a window size of 60 SNPs, then you would run
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --out example}
 ~\\\\
+\noindent The automatic cutoff is the valley between the two modes of the window LOD score density, pooled over the cohort, and it presumes that the cohort contains runs: a cohort with few or none has a single mode, and what happens then depends on the input.  With likelihood input {\tt garlic} finds no valley and stops, asking for {\tt --lod-cutoff}; with called genotypes it may find a spurious shoulder and call a few percent of every genome (a four-individual simulated cohort with no runs at all was called at $5$--$8\%$).  A cohort of a handful of individuals, or one expected to carry little autozygosity, is therefore a case for a cutoff carried over from a comparable, larger cohort rather than for the automatic rule.
+
 \noindent If you already know what LOD score cutoff to use (say you are
 analyzing more individuals from a previously studied population), you can use
 the {\tt --lod-cutoff} argument, i.e. if your LOD score cutoff is known to be
