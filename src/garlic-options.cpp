@@ -67,19 +67,21 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     opt.tpedfile = params->getStringFlag(ARG_TPED);
     opt.tfamfile = params->getStringFlag(ARG_TFAM);
     opt.tglsfile = params->getStringFlag(ARG_TGLS);
+    opt.beaglefile = params->getStringFlag(ARG_BEAGLE);
     opt.popfile  = params->getStringFlag(ARG_POP);
     opt.vcffile  = params->getStringFlag(ARG_VCF);
     opt.VCF_PASS_ONLY = params->getBoolFlag(ARG_VCF_PASS_ONLY);
     opt.rohfile = params->getStringFlag(ARG_ROH_FILE);
     if (opt.rohfile.compare(DEFAULT_ROH_FILE) == 0) opt.rohfile.clear();
     argerr = argerr || checkRequiredFiles(opt.tpedfile, opt.tfamfile, opt.vcffile,
-                                          opt.tglsfile, params->getStringFlag(ARG_ROH_FILE));
-    argerr = argerr || checkPopFile(opt.popfile, opt.tpedfile, opt.vcffile);
+                                          opt.tglsfile, opt.beaglefile, params->getStringFlag(ARG_ROH_FILE));
+    argerr = argerr || checkPopFile(opt.popfile, opt.tpedfile, opt.vcffile, opt.beaglefile);
     if (argerr) return OPTIONS_USAGE_ERROR;
     if (opt.vcffile.compare(DEFAULT_VCF) != 0) {
         LOG.log("VCF file:", opt.vcffile);
         if (opt.VCF_PASS_ONLY) LOG.log("Skipping sites whose FILTER is not PASS.", "");
     }
+    else if (opt.beaglefile.compare(DEFAULT_BEAGLE) != 0) LOG.log("Beagle genotype likelihood file:", opt.beaglefile);
     else LOG.log("TPED file:", opt.tpedfile);
 
     opt.TPED_MISSING = params->getCharFlag(ARG_TPED_MISSING);
@@ -182,7 +184,7 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
 
 
     opt.GL_TYPE = params->getStringFlag(ARG_GL_TYPE);
-    argerr = argerr || checkGLType(opt.GL_TYPE, opt.tglsfile);
+    argerr = argerr || checkGLType(opt.GL_TYPE, opt.tglsfile, opt.beaglefile);
     LOG.log("Genotype likelihood format:", opt.GL_TYPE);
 
     opt.WEIGHTED = params->getBoolFlag(ARG_WEIGHTED);
@@ -522,6 +524,18 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
         //The readers throw on an unwritable output or a malformed record, and
         //nothing caught it here: --freq-only turned a diagnosable error into
         //SIGABRT with "terminating due to uncaught exception of type int".
+        if (opt.beaglefile.compare(DEFAULT_BEAGLE) != 0)
+        {
+            //The streaming frequency writers read genotypes; the EM frequency
+            //needs the whole likelihood matrix, which the analysis loads
+            //anyway and writes as <out>.freq.gz.
+            LOG.err("ERROR:", ARG_FREQ_ONLY, false);
+            LOG.err(" is not available with", ARG_BEAGLE, false);
+            LOG.err("; the full run writes the EM allele frequencies to <out>.freq.gz,");
+            LOG.err("\twhich --freq-file accepts.");
+            freeRNG();
+            return OPTIONS_USAGE_ERROR;
+        }
         try
         {
             if (opt.vcffile.compare(DEFAULT_VCF) != 0)

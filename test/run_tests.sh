@@ -60,6 +60,54 @@ mk_tgls_one() {
         printf "\n"
     }' | gzip > "$1"
 }
+# Builds a beagle genotype-likelihood fixture (ANGSD -doGlf 2 layout) from a
+# tracked .tped.  $1 = output, $2 = mode, $3 = source TPED (default chr21).
+#   exact   every called genotype becomes a degenerate triplet (1 for the
+#           observed genotype, 0 elsewhere) and a missing one the flat triplet;
+#           garlic must reproduce the TPED run on this byte for byte.
+#   lowcov  a deterministic pseudo-read model, so the marginalised emission is
+#           exercised on non-degenerate triplets with a golden checksum that
+#           does not depend on any awk's rand(): depth d = (NR*7 + i*3) mod 5,
+#           hom genotypes see d reads of their allele, a het sees them split
+#           by parity, per-base error 0.01.  Not realistic; deterministic.
+# The counted allele (allele2) is the first allele seen on the line, as the
+# TPED reader counts it, so the two runs agree on polarity -- lod() does not
+# care, but the frequency column does.
+mk_beagle() {
+    gz "${3:-$EX/chr21.tped.gz}" | awk -v mode="$2" 'BEGIN { e = 0.01 }
+    NR == 1 {
+        n = (NF - 4) / 2
+        printf "marker\tallele1\tallele2"
+        for (i = 0; i < n; i++) printf "\tInd%d\tInd%d\tInd%d", i, i, i
+        printf "\n"
+    }
+    {
+        one = ""; other = ""
+        for (i = 5; i <= NF; i++) if ($i != "0" && $i != "-9") { if (one == "") one = $i; else if ($i != one && other == "") other = $i }
+        if (other == "") other = one
+        printf "%s_%s\t%s\t%s", $1, $4, other, one
+        for (i = 5; i <= NF; i += 2) {
+            a = $i; b = $(i + 1); k = (i - 5) / 2
+            if (a == "0" || b == "0" || a == "-9" || b == "-9") { printf "\t0.333333\t0.333333\t0.333333"; continue }
+            g = (a == one) + (b == one)
+            if (mode == "exact") {
+                if (g == 0) printf "\t1\t0\t0"; else if (g == 1) printf "\t0\t1\t0"; else printf "\t0\t0\t1"
+                continue
+            }
+            d = (NR * 7 + k * 3) % 5
+            if (d == 0) { printf "\t0.333333\t0.333333\t0.333333"; continue }
+            if (g == 0) nalt = 0; else if (g == 2) nalt = d; else { h = int(d / 2); nalt = ((NR + k) % 2 == 0) ? h : d - h }
+            nref = d - nalt
+            L0 = (1 - e) ^ nref * e ^ nalt
+            L1 = 0.5 ^ d
+            L2 = e ^ nref * (1 - e) ^ nalt
+            m = L0; if (L1 > m) m = L1; if (L2 > m) m = L2
+            printf "\t%.6g\t%.6g\t%.6g", L0 / m, L1 / m, L2 / m
+        }
+        printf "\n"
+    }' | gzip > "$1"
+}
+
 # Compare gzipped output by content, not by bytes: gzip embeds an mtime.
 sumgz() { gzip -cd "$1" | { if command -v md5sum >/dev/null 2>&1; then md5sum; else md5 -q; fi; } | cut -d' ' -f1; }
 
@@ -161,6 +209,7 @@ c21_rawlod|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --wins
 c21_freqonly|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --error 0.001 --freq-only|freq.gz
 c21_tgls_gq30|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --tgls $WORK/gq30.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
 tgls_gq|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $WORK/gq30_genome.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
+c21_beagle_lowcov|--gl-beagle $WORK/c21.lowcov.beagle.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz
 "
 
 golden() {
@@ -2817,6 +2866,56 @@ bed_format() {
 
 mkdir -p "$WORK" "$GOLDEN"; : >"$WORK/failures"
 echo "garlic test suite"
+
+# ---------------------------------------------------------------------------
+# Genotype likelihood input (--gl-beagle).
+#
+# The emission marginalised over a likelihood triplet is a strict
+# generalisation of the hard-call one, so a beagle file of degenerate triplets
+# must reproduce the TPED run exactly -- calls AND frequencies (the EM lands
+# on the allele count frequency in one step).  The refusals cover the flag
+# combinations that would otherwise be read as something else.
+beagle_input() {
+    echo "== genotype likelihood input (--gl-beagle) =="
+    [ -f "$EX/chr21.tped.gz" ] || { echo "  SKIP  chr21 fixture not present"; return; }
+    common="--build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --quiet --force"
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/bg_ref" >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    $GARLIC --gl-beagle "$WORK/c21.exact.beagle.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/bg_exact" >/dev/null 2>"$WORK/bg_exact.err"
+    if [ $? -ne 0 ]; then bad "--gl-beagle on degenerate triplets failed to run"; sed -n '1,3p' "$WORK/bg_exact.err" | sed 's/^/        /'
+    else
+        if [ "$(sum "$WORK/bg_ref.roh.bed")" = "$(sum "$WORK/bg_exact.roh.bed")" ]; then ok
+        else bad "degenerate beagle triplets do not reproduce the TPED .roh.bed"; fi
+        # The SNP column differs by construction (a beagle marker is chr_pos,
+        # not an rsID), so compare chromosome, position, allele and frequency.
+        gz "$WORK/bg_ref.freq.gz"   | cut -f1,3-5 > "$WORK/bg_ref.freq.cols"
+        gz "$WORK/bg_exact.freq.gz" | cut -f1,3-5 > "$WORK/bg_exact.freq.cols"
+        if [ -s "$WORK/bg_ref.freq.cols" ] && cmp -s "$WORK/bg_ref.freq.cols" "$WORK/bg_exact.freq.cols"; then ok
+        else bad "EM frequencies on degenerate triplets differ from the counted ones"; fi
+        tracts=$(grep -v '^track' "$WORK/bg_exact.roh.bed" | wc -l | tr -d ' ')
+        if [ "$tracts" -gt 0 ]; then ok; else bad "beagle exact case called 0 ROH -- vacuous"; fi
+    fi
+    # The low-coverage fixture has flat triplets; the log must count them.
+    # shellcheck disable=SC2086
+    $GARLIC --gl-beagle "$WORK/c21.lowcov.beagle.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/bg_low" >/dev/null 2>&1
+    if grep -q "flat triplet" "$WORK/bg_low.log" 2>/dev/null; then ok; else bad "the log does not report flat (no-information) triplets"; fi
+
+    # Refusals.
+    expect_exit 1 "--gl-beagle without --tfam" "$GARLIC" --gl-beagle "$WORK/c21.exact.beagle.gz" $common --out "$WORK/bg_e1"
+    expect_exit 1 "--gl-beagle with --tped" "$GARLIC" --gl-beagle "$WORK/c21.exact.beagle.gz" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/bg_e2"
+    expect_exit 1 "--gl-beagle with --tgls" "$GARLIC" --gl-beagle "$WORK/c21.exact.beagle.gz" --tgls "$WORK/gq30.tgls.gz" --gl-type GQ --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/bg_e3"
+    expect_exit 1 "--gl-beagle with --gl-type" "$GARLIC" --gl-beagle "$WORK/c21.exact.beagle.gz" --gl-type GQ --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/bg_e4"
+    expect_exit 1 "--gl-beagle without --error" "$GARLIC" --gl-beagle "$WORK/c21.exact.beagle.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --quiet --force --out "$WORK/bg_e5"
+    expect_exit 1 "--gl-beagle with --freq-only" "$GARLIC" --gl-beagle "$WORK/c21.exact.beagle.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --error 0.001 --freq-only --quiet --force --out "$WORK/bg_e6"
+    # A TFAM with the wrong number of rows is matched by position and must not be guessed at.
+    gz "$EX/chr21.tfam.gz" | sed '$d' > "$WORK/short.tfam"
+    expect_exit 2 "--gl-beagle with a TFAM one row short" "$GARLIC" --gl-beagle "$WORK/c21.exact.beagle.gz" --tfam "$WORK/short.tfam" $common --out "$WORK/bg_e7"
+    # A file without the header loses its first site silently unless refused.
+    gz "$WORK/c21.exact.beagle.gz" | sed '1d' | gzip > "$WORK/nohdr.beagle.gz"
+    expect_exit 2 "beagle file without a header line" "$GARLIC" --gl-beagle "$WORK/nohdr.beagle.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/bg_e8"
+}
+
 echo "  binary: $GARLIC"
 [ -x "$GARLIC" ] || { echo "ERROR: $GARLIC is not executable. Run make in src/ first."; exit 1; }
 echo "  version: $("$GARLIC" --version 2>&1 | head -1)"
@@ -2831,11 +2930,14 @@ mk_tgls "$WORK/gq30.tgls.gz" 30
 # is NOT tracked, so on a fresh clone it skipped permanently; generated here
 # instead.  GQ 30 is an error rate of 0.001.
 mk_tgls "$WORK/gq30_genome.tgls.gz" 30 "$EX/example.tped.gz"
+mk_beagle "$WORK/c21.exact.beagle.gz" exact
+mk_beagle "$WORK/c21.lowcov.beagle.gz" lowcov
 
 unit_tests
 golden
 determinism
 likelihood_guards
+beagle_input
 ind_metadata
 vcf_input
 vcf_likelihoods

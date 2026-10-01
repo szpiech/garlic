@@ -79,6 +79,10 @@ extern const string ARG_TGLS;
 extern const string DEFAULT_TGLS;
 extern const string HELP_TGLS;
 
+extern const string ARG_BEAGLE;
+extern const string DEFAULT_BEAGLE;
+extern const string HELP_BEAGLE;
+
 extern const string ARG_GL_TYPE;
 extern const string DEFAULT_GL_TYPE;
 extern const string HELP_GL_TYPE;
@@ -310,7 +314,7 @@ param_t *getCLI(int argc, char *argv[], int &status);
 bool checkOutfileClobber(string outfile, bool force, string suffix = ".roh.bed");
 bool checkSeed(int seed);
 bool checkMaxWinsize(int maxWinsize, int winsize);
-bool checkPopFile(string popfile, string tpedfile, string vcffile);
+bool checkPopFile(string popfile, string tpedfile, string vcffile, string beaglefile);
 bool checkBuild(string BUILD);
 bool checkBuildAndCentromereFile(string BUILD, string centromereFile, bool NO_CENTROMERE);
 bool checkMultiWinsizes(vector<int> &multiWinsizes, bool &WINSIZE_EXPLORE, bool wasSet);
@@ -331,7 +335,7 @@ bool checkFROHDenominator(const string &mode, int &denom, bool CM, bool FROH,
 bool checkSexChrEstimates(double cutoff, bool cutoffSet, int winsize, bool winsizeSet,
                           bool WINSIZE_EXPLORE, bool FREQ_ONLY);
 bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet);
-bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile,
+bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile, string beaglefile,
                         string rohfile);
 bool checkMapFile(string mapfile, bool WEIGHTED);
 bool checkThreads(int numThreads);
@@ -349,7 +353,7 @@ bool makeOutdir(string dir);
 //boundaries, seed).  'resolved' holds pre-formatted JSON values.
 void writeParamsJSON(string file, param_t *params, vector< pair<string,string> > &resolved);
 void warnBoundsOverridesNclust(bool boundsSet, bool nclustSet);
-bool checkGLType(string TYPE, string tglsfile);
+bool checkGLType(string TYPE, string tglsfile, string beaglefile);
 bool checkWinsize(int winsize, bool WINSIZE_EXPLORE, bool AUTO_WINSIZE, bool WEIGHTED, bool FREQ_ONLY);
 bool checkMaxGap(int MAX_GAP);
 bool checkOverlapFrac(double OVERLAP_FRAC);

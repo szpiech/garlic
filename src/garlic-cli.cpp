@@ -114,6 +114,28 @@ const string HELP_POP = "A file mapping sample ID to population, replacing the p
 \tdata must have a row; extra rows are ignored and counted, so a\n\
 \tcohort-wide file can be used against a subset.";
 
+const string ARG_BEAGLE = "--gl-beagle";
+const string DEFAULT_BEAGLE = "none";
+const string HELP_BEAGLE = "Genotype likelihoods in beagle format, as written by ANGSD -doGlf 2: a\n\
+\theader of marker, allele1, allele2 and three columns per individual, then\n\
+\tone row per site with P(reads | allele1/allele1), P(reads | allele1/allele2)\n\
+\tand P(reads | allele2/allele2).  This is the input for low-coverage sequence\n\
+\tdata.  The window LOD is formed by marginalising over the triplet rather\n\
+\tthan from a called genotype, so an uncertain site contributes little\n\
+\tevidence instead of confident wrong evidence, and a site with no reads\n\
+\t(a flat triplet) contributes exactly 0.  Replaces --tped; --tfam is still\n\
+\trequired for individual IDs, population labels and sex, matched to the\n\
+\tbeagle columns by position (ANGSD's -b bam list order).  --error is the\n\
+\tautozygous state's allowance for a heterozygote, as with --tped.\n\
+\tAllele frequencies are estimated by EM over the likelihoods, which is\n\
+\tunbiased at low depth where frequencies from called genotypes are not;\n\
+\t--freq-file (e.g. a column of ANGSD's .mafs.gz) overrides them.\n\
+\tTwo cautions.  Give LIKELIHOODS, not posteriors: ANGSD -doPost/-doGeno\n\
+\toutput has the Hardy-Weinberg prior already folded in, and feeding it here\n\
+\tcounts that prior twice.  And beagle markers carry physical positions only,\n\
+\tso --weighted and --cm still need --map.  Below roughly 2x the automatic\n\
+\tLOD cutoff cannot be located whatever the input; see the manual.";
+
 const string ARG_TGLS = "--tgls";
 const string DEFAULT_TGLS = "none";
 const string HELP_TGLS = "A tgls file containing one per-genotype likelihood value per individual,\n\
@@ -580,6 +602,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_VCF_PASS_ONLY, DEFAULT_VCF_PASS_ONLY, "", HELP_VCF_PASS_ONLY);
 	params->addFlag(ARG_POP, DEFAULT_POP, "", HELP_POP);
 	params->addFlag(ARG_TGLS, DEFAULT_TGLS, "", HELP_TGLS);
+	params->addFlag(ARG_BEAGLE, DEFAULT_BEAGLE, "", HELP_BEAGLE);
 	params->addFlag(ARG_GL_TYPE, DEFAULT_GL_TYPE, "", HELP_GL_TYPE);
 	params->addFlag(ARG_MAP, DEFAULT_MAP, "", HELP_MAP);
 	params->addFlag(ARG_WEIGHTED, DEFAULT_WEIGHTED, "", HELP_WEIGHTED);
@@ -661,6 +684,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 		f.clear();
 		f.push_back(ARG_TPED);        f.push_back(ARG_TFAM);
 		f.push_back(ARG_VCF);         f.push_back(ARG_VCF_PASS_ONLY);
+		f.push_back(ARG_BEAGLE);
 		f.push_back(ARG_TGLS);        f.push_back(ARG_GL_TYPE);
 		f.push_back(ARG_MAP);         f.push_back(ARG_FREQ_FILE);
 		f.push_back(ARG_TPED_MISSING);
@@ -840,10 +864,11 @@ bool checkSeed(int seed){
 	return false;
 }
 
-bool checkPopFile(string popfile, string tpedfile, string vcffile){
+bool checkPopFile(string popfile, string tpedfile, string vcffile, string beaglefile){
 	if (popfile.compare(DEFAULT_POP) == 0) return false;
-	if (tpedfile.compare(DEFAULT_TPED) == 0 && vcffile.compare(DEFAULT_VCF) == 0){
-		LOG.err("ERROR: --pop needs input data; give --tped or --vcf.");
+	if (tpedfile.compare(DEFAULT_TPED) == 0 && vcffile.compare(DEFAULT_VCF) == 0
+	        && beaglefile.compare(DEFAULT_BEAGLE) == 0){
+		LOG.err("ERROR: --pop needs input data; give --tped, --vcf or --gl-beagle.");
 		return true;
 	}
 	return false;
@@ -1128,18 +1153,44 @@ bool checkBoundSizes(vector<double> &boundSizes, bool &AUTO_BOUNDS, bool wasSet)
 	return false;
 }
 
-bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile,
+bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string tglsfile, string beaglefile,
                         string rohfile)
 {
 	bool haveTped = (tpedfile.compare(DEFAULT_TPED) != 0);
 	bool haveVcf  = (vcffile.compare(DEFAULT_VCF)   != 0);
 	bool haveTfam = (tfamfile.compare(DEFAULT_TFAM) != 0);
 	bool haveRoh  = (rohfile.compare(DEFAULT_ROH_FILE) != 0);
+	bool haveBeagle = (beaglefile.compare(DEFAULT_BEAGLE) != 0);
 
-	if (haveTped && haveVcf)
+	if ((haveTped && haveVcf) || (haveBeagle && (haveTped || haveVcf)))
 	{
-		LOG.err("ERROR: --tped and --vcf are alternative sources of the same data; give one.");
+		LOG.err("ERROR: --tped, --vcf and --gl-beagle are alternative sources of the same data; give one.");
 		return true;
+	}
+	if (haveBeagle)
+	{
+		//Genotype likelihoods carry no sample metadata, and a .tgls file would
+		//be a second, incompatible statement of per-genotype uncertainty.
+		if (haveRoh)
+		{
+			LOG.err("ERROR:", ARG_ROH_FILE, false);
+			LOG.err(" reads calls from a file, so no ROH are called and", ARG_BEAGLE, false);
+			LOG.err(" is not used.");
+			return true;
+		}
+		if (!haveTfam)
+		{
+			LOG.err("ERROR:", ARG_BEAGLE, false);
+			LOG.err(" needs --tfam for individual IDs, population labels and sex, one row per");
+			LOG.err("\tbeagle individual in the same order.");
+			return true;
+		}
+		if (tglsfile.compare(DEFAULT_TGLS) != 0)
+		{
+			LOG.err("ERROR: --tgls and --gl-beagle are alternative statements of genotype uncertainty; give one.");
+			return true;
+		}
+		return false;
 	}
 	//--roh-file calls nothing, so the calling input is not merely unnecessary
 	//there: giving it would say the run should call ROH and read them from a
@@ -1155,7 +1206,7 @@ bool checkRequiredFiles(string tpedfile, string tfamfile, string vcffile, string
 	if (haveRoh) return false;
 	if (!haveTped && !haveVcf)
 	{
-		LOG.err("ERROR: Must provide genotypes, either --tped with --tfam, or --vcf.");
+		LOG.err("ERROR: Must provide genotypes: --tped with --tfam, --vcf, or --gl-beagle with --tfam.");
 		return true;
 	}
 	if (haveVcf && haveTfam)
@@ -1326,10 +1377,16 @@ void warnBoundsOverridesNclust(bool boundsSet, bool nclustSet){
 	}
 }
 
-bool checkGLType(string TYPE, string tglsfile)
+bool checkGLType(string TYPE, string tglsfile, string beaglefile)
 {
 	if ( TYPE.compare("GQ") != 0 && TYPE.compare("GL") != 0 && TYPE.compare("PL") != 0 && tglsfile.compare(DEFAULT_TGLS) != 0 ) {
 		LOG.err("ERROR: Must choose GQ/GL/PL for genotype likelihood format or provide a single error rate with --error.");
+		return true;
+	}
+	//A beagle file IS the likelihood; --gl-type names a per-genotype quality
+	//form that would be read from somewhere else.  Refuse rather than ignore.
+	if ( beaglefile.compare(DEFAULT_BEAGLE) != 0 && TYPE.compare(DEFAULT_GL_TYPE) != 0 ) {
+		LOG.err("ERROR: --gl-type has no meaning with --gl-beagle; the triplet is the likelihood.");
 		return true;
 	}
 	return false;

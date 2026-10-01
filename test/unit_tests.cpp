@@ -384,6 +384,106 @@ static void test_lod()
        "lod(het, error=0) is -inf (an impossible observation)");
 }
 
+// -------------------------------------------------------------- lodGL() ----
+static void test_lodGL()
+{
+    // The likelihood emission is a strict generalisation of lod(): a
+    // degenerate triplet must reproduce the hard-call value EXACTLY, so that
+    // --gl-beagle on called genotypes is bit-identical to --tped.  Swept over
+    // frequency, error and genotype.
+    int checked = 0; double worst = 0;
+    for (double f = 0.01; f < 1.0; f += 0.0123)
+        for (int ei = 0; ei < 4; ei++)
+        {
+            const double e = (ei == 0) ? 1e-4 : (ei == 1) ? 1e-3 : (ei == 2) ? 1e-2 : 0.05;
+            for (int g = 0; g < 3; g++)
+            {
+                float L[3] = {0.f, 0.f, 0.f}; L[g] = 1.f;
+                double d = fabs(lodGL(L, f, e) - lod(g, f, e));
+                if (d > worst) worst = d;
+                checked++;
+            }
+        }
+    ck(checked > 900 && worst == 0.0, "lodGL(degenerate triplet) == lod(g) exactly, over ~1000 (f, e, g)");
+
+    // No information contributes nothing -- the same convention as a missing
+    // genotype, and what a site with no reads must do.
+    float flat[3] = {1.f, 1.f, 1.f};
+    ckd(lodGL(flat, 0.3, 0.001), 0.0, 0.0, "lodGL(flat triplet) == 0 exactly");
+    float flat2[3] = {0.25f, 0.25f, 0.25f};
+    ckd(lodGL(flat2, 0.7, 0.001), 0.0, 0.0, "lodGL(flat triplet at any scale) == 0 exactly");
+
+    // Monomorphic sites carry nothing either way.
+    float het[3] = {0.f, 1.f, 0.f};
+    ckd(lodGL(het, 0.0, 0.001), 0.0, 0.0, "lodGL(freq=0) == 0");
+    ckd(lodGL(het, 1.0, 0.001), 0.0, 0.0, "lodGL(freq=1) == 0");
+
+    // Scale invariance: only the ratios matter.  The scale is a power of two
+    // so the float triplets are exact multiples; a decimal scale would test
+    // float rounding, not the function.
+    float a[3] = {0.9f, 0.3f, 0.01f};
+    float b[3] = {0.9f * 0.25f, 0.3f * 0.25f, 0.01f * 0.25f};
+    ckd(lodGL(a, 0.4, 0.001), lodGL(b, 0.4, 0.001), 1e-12, "lodGL is invariant to the triplet's scale");
+
+    // An uncertain site lies between the hard-call extremes it mixes, and a
+    // one-read site (hom and het equally likely) gives less evidence than a
+    // confident homozygote.
+    float oneRead[3] = {1.f, 0.5f, 0.f};
+    double v = lodGL(oneRead, 0.3, 0.001);
+    ck(v < lod(0, 0.3, 0.001) && v > lod(1, 0.3, 0.001),
+       "lodGL(one read) lies between lod(hom) and lod(het)");
+
+    // Mirror symmetry under flipping the counted allele, inherited from lod().
+    float t[3]  = {0.8f, 0.5f, 0.1f};
+    float tr[3] = {0.1f, 0.5f, 0.8f};
+    ckd(lodGL(t, 0.3, 0.001), lodGL(tr, 0.7, 0.001), 1e-12, "lodGL(L, f) == lodGL(reversed L, 1-f)");
+}
+
+// ------------------------------------------------- emAlleleFrequency() -----
+static void test_emAlleleFrequency()
+{
+    // Degenerate triplets: the EM must return the allele count frequency
+    // exactly -- first iteration lands on it, second shows no change.
+    //   genotypes 0,1,2,2,1  ->  6 counted alleles of 10
+    const int n = 5;
+    const int g[n] = {0, 1, 2, 2, 1};
+    float like[3 * n];
+    vector<int> all;
+    for (int i = 0; i < n; i++)
+    {
+        like[3 * i] = like[3 * i + 1] = like[3 * i + 2] = 0.f;
+        like[3 * i + g[i]] = 1.f;
+        all.push_back(i);
+    }
+    ckd(emAlleleFrequency(like, all), 0.6, 0.0, "EM on called genotypes == allele count frequency exactly");
+
+    // A flat triplet is no data: dropping the individual changes nothing.
+    float like2[3 * (n + 1)];
+    for (int i = 0; i < 3 * n; i++) like2[i] = like[i];
+    like2[3 * n] = like2[3 * n + 1] = like2[3 * n + 2] = 1.f;
+    vector<int> all6(all); all6.push_back(n);
+    ckd(emAlleleFrequency(like2, all6), 0.6, 0.0, "a flat triplet does not move the EM frequency");
+
+    // Nobody has data: 0, which lod() treats as uninformative.
+    float none[6] = {1.f, 1.f, 1.f, 1.f, 1.f, 1.f};
+    vector<int> two; two.push_back(0); two.push_back(1);
+    ckd(emAlleleFrequency(none, two), 0.0, 0.0, "all-flat site returns 0");
+
+    // Subsetting by index: the second half only.
+    vector<int> half; half.push_back(2); half.push_back(3); half.push_back(4);   // 2,2,1 -> 5 of 6
+    ckd(emAlleleFrequency(like, half), 5.0 / 6.0, 1e-15, "EM respects the individual subset");
+
+    // Uncertain data pull the estimate toward the likelihood-weighted mean:
+    // five individuals each with one read of the counted allele (hom-alt and
+    // het equally likely, hom-ref impossible) must give a frequency above 0.5
+    // and below 1, and the same for every individual means the HWE-weighted
+    // fixed point, not a hard call.
+    float one[3 * n];
+    for (int i = 0; i < n; i++) { one[3 * i] = 0.f; one[3 * i + 1] = 0.5f; one[3 * i + 2] = 1.f; }
+    double p = emAlleleFrequency(one, all);
+    ck(p > 0.5 && p < 1.0, "one read each of the counted allele gives 0.5 < p < 1");
+}
+
 // -------------------------------------------------------- interpolate() ----
 static void test_interpolate()
 {
@@ -1634,6 +1734,8 @@ int main()
     test_addAlleleCounts();
     test_calcFreqDataForIndices();
     test_lod();
+    test_lodGL();
+    test_emAlleleFrequency();
     test_interpolate();
     test_inGap();
     test_auto_fits();

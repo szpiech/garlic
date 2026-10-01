@@ -738,6 +738,30 @@ void recomputeFreqForRole(vector< HapData * > *hapDataByChr,
     }
 }
 
+void recomputeFreqForRoleIndices(vector< HapData * > *hapDataByChr,
+                                 vector< FreqData * > *freqDataByChr,
+                                 const vector<int> &keepInd,
+                                 const SexModel &model,
+                                 ChrRole role,
+                                 int nresample)
+{
+    if (freqDataByChr == NULL) return;
+    GarlicRNG *r = getRNG();
+    for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
+    {
+        if (chr >= model.role.size() || model.role[chr] != role) continue;
+        HapData *hap = hapDataByChr->at(chr);
+        FreqData *fd = freqDataByChr->at(chr);
+        for (int locus = 0; locus < hap->nloci; locus++)
+        {
+            double nalleles = 0, total = 0;
+            for (unsigned int k = 0; k < keepInd.size(); k++)
+                addAlleleCounts(hap->data[locus][keepInd[k]], nalleles, total);
+            fd->freq[locus] = alleleFrequency(nalleles, total, nresample, r);
+        }
+    }
+}
+
 //---- pseudoautosomal regions ------------------------------------------------
 
 void ExcludedRegions::add(const string &chr, pos_t s, pos_t e)
@@ -1601,10 +1625,303 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     return;
 }
 
+
+//ANGSD allele codes in a beagle file: 0=A 1=C 2=G 3=T.  Letters pass through.
+static char beagleAlleleChar(const string &tok)
+{
+    if (tok.size() == 1)
+    {
+        switch (tok[0])
+        {
+        case '0': return 'A';
+        case '1': return 'C';
+        case '2': return 'G';
+        case '3': return 'T';
+        default:  return tok[0];
+        }
+    }
+    return '?';
+}
+
+double emAlleleFrequency(const float *like, const vector<int> &keepInd)
+{
+    //Individuals with information: a triplet that is not flat.  Flat triplets
+    //have the same fixed point but slow the iteration, so they are dropped.
+    vector<int> use;
+    use.reserve(keepInd.size());
+    for (unsigned int k = 0; k < keepInd.size(); k++)
+    {
+        const float *L = like + 3 * keepInd[k];
+        if (!(L[0] == L[1] && L[1] == L[2])) use.push_back(keepInd[k]);
+    }
+    if (use.empty()) return 0.0;
+
+    double p = 0.5;
+    for (int iter = 0; iter < 100; iter++)
+    {
+        const double w0 = (1 - p) * (1 - p), w1 = 2 * p * (1 - p), w2 = p * p;
+        double eg = 0;
+        for (unsigned int k = 0; k < use.size(); k++)
+        {
+            const float *L = like + 3 * use[k];
+            const double a0 = w0 * L[0], a1 = w1 * L[1], a2 = w2 * L[2];
+            const double z = a0 + a1 + a2;
+            if (z > 0) eg += (a1 + 2 * a2) / z;
+        }
+        const double pn = eg / (2.0 * use.size());
+        const bool done = fabs(pn - p) < 1e-8;
+        p = pn;
+        if (done) break;
+    }
+    //Hardy-Weinberg weights vanish at p = 0 or 1 exactly, so a fixed allele
+    //cannot be left again; clamp inside the open interval as the EM converges.
+    if (p < 0) p = 0;
+    if (p > 1) p = 1;
+    return p;
+}
+
+vector< FreqData * > *calcFreqDataForIndicesGL(vector< GenoLikeData * > *GLDataByChr,
+                                               const vector<int> &keepInd)
+{
+    vector< FreqData * > *freqDataByChr = new vector< FreqData * >;
+    for (unsigned int chr = 0; chr < GLDataByChr->size(); chr++)
+    {
+        GenoLikeData *gl = GLDataByChr->at(chr);
+        vector<double> freq(gl->nloci);
+        for (int locus = 0; locus < gl->nloci; locus++)
+            freq[locus] = emAlleleFrequency(gl->like[locus], keepInd);
+        freqDataByChr->push_back(initFreqData(freq, gl->nloci));
+    }
+    return freqDataByChr;
+}
+
+void loadBeagleData(string beaglefile, int &numLoci, int &numInd,
+                    vector< HapData * > **hapDataByChr,
+                    vector< MapData * > **mapDataByChr,
+                    vector< FreqData * > **freqDataByChr,
+                    vector< GenoLikeData * > **GLDataByChr,
+                    bool AUTO_FREQ)
+{
+    igzstream fin;
+    fin.open(beaglefile.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: Failed to open", beaglefile);
+        throw 0;
+    }
+    if (!LOG.isQuiet()) cerr << "Loading genotype likelihoods from " << beaglefile << "\n";
+
+    string line;
+    //--- header: marker allele1 allele2 then three columns per individual ---
+    if (!getline(fin, line))
+    {
+        LOG.err("ERROR: Empty beagle file", beaglefile);
+        throw 0;
+    }
+    {
+        int ncols = countFields(line);
+        if (ncols < 6 || ((ncols - 3) % 3) != 0)
+        {
+            LOG.err("ERROR: Expected a beagle header of marker, allele1, allele2 and three columns per individual in", beaglefile, false);
+            LOG.err(", found", ncols, false);
+            LOG.err(" columns.");
+            throw 0;
+        }
+        numInd = (ncols - 3) / 3;
+        //The first token must be a header, not data: a file without one would
+        //otherwise lose its first site silently.
+        const char *p = line.c_str(), *e = p + line.size();
+        p = skipSpace(p, e);
+        const char *t = tokenEnd(p, e);
+        string first(p, t - p);
+        if (first.compare("marker") != 0)
+        {
+            LOG.err("ERROR: The first line of", beaglefile, false);
+            LOG.err(" must be the beagle header starting with 'marker', not", first);
+            throw 0;
+        }
+    }
+
+    vector<double> geneticPos;
+    vector<pos_t> physicalPos;
+    vector<string> locusNames;
+    vector<char> allele;
+    vector<double> freq;
+    vector< geno_t * > hap;
+    vector< bool * > fc;          //never phased; stays empty
+    vector< float * > likeRows;   //one row of 3*numInd per locus, handed to the matrix per chromosome
+
+    vector<int> everyone(numInd);
+    for (int i = 0; i < numInd; i++) everyone[i] = i;
+
+    string chr, prevChr, marker, a1, a2;
+    int currChrLoci = 0;
+    numLoci = 0;
+    long flatCells = 0, cells = 0;
+
+    //Gathers one chromosome's rows into the per-chromosome structures; used at
+    //each chromosome change and once at the end.
+    #define BEAGLE_FLUSH_CHR(CHRNAME)                                                        \
+    {                                                                                        \
+        LOG.log("Chromosome", checkChrName(CHRNAME), false);                                 \
+        LOG.log(":", currChrLoci, false);                                                    \
+        LOG.log(" sites.");                                                                  \
+        (*mapDataByChr)->push_back(initMapData(geneticPos, physicalPos, locusNames, allele,  \
+                                               currChrLoci, checkChrName(CHRNAME)));          \
+        geneticPos.clear(); physicalPos.clear(); locusNames.clear(); allele.clear();         \
+        (*hapDataByChr)->push_back(initHapData(hap, fc, currChrLoci, numInd, false));        \
+        hap.clear();                                                                         \
+        GenoLikeData *gl = new GenoLikeData;                                                 \
+        gl->nind = numInd; gl->nloci = currChrLoci; gl->likelihood = true;                   \
+        gl->like.reserveRows(currChrLoci, 3 * size_t(numInd));                               \
+        for (int i = 0; i < currChrLoci; i++) { gl->like.appendRow(likeRows[i]); delete [] likeRows[i]; } \
+        gl->like.finishRows();                                                               \
+        likeRows.clear();                                                                    \
+        (*GLDataByChr)->push_back(gl);                                                       \
+        if (AUTO_FREQ)                                                                       \
+        {                                                                                    \
+            freq.resize(currChrLoci);                                                        \
+            for (int i = 0; i < currChrLoci; i++) freq[i] = emAlleleFrequency(gl->like[i], everyone); \
+            (*freqDataByChr)->push_back(initFreqData(freq, currChrLoci));                    \
+            freq.clear();                                                                    \
+        }                                                                                    \
+    }
+
+    while (getline(fin, line))
+    {
+        if (line.empty()) continue;
+        numLoci++;
+        const char *p = line.c_str(), *pEnd = p + line.size(), *tEnd;
+
+        //--- marker: <chr>_<pos>, split at the LAST underscore ---
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd);
+        marker.assign(p, tEnd - p); p = tEnd;
+        size_t us = marker.rfind('_');
+        if (us == string::npos || us == 0 || us + 1 >= marker.size())
+        {
+            LOG.err("ERROR: beagle marker", marker, false);
+            LOG.err(" at line", numLoci + 1, false);
+            LOG.err(" is not <chromosome>_<position>.");
+            throw 0;
+        }
+        chr = marker.substr(0, us);
+        char *q;
+        double ppos = strtod(marker.c_str() + us + 1, &q);
+        if (*q != '\0' || ppos < 0)
+        {
+            LOG.err("ERROR: beagle marker", marker, false);
+            LOG.err(" at line", numLoci + 1, false);
+            LOG.err(" has a non-numeric position.");
+            throw 0;
+        }
+
+        if (numLoci == 1) prevChr = chr;
+        if (chr.compare(prevChr) != 0)
+        {
+            BEAGLE_FLUSH_CHR(prevChr);
+            prevChr = chr;
+            currChrLoci = 0;
+        }
+        currChrLoci++;
+
+        //--- alleles ---
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); a1.assign(p, tEnd - p); p = tEnd;
+        p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); a2.assign(p, tEnd - p); p = tEnd;
+        if (a1.empty() || a2.empty())
+        {
+            LOG.err("ERROR: Missing allele columns at line", numLoci + 1, false);
+            LOG.err(" of", beaglefile);
+            throw 0;
+        }
+
+        //--- three likelihoods per individual ---
+        float *row = new float[3 * size_t(numInd)];
+        geno_t *g = new geno_t[numInd];
+        for (int ind = 0; ind < numInd; ind++)
+        {
+            double L[3];
+            for (int k = 0; k < 3; k++)
+            {
+                p = skipSpace(p, pEnd);
+                if (p >= pEnd)
+                {
+                    delete [] row; delete [] g;
+                    LOG.err("ERROR: Too few likelihood columns at line", numLoci + 1, false);
+                    LOG.err(" of", beaglefile, false);
+                    LOG.err("; expected 3 per individual for", numInd, false);
+                    LOG.err(" individuals.");
+                    throw 0;
+                }
+                L[k] = strtod(p, &q);
+                if (q == p || !(L[k] >= 0) || L[k] != L[k])
+                {
+                    delete [] row; delete [] g;
+                    LOG.err("ERROR: Could not read a non-negative likelihood for individual", ind + 1, false);
+                    LOG.err(" at marker", marker, false);
+                    LOG.err(" in", beaglefile);
+                    throw 0;
+                }
+                p = q;
+            }
+            double mx = L[0];
+            if (L[1] > mx) mx = L[1];
+            if (L[2] > mx) mx = L[2];
+            cells++;
+            if (mx <= 0)
+            {
+                //All three zero cannot be a likelihood; read it as no information.
+                row[3 * ind] = row[3 * ind + 1] = row[3 * ind + 2] = 1.0f;
+                g[ind] = GENO_MISSING;
+                flatCells++;
+                continue;
+            }
+            row[3 * ind]     = float(L[0] / mx);
+            row[3 * ind + 1] = float(L[1] / mx);
+            row[3 * ind + 2] = float(L[2] / mx);
+            //Maximum-likelihood genotype, missing where the maximum is shared.
+            int nmax = (L[0] == mx) + (L[1] == mx) + (L[2] == mx);
+            if (nmax > 1) { g[ind] = GENO_MISSING; flatCells += (nmax == 3); }
+            else g[ind] = geno_t(L[2] == mx ? 2 : (L[1] == mx ? 1 : 0));
+        }
+        p = skipSpace(p, pEnd);
+        if (p != pEnd)
+        {
+            delete [] row; delete [] g;
+            LOG.err("ERROR: Too many columns at line", numLoci + 1, false);
+            LOG.err(" of", beaglefile, false);
+            LOG.err("; expected 3 per individual for", numInd, false);
+            LOG.err(" individuals.");
+            throw 0;
+        }
+
+        geneticPos.push_back(0.0);
+        physicalPos.push_back(pos_t(ppos));
+        locusNames.push_back(marker);
+        allele.push_back(beagleAlleleChar(a2));
+        hap.push_back(g);
+        likeRows.push_back(row);
+    }
+
+    if (numLoci == 0)
+    {
+        LOG.err("ERROR: No sites in", beaglefile);
+        throw 0;
+    }
+    BEAGLE_FLUSH_CHR(chr);
+    #undef BEAGLE_FLUSH_CHR
+
+    LOG.log("Genotype likelihood cells with no information (flat triplet):", flatCells, false);
+    LOG.log(" of", long(cells), false);
+    LOG.log(" (", 100.0 * double(flatCells) / double(cells > 0 ? cells : 1), false);
+    LOG.log("%).");
+    fin.close();
+}
+
 GenoLikeData *initGLData(const vector< double * > &GL, int nloci, int nind){
     GenoLikeData *glData = new GenoLikeData;
     glData->nind = nind;
     glData->nloci = nloci;
+    glData->likelihood = false;
     //reserveRows rather than resize: see garlic-matrix.h, the zero pass would
     //commit every page before the copy overwrote it.
     glData->data.reserveRows(nloci, nind);
@@ -3030,8 +3347,9 @@ static int filterSitesByKeep(vector< MapData * > **mapDataByChr,
         if (USE_GL)
         {
             GenoLikeData *GLData = (*GLDataByChr)->at(i);
-            GLData2 = initGLData(GLData->nind, newLoci);
-            gatherRows(GLData2->data, GLData->data, keep, GLData->nind);
+            GLData2 = initGLData(GLData->nind, newLoci, GLData->likelihood);
+            if (GLData->likelihood) gatherRows(GLData2->like, GLData->like, keep, 3 * GLData->nind);
+            else                    gatherRows(GLData2->data, GLData->data, keep, GLData->nind);
         }
 
         FreqData *freqData2 = initFreqData(newLoci);
@@ -3819,7 +4137,7 @@ void releaseHapData(HapData *data)
     return;
 }
 
-GenoLikeData *initGLData(unsigned int nind, unsigned int nloci) {
+GenoLikeData *initGLData(unsigned int nind, unsigned int nloci, bool likelihood) {
     if (nind < 1 || nloci < 1)
     {
         LOG.err("ERROR: Can not allocate GenoLikeData object. Number of individuals (", int(nind), false);
@@ -3831,8 +4149,11 @@ GenoLikeData *initGLData(unsigned int nind, unsigned int nloci) {
     GenoLikeData *data = new GenoLikeData;
     data->nind = nind;
     data->nloci = nloci;
+    data->likelihood = likelihood;
 
-    data->data.assign(nloci, nind, 1);
+    //Both fills mean "no information": an error rate of 1, or the flat triplet.
+    if (likelihood) data->like.assign(nloci, 3 * size_t(nind), 1.0f);
+    else            data->data.assign(nloci, nind, 1);
 
     return data;
 }
@@ -5207,7 +5528,8 @@ void subsetDataByIndex(vector< HapData * > *hapDataByChr,
     {
         int nloci = hapDataByChr->at(chr)->nloci;
         hapData = initHapData(nind, nloci, PHASED);
-        if (USE_GL) GLData = initGLData(nind, nloci);
+        bool likelihood = USE_GL && GLDataByChr->at(chr)->likelihood;
+        if (USE_GL) GLData = initGLData(nind, nloci, likelihood);
 
         for (int locus = 0; locus < nloci; locus++)
         {
@@ -5215,7 +5537,16 @@ void subsetDataByIndex(vector< HapData * > *hapDataByChr,
             {
                 hapData->data[locus][ind] = hapDataByChr->at(chr)->data[locus][keepInd[ind]];
                 if (PHASED) hapData->firstCopy[locus][ind] = hapDataByChr->at(chr)->firstCopy[locus][keepInd[ind]];
-                if (USE_GL) GLData->data[locus][ind] = GLDataByChr->at(chr)->data[locus][keepInd[ind]];
+                if (USE_GL)
+                {
+                    if (likelihood)
+                    {
+                        const float *src = &(GLDataByChr->at(chr)->like[locus][3 * keepInd[ind]]);
+                        float *dst = &(GLData->like[locus][3 * ind]);
+                        dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
+                    }
+                    else GLData->data[locus][ind] = GLDataByChr->at(chr)->data[locus][keepInd[ind]];
+                }
             }
         }
         newHapDataByChr->push_back(hapData);

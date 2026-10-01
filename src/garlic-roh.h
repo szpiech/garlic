@@ -116,6 +116,16 @@ double norec(double M, double interval);
 
 double lod(const int genotype, const double &freq, const double &error);
 
+//The same emission marginalised over a genotype-likelihood triplet L[0..2]
+//(copies of the counted allele 0, 1, 2; any scale):
+//    log10( sum_g L[g] A(g) / sum_g L[g] N(g) )
+//with A and N exactly the two mixtures lod() forms.  A degenerate triplet
+//reproduces lod(g) bit for bit; the flat triplet gives exactly 0, like a
+//missing genotype; and both sums lie in (0, 1], so no value needs clamping.
+//`error` is the run-wide --error: the autozygous state's allowance for a
+//heterozygote, not a per-genotype quality.
+double lodGL(const float *L, const double &freq, const double &error);
+
 /*
 KDEResult *automaticallyChooseWindowSize(vector< HapData * > *hapDataByChr, vector< FreqData * > *freqDataByChr,
     vector< MapData * > *mapDataByChr, IndData *indData,

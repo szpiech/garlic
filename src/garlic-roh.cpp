@@ -65,6 +65,8 @@ static void parallelLOD(LOD_work_order_t *p)
     const int winsize = p->winsize;
     const int MAX_GAP = p->MAX_GAP;
     const bool USE_GL = p->USE_GL;
+    //--gl-beagle: the triplet form; --tgls / --vcf --gl-type: the error form.
+    const bool LIKE = USE_GL && GLData->likelihood;
     const int cStart = p->cStart;
     const int cEnd = p->cEnd;
 
@@ -75,8 +77,10 @@ static void parallelLOD(LOD_work_order_t *p)
     //lod() depends on the genotype only through {0,1,2,missing}, so with a
     //scalar error rate there are exactly four possible values per locus.
     //LODV reads them from the precomputed table; with --tgls the error rate
-    //varies per genotype and the table does not apply.
+    //varies per genotype and the table does not apply, and with --gl-beagle
+    //the emission is marginalised over the likelihood triplet instead.
     #define LODV(I, IND) ( lut ? lut[4 * (I) + ((data[(I)][(IND)] >= 0 && data[(I)][(IND)] <= 2) ? data[(I)][(IND)] : 3)] \
+                         : LIKE ? lodGL(&(GLData->like[(I)][3 * (IND)]), freq[(I)], p->error) \
                                : lod(data[(I)][(IND)], freq[(I)], error) )
 
     for (int ind = p->indStart; ind < p->indStop; ind++)
@@ -99,7 +103,7 @@ static void parallelLOD(LOD_work_order_t *p)
                         locus = prevI;
                         break;
                     }
-                    if (USE_GL) error = GLData->data[i][ind];
+                    if (USE_GL && !LIKE) error = GLData->data[i][ind];
                     win[ind][locus] += LODV(i, ind);
                     prevI = i;
                 }
@@ -116,7 +120,7 @@ static void parallelLOD(LOD_work_order_t *p)
                     }
                     else
                     {
-                        if (USE_GL) {
+                        if (USE_GL && !LIKE) {
                             win[ind][locus] = win[ind][locus - 1] -
                                               lod(data[locus - 1][ind], freq[locus - 1], GLData->data[locus - 1][ind]) +
                                               lod(data[locus + winsize - 1][ind], freq[locus + winsize - 1], GLData->data[locus + winsize - 1][ind]);
@@ -140,7 +144,7 @@ static void parallelLOD(LOD_work_order_t *p)
                             locus = prevI;
                             break;
                         }
-                        if (USE_GL) error = GLData->data[i][ind];
+                        if (USE_GL && !LIKE) error = GLData->data[i][ind];
                         win[ind][locus] += LODV(i, ind);
                         prevI = i;
                     }
@@ -336,11 +340,17 @@ void parallelwLOD(WLOD_work_order_t *p){
         scoreBuf.resize(size);
         score = scoreBuf.data();
         for (int locus = start; locus < ((stop+winsize+1 > nloci) ? nloci : stop+winsize+1); locus++){
-            if (USE_GL) error = GLData->data[locus][ind];
             double physInterval = ( locus > 0 ) ? (physicalPos[locus] - physicalPos[locus - 1]) : physicalPos[locus];
             double geneInterval = ( locus > 0 ) ? (geneticPos[locus] - geneticPos[locus - 1]) : geneticPos[locus];
-            //if(p->mapData->chr.compare("chr21") == 0 && locus > 0) cerr << nloci << " " << locus << " " <<  geneticPos[locus] << " - " << geneticPos[locus - 1] << " " << geneInterval << " " << physicalPos[locus] << endl;
-            score[locus-start] = lod(data[locus][ind], freq[locus], error) * nomut(M, mu, physInterval) * norec(M, geneInterval);
+            double site;
+            if (USE_GL && GLData->likelihood)
+                site = lodGL(&(GLData->like[locus][3 * ind]), freq[locus], p->error);
+            else
+            {
+                if (USE_GL) error = GLData->data[locus][ind];
+                site = lod(data[locus][ind], freq[locus], error);
+            }
+            score[locus-start] = site * nomut(M, mu, physInterval) * norec(M, geneInterval);
         }
 
         //starting locus of the window
@@ -504,6 +514,22 @@ double lod(const int genotype, const double &freq, const double &error)
     }
 
     return log10(autozygous / nonAutozygous);
+}
+
+double lodGL(const float *L, const double &freq, const double &error)
+{
+    if (freq == 0 || freq == 1) return 0;
+    //Written so that a degenerate triplet reproduces lod() exactly: each term
+    //is lod()'s own expression for that genotype, scaled by its likelihood.
+    const double L0 = L[0], L1 = L[1], L2 = L[2];
+    if (L0 == L1 && L1 == L2) return 0;    //no information, as for a missing genotype
+    const double n0 = (1 - freq) * (1 - freq);
+    const double n1 = 2 * (freq) * (1 - freq);
+    const double n2 = (freq) * (freq);
+    const double a0 = (1 - error) * (1 - freq) + error * n0;
+    const double a1 = error * n1;
+    const double a2 = (1 - error) * (freq) + error * n2;
+    return log10((L0 * a0 + L1 * a1 + L2 * a2) / (L0 * n0 + L1 * n1 + L2 * n2));
 }
 
 vector< ROHData * > *initROHData(IndData *indData)

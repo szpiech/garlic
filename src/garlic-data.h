@@ -185,7 +185,18 @@ struct WinData
 
 struct GenoLikeData
 {
+  //Per-genotype ERROR RATE, one double per (locus, individual): the --tgls and
+  //--vcf --gl-type forms.  lod() substitutes it for --error.
   Matrix<double> data;
+  //Per-genotype LIKELIHOOD triplet, the --gl-beagle form: like[locus][3*ind+g]
+  //is L(reads | g) for g = 0,1,2 copies of the counted allele, scaled so the
+  //largest of the three is 1.  Only the ratios matter (the emission is
+  //scale-invariant), and a site with no reads is the flat triplet (1,1,1),
+  //which contributes exactly 0 to the window LOD.  float, not double: 12 bytes
+  //per genotype against the error form's 8, and the LOD it feeds is a sum of
+  //log10 ratios where single precision is far below the window-level noise.
+  Matrix<float> like;
+  bool likelihood;   //which of the two matrices is populated
   int nind;
   int nloci;
   //int nmiss;
@@ -412,6 +423,17 @@ void recomputeFreqForRole(vector< HapData * > *hapDataByChr,
                           const SexModel &model,
                           ChrRole role,
                           int nresample);
+//The same, over a subset of individuals: the per-population form.  With
+//--gl-beagle the autosomal frequencies come from the likelihood EM, which
+//does not know that a hemizygous individual carries one allele; on the shared
+//sex chromosome the recoded calls (hemizygous -> half call) are what carry
+//that, so those chromosomes are recomputed from the calls here.
+void recomputeFreqForRoleIndices(vector< HapData * > *hapDataByChr,
+                                 vector< FreqData * > *freqDataByChr,
+                                 const vector<int> &keepInd,
+                                 const SexModel &model,
+                                 ChrRole role,
+                                 int nresample);
 
 //The roles that the FLAGS alone imply, keyed by canonChrKey, with no data
 //needed.  The readers need this before the data exists: a haploid genotype is
@@ -803,6 +825,33 @@ vector< GenoLikeData * > *readTGLSData(string filename,
                                        string GL_TYPE,
                                        IndData *indData);
 
+//ANGSD beagle genotype-likelihood input (-doGlf 2).  Builds the same four
+//structures loadTPEDData does: the map from the marker column (chr_pos; the
+//split is at the LAST underscore so chromosome names may contain one), the
+//genotype matrix as the maximum-likelihood genotype at each site (missing
+//where the maximum is not unique, which covers the flat triplet a site with no
+//reads produces), allele frequencies by EM over the likelihoods when AUTO_FREQ,
+//and the likelihood triplets themselves in GenoLikeData::like.  The counted
+//allele is allele2, ANGSD's minor allele; lod() is invariant under flipping it.
+//Sample names in the header are not used -- ANGSD writes Ind0, Ind1, ... -- so
+//individual metadata comes from --tfam, matched by position.
+void loadBeagleData(string beaglefile, int &numLoci, int &numInd,
+                    vector< HapData * > **hapDataByChr,
+                    vector< MapData * > **mapDataByChr,
+                    vector< FreqData * > **freqDataByChr,
+                    vector< GenoLikeData * > **GLDataByChr,
+                    bool AUTO_FREQ);
+
+//Frequency of the counted allele from likelihood triplets by EM under
+//Hardy-Weinberg: p <- sum_i E[g_i | L_i, p] / (2 n) over the individuals in
+//keepInd whose triplet is not flat.  Converges from 0.5 in a few dozen
+//iterations; a site where nobody has reads returns 0, which lod() treats as
+//uninformative.  Unbiased where frequencies from called genotypes are pulled
+//toward the major allele at low depth.
+double emAlleleFrequency(const float *like, const vector<int> &keepInd);
+vector< FreqData * > *calcFreqDataForIndicesGL(vector< GenoLikeData * > *GLDataByChr,
+                                               const vector<int> &keepInd);
+
 MapData *initMapData(int nloci);
 
 //A deep copy of the per-chromosome map.
@@ -824,7 +873,10 @@ HapData *initHapData(unsigned int nind, unsigned int nloci, bool PHASED);
 void releaseHapData(HapData *data);
 void releaseHapData(vector< HapData * > *hapDataByChr);
 
-GenoLikeData *initGLData(unsigned int nind, unsigned int nloci);
+//likelihood=false allocates the error-rate matrix (filled with 1, i.e. no
+//information); likelihood=true allocates the triplet matrix filled with the
+//flat triplet, so an untouched cell contributes 0 to the LOD either way.
+GenoLikeData *initGLData(unsigned int nind, unsigned int nloci, bool likelihood = false);
 
 //Row-consuming form, mirroring initHapData: a reader that allocates a row per
 //locus, because the locus count is not known in advance, hands them here to be

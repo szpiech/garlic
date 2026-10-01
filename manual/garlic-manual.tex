@@ -151,6 +151,7 @@ the sites (Section~\ref{sec:features}):
 listed with their types and defaults in Appendix~\ref{app:flags}.
 
 \section{Statistics implemented}
+\label{sec:lod}
 
 We previously advocated the application of a logarithm of the odds (LOD) score measure of autozygosity applied in a sliding-window framework to infer ROH in high-density SNP genotype data \cite[]{PembertonEtAl12:AJHG}. Fundamentally, for SNP $k$ in individual $i$, this method calculates the log-likelihood ratio of observed genotype $G_{i,k}$ under the hypotheses of autozygosity and non-autozygosity, incorporating an assumed genotype error rate $\epsilon$ and population-specific allele frequencies. The LOD score of window $w$ in individual $i$ is then calculated as the sum of the log-likelihood ratios of the $K$ SNPs in the window: 
 \begin{equation}
@@ -201,7 +202,7 @@ Using the command line flag {\tt --help}, will print a help dialog with a summar
 
 \subsection{Input Files}
 
-Genotypes are read from either a VCF ({\tt --vcf}) or a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}).  The two are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Consecutive loci are assumed to be in order with respect to their physical position, and all records for a chromosome must be contiguous --- what {\tt bcftools sort} produces.  If the file contains more than one population, each is analysed separately; see Section~\ref{sec:multipop}.  {\tt --pop} overrides the labels, which for a TPED/TFAM pair are otherwise taken from column 1 of the TFAM.
+Genotypes are read from a VCF ({\tt --vcf}), a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}), or, for low-coverage sequence data, genotype likelihoods in beagle format ({\tt --gl-beagle} with {\tt --tfam}; see \S\ref{sec:beagle}).  The three are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Consecutive loci are assumed to be in order with respect to their physical position, and all records for a chromosome must be contiguous --- what {\tt bcftools sort} produces.  If the file contains more than one population, each is analysed separately; see Section~\ref{sec:multipop}.  {\tt --pop} overrides the labels, which for a TPED/TFAM pair are otherwise taken from column 1 of the TFAM.
 
 \subsubsection{VCF input}
 \label{sec:vcf}
@@ -218,9 +219,28 @@ Per-genotype genotype qualities are read from the {\tt FORMAT} column with {\tt 
 \[ P(g) \propto 10^{-\mathrm{PL}_g/10}, \qquad \mathrm{error} = 1 - \frac{P(\mathrm{called})}{\sum_g P(g)}, \]
 with {\tt GL} entering the same expression as $\mathrm{PL} = -10\,\mathrm{GL}$.  This reproduces the {\tt GQ} that encodes the same confidence: a {\tt PL} of $(0,30,60)$ gives $0.001$, exactly {\tt GQ} $30$.  If the requested field is absent the run stops and the message names whichever of {\tt GQ}, {\tt PL} and {\tt GL} the record does carry.
 
-\paragraph{Low-coverage sequence data.}  None of the per-genotype quality forms above is suitable for low-coverage sequencing (below roughly $4\times$).  Each reduces to a single, symmetric error rate per genotype --- the probability that the call is wrong, with the wrong call drawn as if at random --- and the dominant error at low depth is not symmetric.  Allelic dropout, where only one of a heterozygote's two alleles is sampled by the reads, turns heterozygotes into homozygotes, and a run of such calls is exactly what autozygosity looks like to the LOD score.  In simulation at $0.5$--$1\times$, a per-genotype error taken from a caller's {\tt GQ} called essentially the whole genome autozygous.  Hard calls with a run-wide {\tt --error} degrade more gracefully, but by about $2\times$ the pooled LOD score density no longer has two modes and the automatic cutoff cannot be located.  The intended route for such data is a genotype-likelihood input that keeps all three genotype probabilities per site, so that an uncertain site contributes little evidence rather than confident wrong evidence; see the change log for its status.
+\paragraph{Low-coverage sequence data.}  None of the per-genotype quality forms above is suitable for low-coverage sequencing (below roughly $4\times$).  Each reduces to a single, symmetric error rate per genotype --- the probability that the call is wrong, with the wrong call drawn as if at random --- and the dominant error at low depth is not symmetric.  Allelic dropout, where only one of a heterozygote's two alleles is sampled by the reads, turns heterozygotes into homozygotes, and a run of such calls is exactly what autozygosity looks like to the LOD score.  In simulation at $0.5$--$1\times$, a per-genotype error taken from a caller's {\tt GQ} called essentially the whole genome autozygous.  Hard calls with a run-wide {\tt --error} degrade more gracefully, but by about $2\times$ the pooled LOD score density no longer has two modes and the automatic cutoff cannot be located.  The route for such data is {\tt --gl-beagle} (\S\ref{sec:beagle}), which keeps all three genotype likelihoods per site, so that an uncertain site contributes little evidence rather than confident wrong evidence.
 
 The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED plus a {\tt tgls} file, and a {\tt tgls} file holds one value per genotype, which cannot represent a normalised {\tt PL} or {\tt GL}; {\tt garlic} now rejects such a file rather than computing with it.
+\subsubsection{Genotype likelihood input}
+\label{sec:beagle}
+
+{\tt --gl-beagle <file>} reads genotype likelihoods in the beagle format that ANGSD writes with {\tt -doGlf 2}: a header line of {\tt marker}, {\tt allele1}, {\tt allele2} and three columns per individual, then one row per site holding $P(\mathrm{reads} \mid \mathrm{allele1/allele1})$, $P(\mathrm{reads} \mid \mathrm{allele1/allele2})$ and $P(\mathrm{reads} \mid \mathrm{allele2/allele2})$.  The marker is {\tt <chromosome>\_<position>}, split at the last underscore so a chromosome name may contain one; alleles may be ANGSD's codes (0--3 for A, C, G, T) or letters.  The file may be gzipped.  Sites must be grouped by chromosome, as in a TPED.
+
+\paragraph{What changes in the analysis.}  With called genotypes the per-site term of the LOD score is $\log_{10} A(g)/N(g)$, where $A$ and $N$ are the genotype distributions under autozygosity and under Hardy-Weinberg (\S\ref{sec:lod}).  With likelihoods it is
+\[ \log_{10} \frac{\sum_g L(g)\,A(g)}{\sum_g L(g)\,N(g)}, \]
+the same two distributions averaged over the genotype with the reads' likelihood as the weight.  A triplet that names one genotype (1 for it, 0 for the others) gives exactly the called-genotype value, so a beagle file of called genotypes reproduces a TPED run to the byte.  A flat triplet --- a site with no reads --- gives exactly 0, as a missing genotype does.  Only the ratios within a triplet matter, so the file's scaling is irrelevant.  {\tt --error} keeps its meaning: it is the autozygous state's allowance for a heterozygote, not a per-genotype quality.
+
+Allele frequencies are estimated from the likelihoods by EM under Hardy-Weinberg rather than from called genotypes, per population when there are several.  At low depth frequencies from calls are pulled toward the major allele --- by about $0.04$ at $0.5\times$ and $0.02$ at $2\times$ for alleles below $0.15$ in simulation --- and the EM is not.  The estimate is written to {\tt <out>.freq.gz} as usual and {\tt --freq-file} overrides it; a column of ANGSD's {\tt .mafs.gz} is a suitable source.  On the shared sex chromosome the frequency comes from the maximum-likelihood calls (a hemizygous call contributing one allele), because the EM treats everyone as diploid; {\tt garlic} warns when that applies.
+
+For everything that reads a genotype rather than a likelihood --- the LD matrix of {\tt --weighted}, {\tt --features}, the site filters --- the maximum-likelihood genotype is used, and a site whose maximum is shared (the flat triplet included) is missing.
+
+\paragraph{Metadata.}  A beagle file carries no sample names (ANGSD writes {\tt Ind0}, {\tt Ind1}, \ldots), so {\tt --tfam} is required and is matched to the columns by position, which is the order of ANGSD's {\tt -b} bam list.  A TFAM with the wrong number of rows is an error.  {\tt --pop} may replace the labels as with a TPED.
+
+\paragraph{Two cautions.}  Give likelihoods, not posteriors.  ANGSD's {\tt -doPost} and {\tt -doGeno} output has a Hardy-Weinberg (or panel) prior already folded in, and feeding it here applies that prior a second time, which biases every site toward the non-autozygous state; {\tt garlic} cannot tell the two apart from the numbers alone.  And a beagle marker carries a physical position only, so {\tt --weighted} and {\tt --cm} still need {\tt --map}.
+
+\paragraph{What it does not fix.}  In simulation the likelihood input holds the called autozygous fraction at its true value down to $2\times$ where called genotypes lose the automatic cutoff.  Below about $2\times$ the evidence in a 60-SNP window is not enough to place a cutoff whatever the per-site model: the automatic cutoff fails or lands far from the truth, and even the best single threshold has a false-positive rate of several percent.  Methods that work there borrow information across windows or from a haplotype reference panel, which this design deliberately does not.  Cohorts of mixed depth are a separate problem --- the cutoff is estimated on windows pooled over all individuals, and the shallow ones are over-called --- addressed in a later section.
+
 \subsubsection{File formats}
 \noindent tped/tfam (required):\\
 \begin{verbatim}
@@ -237,6 +257,13 @@ The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED plus a {
 	<chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
 \end{verbatim}
 \noindent One value per genotype.  Under {\tt --gl-type PL} or {\tt GL} these are read as the probability that the genotype is {\em correct}, which is {\em not} what a VCF's {\tt PL} and {\tt GL} fields hold; a file of VCF-derived values is rejected with an error.  {\tt --gl-type GQ} is the one form whose VCF values can be used here directly.
+
+\noindent beagle (alternative to tped; see \S\ref{sec:beagle}):
+\begin{verbatim}
+	marker allele1 allele2 Ind0 Ind0 Ind0 Ind1 Ind1 Ind1 ...
+	<chr>_<pos> <A1> <A2> <P(A1A1)> <P(A1A2)> <P(A2A2)> ...
+\end{verbatim}
+\noindent As written by {\tt angsd -doGlf 2}.  Three genotype likelihoods per individual per site; a site with no reads is the flat triplet.
 
 \noindent pop (optional; with {\tt --vcf}, the only way to set population labels):
 \begin{verbatim}
@@ -749,6 +776,11 @@ The automatic LOD cutoff now warns when it discards an implausible valley (|cuto
 and applies 0, naming the value; the applied value is unchanged. --gl-type documents that no
 per-genotype quality form suits low-coverage data (below roughly 4x); see "Low-coverage
 sequence data" under Input Files.
+
+--gl-beagle reads genotype likelihoods (ANGSD -doGlf 2) for low-coverage sequence data: the
+LOD's per-site term is averaged over the genotypes with the likelihood as weight, called
+genotypes reproduce a TPED run exactly, and allele frequencies come from an EM over the
+likelihoods. See "Genotype likelihood input" under Input Files.
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 

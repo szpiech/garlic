@@ -442,6 +442,22 @@ autozygosity looks like. In simulation at 0.5-1x a GQ-derived error called essen
 whole genome autozygous. Hard calls with --error degrade more gracefully but lose the automatic
 cutoff by about 2x. A genotype-likelihood input is the intended route and is in progress.
 
+--gl-beagle reads genotype likelihoods in beagle format (ANGSD -doGlf 2) and is the input
+for low-coverage sequence data. The per-site term of the LOD score is averaged over the three
+genotypes with the reads' likelihood as the weight, instead of being evaluated at a called
+genotype: an uncertain site contributes little evidence rather than confident wrong evidence,
+a site with no reads (a flat triplet) contributes exactly 0, and a triplet that names one
+genotype gives exactly the called-genotype value, so a beagle file of called genotypes
+reproduces a TPED run byte for byte (the suite checks this). --error keeps its meaning. Allele
+frequencies are estimated by EM over the likelihoods, per population, which is unbiased at
+low depth where frequencies from called genotypes are pulled toward the major allele;
+--freq-file (a column of ANGSD's .mafs.gz will do) overrides them. --tfam is required for
+IDs, labels and sex, matched by position. Give LIKELIHOODS, not -doPost/-doGeno posteriors,
+which have the Hardy-Weinberg prior already folded in. In simulation this holds the called
+autozygous fraction at its true value down to 2x; below that the automatic cutoff cannot be
+placed whatever the input, and cohorts of mixed depth are over-called in their shallow
+members -- see the manual, "Genotype likelihood input".
+
 05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers. ***I'm having trouble getting mscOS versions to compile, so the current binary for mscOS is still v1.6.0 and still has this bug.***
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
@@ -490,6 +506,9 @@ strings. Do not edit by hand.
 ----- Input files -----
 
 --freq-file <string>: A file specifying allele frequencies for each population for all variants. File format: CHR SNP POS ALLELE FREQ <chr> <locus ID> <allele> <freq> By default, this is calculated automatically from the provided data.
+	Default: none
+
+--gl-beagle <string>: Genotype likelihoods in beagle format, as written by ANGSD -doGlf 2: a header of marker, allele1, allele2 and three columns per individual, then one row per site with P(reads | allele1/allele1), P(reads | allele1/allele2) and P(reads | allele2/allele2).  This is the input for low-coverage sequence data.  The window LOD is formed by marginalising over the triplet rather than from a called genotype, so an uncertain site contributes little evidence instead of confident wrong evidence, and a site with no reads (a flat triplet) contributes exactly 0.  Replaces --tped; --tfam is still required for individual IDs, population labels and sex, matched to the beagle columns by position (ANGSD's -b bam list order).  --error is the autozygous state's allowance for a heterozygote, as with --tped. Allele frequencies are estimated by EM over the likelihoods, which is unbiased at low depth where frequencies from called genotypes are not; --freq-file (e.g. a column of ANGSD's .mafs.gz) overrides them. Two cautions.  Give LIKELIHOODS, not posteriors: ANGSD -doPost/-doGeno output has the Hardy-Weinberg prior already folded in, and feeding it here counts that prior twice.  And beagle markers carry physical positions only, so --weighted and --cm still need --map.  Below roughly 2x the automatic LOD cutoff cannot be located whatever the input; see the manual.
 	Default: none
 
 --gl-type <string>: Which genotype-quality field to use.  With --vcf it is read from the FORMAT column; with --tgls it names the form of the single value per genotype in the .tgls file.  The two sources are NOT equivalent.

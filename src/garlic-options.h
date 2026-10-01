@@ -22,6 +22,7 @@ struct GarlicOptions
     string          tpedfile;
     string          tfamfile;
     string          tglsfile;
+    string          beaglefile;
     string          popfile;
     string          vcffile;
     bool            VCF_PASS_ONLY;

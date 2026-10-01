@@ -632,6 +632,34 @@ int main(int argc, char *argv[])
             if (opt.popfile.compare(DEFAULT_POP) == 0)
                 LOG.err("WARNING: frequencies are pooled over all of them; see --pop.");
         }
+        else if (opt.beaglefile.compare(DEFAULT_BEAGLE) != 0)
+        {
+            //Genotype likelihoods.  The loader fills the same four structures
+            //plus the triplet matrix; the genotype matrix holds the maximum-
+            //likelihood call so every genotype-reading stage (LD, counting,
+            //site filters) still works, and the LOD stage reads the triplets.
+            GLDataByChr = new vector< GenoLikeData * >;
+            USE_GL = true;
+            loadBeagleData(opt.beaglefile, numLoci, numInd,
+                           &hapDataByChr, &mapDataByChr, &freqDataByChr, &GLDataByChr,
+                           AUTO_FREQ);
+
+            LOG.log("Total loci:", numLoci);
+
+            int tfamInd = 0;
+            scanIndData3(tfamfile, tfamInd);
+            if (tfamInd != numInd)
+            {
+                LOG.err("ERROR:", tfamfile, false);
+                LOG.err(" has", tfamInd, false);
+                LOG.err(" individuals but", opt.beaglefile, false);
+                LOG.err(" has", numInd, false);
+                LOG.err("; the two are matched by position and must agree.");
+                return 2;
+            }
+            indData = readIndData3(tfamfile, numInd);
+            metaSource = tfamfile;
+        }
         else
         {
             loadTPEDData(tpedfile, numLoci, numInd,
@@ -937,6 +965,13 @@ int main(int argc, char *argv[])
         //is right -- and --resample draws random numbers, so recomputing an
         //autosome would not even be a no-op.
         recomputeFreqForRole(hapDataByChr, freqDataByChr, sexModel, CHR_SEX_SHARED, nresample);
+        if (USE_GL && GLDataByChr != NULL && GLDataByChr->size() > 0 && GLDataByChr->at(0)->likelihood)
+        {
+            LOG.err("WARNING: with --gl-beagle the shared sex chromosome's allele frequencies are");
+            LOG.err("\tcomputed from the maximum-likelihood calls (hemizygous -> one allele), not");
+            LOG.err("\tby the likelihood EM used on the autosomes; at low depth they are pulled");
+            LOG.err("\ttoward the major allele there.");
+        }
 
         if (!AUTO_FREQ)
         {
@@ -971,7 +1006,19 @@ int main(int argc, char *argv[])
             for (unsigned int k = 0; k < populations.size(); k++)
             {
                 popNames.push_back(populations[k].first);
-                popFreq.push_back(calcFreqDataForIndices(hapDataByChr, popIndex[k], nresample));
+                //With likelihood input the per-population frequencies come
+                //from the same EM the loader used, not from the ML calls.
+                if (USE_GL && GLDataByChr->at(0)->likelihood)
+                {
+                    popFreq.push_back(calcFreqDataForIndicesGL(GLDataByChr, popIndex[k]));
+                    //The EM treats everyone as diploid; the shared sex
+                    //chromosome's frequency comes from the recoded calls, as
+                    //for the single-population path above.
+                    recomputeFreqForRoleIndices(hapDataByChr, popFreq.back(), popIndex[k],
+                                                sexModel, CHR_SEX_SHARED, nresample);
+                }
+                else
+                    popFreq.push_back(calcFreqDataForIndices(hapDataByChr, popIndex[k], nresample));
             }
             try { writeFreqDataWide(freqOutfile, popFreq, popNames, mapDataByChr); }
             catch (...) { logCurrentException("writing the allele frequency file"); return 2; }
