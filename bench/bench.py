@@ -21,13 +21,14 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 ROOT = Path(os.environ.get('BENCH_ROOT', '/data/workspace/garlic-lowcov/bench'))
 P    = Path('/data/workspace/garlic-lowcov')
 GARLIC = P / 'bin/garlic'
-ROHAN  = P / 'tools/rohan/src/rohan'
+ROHAN  = P / 'tools/rohan/bin/rohan'
 PEDSIM = Path('/data/workspace/rohml/bin/ped-sim')
 SIMMAP = Path('/data/workspace/rohml/maps/refined_mf_X.simmap')
 INTF   = Path('/data/workspace/rohml/tools/ped-sim/interfere/nu_p_campbell_X.tsv')
 
 CHRS = {'20': 63025520, '21': 48129895, '22': 51304566}   # GRCh37
 DEPTHS = [1, 2, 4, 8]
+ROHAN_DEPTHS = [1, 4]
 SMALL = os.environ.get('BENCH_SMALL') == '1'        # smoke test: 24 Mb of chr21/22, one pedigree copy, two depths
 if SMALL:
     CHRS = {'21': 24000000, '22': 24000000}; DEPTHS = [1, 4]   # the b37 map starts at 9.4 / 16.1 Mb on these
@@ -271,6 +272,41 @@ def _gl_one(args):
     return d, tool
 
 # ----------------------------------------------------------------------------
+def mapped_ranges():
+    """Per-chromosome [first, last] position of the genetic map used by ped-sim.  Outside it
+    ped-sim transmits nothing (truth and genotypes are reference-homozygous), so every input
+    and every call is restricted to it; in the human assemblies these flanks are the
+    acrocentric arms and centromeres, which real analyses mask as well."""
+    rng = {}
+    with open(ROOT / 'pedsim/map.simmap') as fh:
+        next(fh)
+        for line in fh:
+            c, pos = line.split()[:2]; pos = int(pos)
+            lo, hi = rng.get(c, (pos, pos)); rng[c] = (min(lo, pos), max(hi, pos))
+    return {c: (lo, min(hi, CHRS[c])) for c, (lo, hi) in rng.items() if c in CHRS}
+
+def write_mapped_inputs():
+    g = ROOT / 'gl'; rng = mapped_ranges()
+    with open(g / 'mapped.bed', 'w') as fh:
+        for c, (lo, hi) in rng.items(): fh.write(f"{c}\t{lo-1}\t{hi}\n")
+    for d in DEPTHS:
+        out = g / f'd{d}.map.beagle.gz'
+        if not out.exists():
+            with gzip.open(g / f'd{d}.beagle.gz', 'rt') as fi, gzip.open(out, 'wt', compresslevel=4) as fo:
+                fo.write(next(fi))
+                for line in fi:
+                    c, pos = line.split('\t', 1)[0].rsplit('_', 1); pos = int(pos)
+                    lo, hi = rng[c]
+                    if lo <= pos <= hi: fo.write(line)
+        if not (g / f'd{d}.map.calls.vcf.gz').exists():
+            sh(f"cd {g} && bcftools view -T mapped.bed -Oz -o d{d}.map.calls.vcf.gz d{d}.calls.vcf.gz && bcftools index -f d{d}.map.calls.vcf.gz", log=g / 'cmd.log')
+    if not (g / 'sites.mapped.bed').exists():
+        with open(g / 'sites.bed') as fi, open(g / 'sites.mapped.bed', 'w') as fo:
+            for line in fi:
+                c, a, b = line.split(); lo, hi = rng[c]
+                if lo <= int(b) <= hi: fo.write(line)
+    return rng
+
 def write_tfam(path, names):
     with open(path, 'w') as fh:
         for s in names: fh.write(f"bench\t{s}\t0\t0\t0\t-9\n")
@@ -282,23 +318,27 @@ def stage_roh(threads):
     r = ROOT / 'roh'; r.mkdir(parents=True, exist_ok=True)
     ss = samples()
     write_tfam(r / 'bench.tfam', ss)
+    write_mapped_inputs()
     # --no-centromere: a synthetic reference has no assembled gap and no built-in table.
     common = f"--no-centromere --winsize 60 --error {ERR} --size-bounds 500000 1000000 --force --quiet --threads {min(threads, 8)}"
     vcfc = common + " --pop bench.pop"
     # 1. True genotypes (ceiling).  Restrict to the ascertained sites.
     if not (r / 'truth.roh.bed').exists():
-        sh(f"cd {r} && bcftools view -T {ROOT}/gl/sites.bed -s {','.join(ss)} -Oz -o truth.vcf.gz {ROOT}/pedsim/bench.vcf.gz && "
+        sh(f"cd {r} && bcftools view -T {ROOT}/gl/sites.mapped.bed -s {','.join(ss)} -Oz -o truth.vcf.gz {ROOT}/pedsim/bench.vcf.gz && "
            f"{GARLIC} --vcf truth.vcf.gz {vcfc} --out truth > truth.stdout 2> truth.stderr", log=r / 'cmd.log')
     for d in DEPTHS:
         # 2. bcftools hard calls, run-wide --error
         if not (r / f'calls_d{d}.roh.bed').exists():
-            sh(f"cd {r} && {GARLIC} --vcf {ROOT}/gl/d{d}.calls.vcf.gz {vcfc} --out calls_d{d} > calls_d{d}.stdout 2> calls_d{d}.stderr", log=r / 'cmd.log', check=False)
-        # 3. bcftools calls with per-genotype PL (the per-genotype-error path the manual now warns about)
-        if not (r / f'gq_d{d}.roh.bed').exists():
-            sh(f"cd {r} && {GARLIC} --vcf {ROOT}/gl/d{d}.calls.vcf.gz --gl-type PL {vcfc.replace('--error '+str(ERR), '')} --out gq_d{d} > gq_d{d}.stdout 2> gq_d{d}.stderr", log=r / 'cmd.log', check=False)
-        # 4. beagle likelihoods
+            sh(f"cd {r} && {GARLIC} --vcf {ROOT}/gl/d{d}.map.calls.vcf.gz {vcfc} --out calls_d{d} > calls_d{d}.stdout 2> calls_d{d}.stderr", log=r / 'cmd.log', check=False)
+        # 3. bcftools calls with per-genotype PL (bcftools writes PL, not GQ; the per-genotype-error path the manual warns about)
+        if not (r / f'pl_d{d}.roh.bed').exists():
+            sh(f"cd {r} && {GARLIC} --vcf {ROOT}/gl/d{d}.map.calls.vcf.gz --gl-type PL {vcfc.replace('--error '+str(ERR), '')} --out pl_d{d} > pl_d{d}.stdout 2> pl_d{d}.stderr", log=r / 'cmd.log', check=False)
+        # 4. beagle likelihoods, at the shared --error and at two others (sensitivity)
         if not (r / f'beagle_d{d}.roh.bed').exists():
-            sh(f"cd {r} && {GARLIC} --gl-beagle {ROOT}/gl/d{d}.beagle.gz --tfam bench.tfam {common} --out beagle_d{d} > beagle_d{d}.stdout 2> beagle_d{d}.stderr", log=r / 'cmd.log', check=False)
+            sh(f"cd {r} && {GARLIC} --gl-beagle {ROOT}/gl/d{d}.map.beagle.gz --tfam bench.tfam {common} --out beagle_d{d} > beagle_d{d}.stdout 2> beagle_d{d}.stderr", log=r / 'cmd.log', check=False)
+        for e, tag in ((1e-4, 'e4'), (1e-2, 'e2')):
+            if not (r / f'beagle{tag}_d{d}.roh.bed').exists():
+                sh(f"cd {r} && {GARLIC} --gl-beagle {ROOT}/gl/d{d}.map.beagle.gz --tfam bench.tfam {common.replace('--error '+str(ERR), '--error '+str(e))} --out beagle{tag}_d{d} > beagle{tag}_d{d}.stdout 2> beagle{tag}_d{d}.stderr", log=r / 'cmd.log', check=False)
         print(f"[roh] garlic depth {d}x done", flush=True)
     mark('roh')
 
@@ -308,7 +348,10 @@ def stage_rohan(threads):
     if not ROHAN.exists():
         print("[rohan] binary missing, skipping", flush=True); return
     ss = samples()
-    jobs = [(s, d) for s in ss for d in DEPTHS]
+    # ROHan's local-heterozygosity step takes ~2-3 h per 162 Mb BAM with two threads here, so it is
+    # run at the two depths where the GARLIC inputs disagree most (1x) and agree (4x): 40 BAMs.
+    rohan_depths = [d for d in ROHAN_DEPTHS if d in DEPTHS]
+    jobs = [(s, d) for d in rohan_depths for s in ss]
     with ProcessPoolExecutor(max(1, threads // 2)) as ex:
         for s, d in ex.map(_rohan, jobs): print(f"[rohan] {s} {d}x", flush=True)
     mark('rohan')
@@ -317,7 +360,7 @@ def _rohan(args):
     s, d = args
     out = ROOT / f'roh/rohan/{s}_d{d}'; out.mkdir(parents=True, exist_ok=True)
     if (out / 'done').exists(): return s, d
-    sh(f"cd {out} && {ROHAN} -t 2 --rohmu 2e-5 --size 500000 -o out {ROOT}/founders/ref.fa {ROOT}/reads/{s}/d{d}/aln.bam > rohan.log 2>&1", log=out / 'cmd.log', check=False)
+    sh(f"cd {out} && {ROHAN} -t 2 --size 1000000 --seed {SEED} -o out {ROOT}/founders/ref.fa {ROOT}/reads/{s}/d{d}/aln.bam > rohan.log 2>&1", log=out / 'cmd.log', check=False)
     (out / 'done').touch()
     return s, d
 
@@ -327,7 +370,16 @@ def stage_score():
     r = ROOT / 'roh'
     truth = pd.read_csv(ROOT / 'pedsim/truth_hbd.bed', sep='\t', names=['chr', 'start', 'end', 'sample'], dtype={'chr': str})
     ss = samples()
-    genome = sum(CHRS.values())
+    rng = mapped_ranges()
+    genome = sum(hi - lo + 1 for lo, hi in rng.values())      # F_ROH denominator = mapped length
+
+    def clip(iv):
+        out = []
+        for c, a, b in iv:
+            if c not in rng: continue
+            lo, hi = rng[c]; a, b = max(a, lo), min(b, hi)
+            if b > a: out.append((c, a, b))
+        return out
 
     def intervals_from_roh_bed(fn):
         iv = {}
@@ -367,18 +419,21 @@ def stage_score():
     rows = []
     def score(method, depth, calls):
         for s in ss:
-            t = [(c, a, b) for c, a, b, smp in truth[truth['sample'] == s][['chr', 'start', 'end', 'sample']].itertuples(index=False)]
-            cl = calls.get(s, []) if calls is not None else None
-            if cl is None: continue
-            tlen = sum(b - a for _, a, b in t); clen = sum(b - a for _, a, b in cl)
-            ov = overlap(cl, t)
-            rows.append(dict(method=method, depth=depth, sample=s, pedigree=s.split('_')[0] if '_' in s else s[:2],
-                             truth_bp=tlen, called_bp=clen, overlap_bp=ov,
-                             precision=ov / clen if clen else np.nan, recall=ov / tlen if tlen else np.nan,
-                             froh_truth=tlen / genome, froh_called=clen / genome))
+            t_all = clip([(c, a, b) for c, a, b, smp in truth[truth['sample'] == s][['chr', 'start', 'end', 'sample']].itertuples(index=False)])
+            cl_all = calls.get(s, []) if calls is not None else None
+            if cl_all is None: continue
+            cl_all = clip(cl_all)
+            for min_len in (0, 1000000):
+                t = [x for x in t_all if x[2] - x[1] >= min_len]; cl = [x for x in cl_all if x[2] - x[1] >= min_len]
+                tlen = sum(b - a for _, a, b in t); clen = sum(b - a for _, a, b in cl)
+                ov = overlap(cl, t)
+                rows.append(dict(method=method, depth=depth, sample=s, pedigree=s[:2], min_len=min_len,
+                                 n_truth=len(t), n_called=len(cl), truth_bp=tlen, called_bp=clen, overlap_bp=ov,
+                                 precision=ov / clen if clen else np.nan, recall=ov / tlen if tlen else np.nan,
+                                 froh_truth=tlen / genome, froh_called=clen / genome))
     if (r / 'truth.roh.bed').exists(): score('garlic_true_genotypes', 'inf', intervals_from_roh_bed(r / 'truth.roh.bed'))
     for d in DEPTHS:
-        for m in ['calls', 'gq', 'beagle']:
+        for m in ['calls', 'pl', 'beagle', 'beaglee4', 'beaglee2']:
             fn = r / f'{m}_d{d}.roh.bed'
             if fn.exists(): score(f'garlic_{m}', d, intervals_from_roh_bed(fn))
         if ROHAN.exists():
@@ -389,7 +444,11 @@ def stage_score():
             if calls: score('rohan', d, calls)
     df = pd.DataFrame(rows)
     df.to_csv(ROOT / 'bench_scores.csv', index=False)
-    print(df.groupby(['method', 'depth'])[['precision', 'recall', 'froh_called', 'froh_truth']].mean().round(3).to_string())
+    d1 = df[df.min_len == 1000000]
+    g = d1.groupby(['method', 'depth'])
+    summ = pd.DataFrame({'precision_pooled': g.overlap_bp.sum() / g.called_bp.sum(), 'recall_pooled': g.overlap_bp.sum() / g.truth_bp.sum(),
+                         'froh_called': g.froh_called.mean(), 'froh_truth': g.froh_truth.mean()})
+    print(summ.round(3).to_string())
 
 # ----------------------------------------------------------------------------
 if __name__ == '__main__':
