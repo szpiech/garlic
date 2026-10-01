@@ -2,6 +2,7 @@
 #include <thread>
 #include <cstdio>   //sprintf: devel got this via gsl/gsl_math.h in garlic-kde.h
 #include "garlic-kde.h"
+#include "garlic-cli.h"   //ARG_LOD_CUTOFF, named in the out-of-range cutoff warning
 
 static int KDE_POINTS = 512;
 static double KDE_CUT = 3;
@@ -332,9 +333,19 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
 
     int minIndex = get_arg_min(&(y[leftMaxIndex]), rightMaxIndex - leftMaxIndex + 1) + leftMaxIndex;
 
-
+    //A valley more than one LOD-per-SNP away from zero is treated as
+    //implausible and 0 is used instead.  That substitution used to be silent;
+    //it fires on real inputs (a mixed-depth --tgls cohort puts the valley
+    //near -74 at winsize 60, and a single-depth high-coverage --tgls run
+    //within 10% of the boundary), so the discarded value is named here.  The
+    //applied value is unchanged so existing output is unaffected.
     if(abs(x[minIndex]/wsize) < 1) return x[minIndex];
-    else return 0;
+
+    LOG.err("WARNING: The minimum between the LOD score modes lies at ", x[minIndex], false);
+    LOG.err(", outside +/-", wsize, false);
+    LOG.err(" (the window size); applying a LOD score cutoff of 0 instead.");
+    LOG.err("\tThe density has been written to file for inspection; a cutoff can be given with", ARG_LOD_CUTOFF);
+    return 0;
 
 }
 

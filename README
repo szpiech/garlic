@@ -430,6 +430,18 @@ The command line reference in this file and in the manual is generated from the 
 own help strings by 'make docs' in src/. It had drifted to documenting 33 of 53 flags, and
 described one flag the program has never accepted.
 
+The automatic LOD cutoff warns when it discards the valley it found. A minimum between the
+two modes more than one LOD-per-SNP from zero (|cutoff| >= --winsize) has always been replaced
+by 0; that substitution was silent and fires on real inputs, so it now names the discarded
+value and points at --lod-cutoff. The applied value is unchanged.
+
+--gl-type documents that none of its forms suit low-coverage sequence data (below roughly 4x).
+Each reduces to one symmetric error rate per genotype, and the dominant low-depth error,
+allelic dropout, is directional: it turns heterozygotes into homozygotes, which is what
+autozygosity looks like. In simulation at 0.5-1x a GQ-derived error called essentially the
+whole genome autozygous. Hard calls with --error degrade more gracefully but lose the automatic
+cutoff by about 2x. A genotype-likelihood input is the intended route and is in progress.
+
 05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers. ***I'm having trouble getting mscOS versions to compile, so the current binary for mscOS is still v1.6.0 and still has this bug.***
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
@@ -483,6 +495,7 @@ strings. Do not edit by hand.
 --gl-type <string>: Which genotype-quality field to use.  With --vcf it is read from the FORMAT column; with --tgls it names the form of the single value per genotype in the .tgls file.  The two sources are NOT equivalent.
 With --vcf (recommended): GQ error = 10^(-GQ/10), the VCF spec's definition directly. PL The whole PL array is read and converted to a posterior:     P(g) proportional to 10^(-PL_g/10),  error = 1 - P(called)/sum.   This is the only correct use of a VCF's PL.  A VCF normalises PL   so the CALLED genotype is exactly 0, so that one value carries no   information -- it is 0 for every call, confident or not.  The   information is in how much worse the alternatives are. GL The same, via PL = -10*GL.   A missing field is an error naming whichever of GQ/PL/GL the file   does carry, and a called genotype with '.' for the field is an   error rather than a silent fall back to --error.
 With --tgls (legacy; the format holds ONE value per genotype): GQ As above.  The only form a VCF's values can be dropped into. PL error = 1 - 10^(-PL/10), i.e. P(genotype CORRECT).   *** NOT the VCF PL field. *** Under this definition PL=0 means an   error of 0, and the integers map to 0, 0.21, 0.37, 0.50, ... --   none a realistic error rate (0.001 would be PL=0.00435).  Feeding   VCF PLs here is rejected.  Use --vcf --gl-type PL instead. GL error = 1 - 10^GL, with the same caveat.
+Not for low-coverage sequence data (below roughly 4x).  Every form above reduces to one symmetric error rate per genotype, and the dominant error at low depth is not symmetric: allelic dropout turns heterozygotes into homozygotes, which is what autozygosity looks like.  In simulation at 0.5-1x this called essentially the whole genome autozygous.  Hard calls with --error behave better there but still lose the automatic cutoff by about 2x; a genotype-likelihood input that keeps all three genotype probabilities is the intended route for such data.
 	Default: none
 
 --map <string>: Provide a scaffold genetic map, sites that aren't present within this file are interpolated. Sites outside the bounds are filtered. This is required for wLOD calculations and any runs for which you wish to report ROH in units of cM.

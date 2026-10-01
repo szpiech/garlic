@@ -218,6 +218,8 @@ Per-genotype genotype qualities are read from the {\tt FORMAT} column with {\tt 
 \[ P(g) \propto 10^{-\mathrm{PL}_g/10}, \qquad \mathrm{error} = 1 - \frac{P(\mathrm{called})}{\sum_g P(g)}, \]
 with {\tt GL} entering the same expression as $\mathrm{PL} = -10\,\mathrm{GL}$.  This reproduces the {\tt GQ} that encodes the same confidence: a {\tt PL} of $(0,30,60)$ gives $0.001$, exactly {\tt GQ} $30$.  If the requested field is absent the run stops and the message names whichever of {\tt GQ}, {\tt PL} and {\tt GL} the record does carry.
 
+\paragraph{Low-coverage sequence data.}  None of the per-genotype quality forms above is suitable for low-coverage sequencing (below roughly $4\times$).  Each reduces to a single, symmetric error rate per genotype --- the probability that the call is wrong, with the wrong call drawn as if at random --- and the dominant error at low depth is not symmetric.  Allelic dropout, where only one of a heterozygote's two alleles is sampled by the reads, turns heterozygotes into homozygotes, and a run of such calls is exactly what autozygosity looks like to the LOD score.  In simulation at $0.5$--$1\times$, a per-genotype error taken from a caller's {\tt GQ} called essentially the whole genome autozygous.  Hard calls with a run-wide {\tt --error} degrade more gracefully, but by about $2\times$ the pooled LOD score density no longer has two modes and the automatic cutoff cannot be located.  The intended route for such data is a genotype-likelihood input that keeps all three genotype probabilities per site, so that an uncertain site contributes little evidence rather than confident wrong evidence; see the change log for its status.
+
 The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED plus a {\tt tgls} file, and a {\tt tgls} file holds one value per genotype, which cannot represent a normalised {\tt PL} or {\tt GL}; {\tt garlic} now rejects such a file rather than computing with it.
 \subsubsection{File formats}
 \noindent tped/tfam (required):\\
@@ -742,6 +744,11 @@ per family will now produce one analysis per family. garlic warns, but use --pop
 --freq-file accepts one frequency column per population, matched by header; a single-column
 file still applies to everything. The .freq.gz garlic writes, from the analysis or from
 --freq-only, can be given straight back with --freq-file.
+
+The automatic LOD cutoff now warns when it discards an implausible valley (|cutoff| >= winsize)
+and applies 0, naming the value; the applied value is unchanged. --gl-type documents that no
+per-genotype quality form suits low-coverage data (below roughly 4x); see "Low-coverage
+sequence data" under Input Files.
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 
