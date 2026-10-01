@@ -125,12 +125,20 @@ const string HELP_BEAGLE = "Genotype likelihoods in beagle format, as written by
 \tevidence instead of confident wrong evidence, and a site with no reads\n\
 \t(a flat triplet) contributes exactly 0.  Replaces --tped; --tfam is still\n\
 \trequired for individual IDs, population labels and sex, matched to the\n\
-\tbeagle columns by position (ANGSD's -b bam list order).  --error is the\n\
-\tautozygous state's allowance for a heterozygote, as with --tped.\n\
+\tbeagle columns by position (ANGSD's -b bam list order).  No --tped, --vcf\n\
+\tor map file is read.  --error is still required and keeps its meaning: it\n\
+\tis the autozygous state's allowance for a site that looks non-autozygous\n\
+\tfor any reason (mutation, gene conversion, mis-mapping, calling error) and\n\
+\tis what a confidently heterozygous site inside a run costs; the\n\
+\tlikelihoods carry the read-level uncertainty, so the two are not double\n\
+\tcounted, and --gl-type (a quality turned into a per-site error) is refused.\n\
 \tAllele frequencies are estimated by EM over the likelihoods, which is\n\
 \tunbiased at low depth where frequencies from called genotypes are not;\n\
 \t--freq-file (e.g. a column of ANGSD's .mafs.gz) overrides them.\n\
-\tTwo cautions.  Give LIKELIHOODS, not posteriors: ANGSD -doPost/-doGeno\n\
+\tThree cautions.  Run ANGSD on an ascertained site list (-sites, or at\n\
+\tleast -SNP_pval); without one every covered position is in the file and\n\
+\tinvariant sites get error-driven frequencies.  Give LIKELIHOODS, not\n\
+\tposteriors: ANGSD -doPost/-doGeno\n\
 \toutput has the Hardy-Weinberg prior already folded in, and feeding it here\n\
 \tcounts that prior twice.  And beagle markers carry physical positions only,\n\
 \tso --weighted and --cm still need --map.  Below roughly 2x the automatic\n\
