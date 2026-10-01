@@ -456,7 +456,12 @@ IDs, labels and sex, matched by position. Give LIKELIHOODS, not -doPost/-doGeno 
 which have the Hardy-Weinberg prior already folded in. In simulation this holds the called
 autozygous fraction at its true value down to 2x; below that the automatic cutoff cannot be
 placed whatever the input, and cohorts of mixed depth are over-called in their shallow
-members -- see the manual, "Genotype likelihood input".
+members -- see the manual, "Genotype likelihood input". A site whose EM frequency implies
+less than half a minor-allele copy among the individuals with reads is treated as fixed and
+dropped, as a called site with no minor allele is: the EM stops short of 0 on a monomorphic
+site, and such sites, kept with a frequency of 1e-7, gave every window they filled a LOD of
+about 0, which is above the usual (negative) automatic cutoff -- an invariant region, or a
+beagle file written without a site list, was called autozygous in every individual.
 
 Every run writes <out>.ind.tsv, a per-individual information report. A window LOD is a sum
 over its sites, and a site with no information for an individual (missing genotype, or a

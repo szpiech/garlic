@@ -473,6 +473,23 @@ static void test_emAlleleFrequency()
     vector<int> half; half.push_back(2); half.push_back(3); half.push_back(4);   // 2,2,1 -> 5 of 6
     ckd(emAlleleFrequency(like, half), 5.0 / 6.0, 1e-15, "EM respects the individual subset");
 
+    // A monomorphic site under sequencing likelihoods: 20 individuals, each
+    // hom-ref with the het 16x less likely (four reads at 4x).  The EM stops
+    // short of 0 on its step criterion; the result must be exactly 0 so the
+    // polymorphism filter drops the site, as it drops a called site with no
+    // minor allele.  A real singleton (one confident het) must survive.
+    const int m = 20;
+    float mono[3 * m];
+    vector<int> allm;
+    for (int i = 0; i < m; i++) { mono[3 * i] = 1.f; mono[3 * i + 1] = 1.f / 16; mono[3 * i + 2] = 1.f / 256; allm.push_back(i); }
+    ckd(emAlleleFrequency(mono, allm), 0.0, 0.0, "monomorphic site under likelihoods returns exactly 0");
+    for (int i = 0; i < m; i++) { mono[3 * i] = 1.f / 256; mono[3 * i + 1] = 1.f / 16; mono[3 * i + 2] = 1.f; }
+    ckd(emAlleleFrequency(mono, allm), 1.0, 0.0, "fixed-alt site under likelihoods returns exactly 1");
+    for (int i = 0; i < m; i++) { mono[3 * i] = 1.f; mono[3 * i + 1] = 1.f / 16; mono[3 * i + 2] = 1.f / 256; }
+    mono[0] = 1e-4f; mono[1] = 1.f; mono[2] = 1e-4f;   // one confident heterozygote (a 16:1 het is not
+    const double single = emAlleleFrequency(mono, allm); // enough against 19 homozygotes' Hardy-Weinberg prior)
+    ck(single > 0.0 && single < 0.1, "a singleton confident heterozygote keeps the site polymorphic");
+
     // Uncertain data pull the estimate toward the likelihood-weighted mean:
     // five individuals each with one read of the counted allele (hom-alt and
     // het equally likely, hom-ref impossible) must give a frequency above 0.5
@@ -480,8 +497,17 @@ static void test_emAlleleFrequency()
     // fixed point, not a hard call.
     float one[3 * n];
     for (int i = 0; i < n; i++) { one[3 * i] = 0.f; one[3 * i + 1] = 0.5f; one[3 * i + 2] = 1.f; }
+    // Every observed allele is the counted one, so the Hardy-Weinberg fixed
+    // point is p = 1 (p_{n+1} = 1/(2-p)), approached slowly; the half-copy rule
+    // snaps the converged estimate to 1 and the site is dropped as fixed, the
+    // same fate a called site with no minor allele meets.
     double p = emAlleleFrequency(one, all);
-    ck(p > 0.5 && p < 1.0, "one read each of the counted allele gives 0.5 < p < 1");
+    ckd(p, 1.0, 0.0, "one read each of the counted allele: fixed point is 1, site treated as fixed");
+    // The same five with one individual carrying a read of the other allele
+    // as well (het certain, both homozygotes impossible) stays polymorphic.
+    one[0] = 0.f; one[1] = 1.f; one[2] = 0.f;
+    p = emAlleleFrequency(one, all);
+    ck(p > 0.5 && p < 1.0, "one read each plus one certain heterozygote gives 0.5 < p < 1");
 }
 
 // -------------------------------------------------------- interpolate() ----

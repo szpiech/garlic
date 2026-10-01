@@ -1778,6 +1778,17 @@ double emAlleleFrequency(const float *like, const vector<int> &keepInd)
     //cannot be left again; clamp inside the open interval as the EM converges.
     if (p < 0) p = 0;
     if (p > 1) p = 1;
+    //A monomorphic site never reaches 0 or 1 exactly: the iteration stops on a
+    //step below 1e-8 while p is still positive, and a p of 1e-7 passes the
+    //polymorphism test that drops a called-genotype site with no minor allele.
+    //Such a site then contributes a LOD of about 0 to every window, and a
+    //window of them sits above the (usually negative) cutoff and is called
+    //autozygous in everyone.  Treat an estimate that implies less than half an
+    //allele copy among the informative individuals as fixed, which is the
+    //threshold a count of called genotypes applies implicitly (a singleton
+    //survives, nothing below it exists).
+    const double minorCopies = 2.0 * use.size() * (p < 0.5 ? p : 1 - p);
+    if (minorCopies < 0.5) p = (p < 0.5) ? 0.0 : 1.0;
     return p;
 }
 
