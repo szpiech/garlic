@@ -541,6 +541,17 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
         //The readers throw on an unwritable output or a malformed record, and
         //nothing caught it here: --freq-only turned a diagnosable error into
         //SIGABRT with "terminating due to uncaught exception of type int".
+        if (params->getStringFlag(ARG_EXCLUDE_REGIONS).compare(DEFAULT_EXCLUDE_REGIONS) != 0)
+        {
+            //The streaming writers never hold the map, so they cannot apply a
+            //mask; refusing is better than a frequency file that silently
+            //includes the masked sites.
+            LOG.err("ERROR:", ARG_EXCLUDE_REGIONS, false);
+            LOG.err(" is not applied by", ARG_FREQ_ONLY, false);
+            LOG.err("; run the full analysis, whose <out>.freq.gz omits the masked sites.");
+            freeRNG();
+            return OPTIONS_USAGE_ERROR;
+        }
         if (opt.beaglefile.compare(DEFAULT_BEAGLE) != 0)
         {
             //The streaming frequency writers read genotypes; the EM frequency

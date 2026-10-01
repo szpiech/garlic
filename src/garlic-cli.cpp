@@ -424,6 +424,23 @@ const string HELP_PAR = "Pseudoautosomal regions on the shared sex chromosome, a
 \tNaming any region here replaces them, and --par none keeps them all.\n\
 \tDefault: the regions for --build, or none without one";
 
+const string ARG_EXCLUDE_REGIONS = "--exclude-regions";
+const string DEFAULT_EXCLUDE_REGIONS = "none";
+const string HELP_EXCLUDE_REGIONS = "A BED file of regions whose sites are dropped before anything is computed:\n\
+\ta mappability or repeat mask, segmental duplications, or any region where\n\
+\tcalls are not to be trusted.  Mapping bias is regional -- repeats and\n\
+\tstructurally divergent segments mis-map reads toward the reference and\n\
+\tturn heterozygotes into homozygotes there, which is what autozygosity\n\
+\tlooks like -- and the read-level part that remains after masking did not\n\
+\tmove the calls in simulation, so this is the one correction garlic applies\n\
+\tfor it.  Standard BED: 0-based half-open <chrom> <chromStart> <chromEnd>,\n\
+\tfurther columns ignored, track/browser/# lines skipped, may be gzipped.\n\
+\tChromosomes it names that are not in the data are ignored.  The dropped\n\
+\tsites are gone from the frequency file and the window count; the FROH\n\
+\tdenominator is not reduced by them (unlike --par), since a run of\n\
+\thomozygosity can still span a short masked region.  Applied on every\n\
+\tchromosome, autosomes included; use --par for pseudoautosomal regions.";
+
 const string ARG_PAR_FILE = "--par-file";
 const string DEFAULT_PAR_FILE = "none";
 const string HELP_PAR_FILE = "The same regions from a file, one per line, <chr> <start> <end>. '#' comments\n\
@@ -667,6 +684,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 	params->addFlag(ARG_SEXCHR_WINSIZE, DEFAULT_SEXCHR_WINSIZE, "", HELP_SEXCHR_WINSIZE);
 	params->addListFlag(ARG_PAR, "_NONE", "", HELP_PAR);
 	params->addFlag(ARG_PAR_FILE, DEFAULT_PAR_FILE, "", HELP_PAR_FILE);
+	params->addFlag(ARG_EXCLUDE_REGIONS, DEFAULT_EXCLUDE_REGIONS, "", HELP_EXCLUDE_REGIONS);
 	params->addListFlag(ARG_CHR, "_ALL", "", HELP_CHR);
 	params->addFlag(ARG_OUTDIR, DEFAULT_OUTDIR, "", HELP_OUTDIR);
 	params->addFlag(ARG_POOL, DEFAULT_POOL, "", HELP_POOL);
@@ -721,6 +739,7 @@ param_t *getCLI(int argc, char *argv[], int &status)
 		f.push_back(ARG_SEX_SYSTEM);  f.push_back(ARG_SEX_CHR);
 		f.push_back(ARG_SEX_CHR_DEGENERATE); f.push_back(ARG_HAPLOID_CHR);
 		f.push_back(ARG_PAR);         f.push_back(ARG_PAR_FILE);
+		f.push_back(ARG_EXCLUDE_REGIONS);
 		cats.push_back(make_pair(string("Genome and chromosomes"), f));
 
 		f.clear();

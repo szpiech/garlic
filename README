@@ -486,6 +486,19 @@ cutoff, with a warning. Without the flag, garlic warns when the cohort would for
 stratum. What stratification removes is the pooling artefact; the noisier emission at low depth
 remains (1.3x at 2x in that simulation) and no cutoff can undo it.
 
+--exclude-regions <bed> drops every site inside the regions of a standard BED file before
+anything is computed -- a mappability or repeat mask, segmental duplications, any region where
+calls are not to be trusted. On every chromosome, autosomes included; chromosomes the file names
+that are not in the data are ignored, a file covering no site warns. Dropped sites are gone from
+the frequency file and every window; the FROH denominator is not reduced by them (unlike --par),
+since a run can span a short masked region. This is the one correction garlic applies for
+mapping bias, the regional part. The read-level part (ALT read fraction below one half at
+heterozygotes) was simulated at 0.45-0.35 in half a cohort and did not move the calls at 2x and
+above under the likelihood emission; two emission corrections reproduced the uncorrected result,
+so neither ships, and dropout_hat in <out>.ind.tsv reports it instead. The manual's "Reference
+and mapping bias" lists what belongs upstream (alt-aware mapping, -baq, read-length and quality
+filters, damage rescaling, unbiased frequencies).
+
 05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers. ***I'm having trouble getting mscOS versions to compile, so the current binary for mscOS is still v1.6.0 and still has this bug.***
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
@@ -594,6 +607,9 @@ Rows are matched by sample ID, never by file order. Every sample in the data mus
 	Default: all chromosomes in the input
 
 --chr-lengths <string>: A file of chromosome lengths: two whitespace-separated columns, chromosome and length. A samtools faidx .fai is accepted unchanged -- its first two columns are already name and length and the rest is ignored -- so the index beside your reference can be passed as it is. The way to use --froh-denominator assembly on a non-human assembly, and on TPED input, where nothing in the data states a chromosome's length. Takes precedence over --build and over a VCF's ##contig header.
+	Default: none
+
+--exclude-regions <string>: A BED file of regions whose sites are dropped before anything is computed: a mappability or repeat mask, segmental duplications, or any region where calls are not to be trusted.  Mapping bias is regional -- repeats and structurally divergent segments mis-map reads toward the reference and turn heterozygotes into homozygotes there, which is what autozygosity looks like -- and the read-level part that remains after masking did not move the calls in simulation, so this is the one correction garlic applies for it.  Standard BED: 0-based half-open <chrom> <chromStart> <chromEnd>, further columns ignored, track/browser/# lines skipped, may be gzipped. Chromosomes it names that are not in the data are ignored.  The dropped sites are gone from the frequency file and the window count; the FROH denominator is not reduced by them (unlike --par), since a run of homozygosity can still span a short masked region.  Applied on every chromosome, autosomes included; use --par for pseudoautosomal regions.
 	Default: none
 
 --haploid-chr <string1> ... <stringN>: Chromosomes haploid in every individual: mitochondrion, chloroplast. Dropped before calling, since a run of homozygosity on them is not a meaningful quantity.

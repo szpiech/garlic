@@ -252,7 +252,18 @@ The per-individual mode, spread, stratum and applied cutoff are written to {\tt 
 
 Without the flag, {\tt garlic} still locates the modes and warns when the cohort would form more than one stratum, naming the strata, so that a mixed cohort analysed with one cutoff is at least a visible choice.
 
-Two approaches were tried and rejected before this one, and are recorded so they are not tried again: standardising every individual's windows by its own mode and spread and pooling the standardised windows --- the non-autozygous spread is set by allele-frequency heterogeneity across windows while the autozygous mode is set by information per site, so the two do not scale together and the standardised density has no common autozygous mode --- and a valley per individual, which on one individual's windows is too noisy ($10$--$26\%$ more genome called on the uniform bundled example).
+Two approaches were tried and rejected before this one, and are recorded so they are not tried again: standardising every individual's windows by its own mode and spread and pooling the standardised windows --- the non-autozygous spread is set by allele-frequency heterogeneity across windows while the autozygous mode is set by information per site, so the two do not scale together and the standardised density has no common autozygous mode (a reflected-null local-FDR cutoff on it called $55\%$ more genome than the pooled rule on the uniform bundled example, a valley-to-the-right rule $15\%$ more) --- and a valley per individual, which on one individual's windows is too noisy ($10$--$26\%$ more genome called on the same example).
+
+\subsubsection{Reference and mapping bias: {\tt --exclude-regions}}
+\label{sec:refbias}
+
+Reads carrying the non-reference allele map less often and with lower quality, so at a true heterozygote the fraction of ALT reads is below one half.  In this model that is a {\em directional} error --- a heterozygote observed as a reference homozygote --- and a run of such calls is what autozygosity looks like.  It has two parts, and they are handled differently.
+
+\paragraph{Regional bias} --- repeats, segmental duplications, structurally divergent segments --- mis-maps reads wholesale, and no per-site model recovers from it.  {\tt --exclude-regions <bed>} drops every site inside the regions of a standard BED file (0-based half-open, further columns ignored, {\tt track}/{\tt browser}/{\tt \#} lines skipped, gzipped or not) before anything is computed: a mappability mask, a repeat annotation, segmental duplications, or any region in which calls are not to be trusted.  It applies on every chromosome, autosomes included; chromosomes the file names that are not in the data are ignored, as a genome-wide mask names them all, and a file that covers no site at all draws a warning, since that usually means the wrong assembly or chromosome naming.  The dropped sites are gone from the frequency file and from every window.  The $F_{ROH}$ denominator is {\em not} reduced by them, unlike {\tt --par}: a run of homozygosity can span a short masked region, and the regions are not a statement about what the genome can carry.  {\tt --freq-only} does not apply the mask and refuses the combination.
+
+\paragraph{Read-level bias} --- the ALT read fraction at heterozygotes falling below one half everywhere --- was simulated with the fraction at $0.45$, $0.40$ and $0.35$ (well beyond what is seen in practice) in half of a cohort, at $1$--$30\times$.  Under the likelihood emission it did not move the calls at $2\times$ and above: the biased half's false-autozygous window rate was $0.0074$ against $0.0034$ for the unbiased half at $2\times$ and at most $0.0004$ from $4\times$, with recall above $0.99$ throughout.  Two corrections were implemented in that simulation --- a dropout confusion matrix on the emission, and likelihoods recomputed at an estimated ALT fraction --- and both reproduced the uncorrected result to the third decimal, so neither is in {\tt garlic}.  What is in {\tt garlic} is the diagnostic: {\tt dropout\_hat} in {\tt <out>.ind.tsv} (\S\ref{sec:beagle}) is $0$ for an unbiased individual and rises with the bias, so an individual whose data differ from the cohort's is visible.
+
+\paragraph{Upstream} is where the rest belongs, and it is worth doing before the data reach {\tt garlic}: map to a reference that carries the alternative alleles (an alt-aware or pangenome mapper, or a population-matched reference); use ANGSD's {\tt -baq 1 -C 50} to down-weight mis-aligned bases, and its {\tt -minMapQ}/{\tt -minQ} filters; filter short reads, whose mapping is the most reference-biased; for ancient DNA, rescale damaged bases ({\tt mapDamage}) or drop transitions ({\tt -rmTrans 1}), which also removes the deamination signal that mimics heterozygosity; and take allele frequencies from a source that is not itself biased --- the likelihood EM here, ANGSD's {\tt -doMaf}, or {\tt --freq-file} from the high-coverage members of the cohort.  A per-individual estimate of the ALT fraction at heterozygotes, if wanted, should be the maximiser of the marginal likelihood over all sites, not the mean ALT fraction at confidently called heterozygotes: conditioning on a confident call selects the sites where both alleles were seen, and in simulation that estimate read $0.44$ at $2\times$ for a true $0.35$.
 
 \subsubsection{File formats}
 \noindent tped/tfam (required):\\
@@ -277,6 +288,12 @@ Two approaches were tried and rejected before this one, and are recorded so they
 	<chr>_<pos> <A1> <A2> <P(A1A1)> <P(A1A2)> <P(A2A2)> ...
 \end{verbatim}
 \noindent As written by {\tt angsd -doGlf 2}.  Three genotype likelihoods per individual per site; a site with no reads is the flat triplet.
+
+\noindent exclude-regions (optional; see \S\ref{sec:refbias}):
+\begin{verbatim}
+	<chrom> <chromStart> <chromEnd> [ignored ...]
+\end{verbatim}
+\noindent Standard BED, 0-based half-open; {\tt track}, {\tt browser} and {\tt \#} lines are skipped.
 
 \noindent pop (optional; with {\tt --vcf}, the only way to set population labels):
 \begin{verbatim}
@@ -809,6 +826,11 @@ the same evidence per window (grouped by the location of their non-autozygous LO
 cohort of mixed depth is not over-called in its shallow members; a uniform cohort gets the
 pooled cutoff exactly. Without the flag, garlic warns when the cohort would form more than
 one stratum. See "Cohorts of mixed depth" under Input Files.
+
+--exclude-regions <bed> drops the sites inside a mappability or repeat mask before anything is
+computed, on every chromosome. The one correction for mapping bias garlic applies: the regional
+part. Read-level bias did not move the calls at >= 2x in simulation and is reported, not
+corrected (dropout_hat in <out>.ind.tsv). See "Reference and mapping bias" under Input Files.
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 

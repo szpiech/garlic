@@ -216,6 +216,7 @@ c21_freqonly|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --er
 c21_tgls_gq30|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --tgls $WORK/gq30.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
 tgls_gq|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $WORK/gq30_genome.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
 c21_beagle_lowcov|--gl-beagle $WORK/c21.lowcov.beagle.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed freq.gz ind.tsv
+c21_masked|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --exclude-regions $WORK/mask.bed|roh.bed freq.gz
 c21_beagle_stratified|--gl-beagle $WORK/c21.mixed.beagle.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --size-bounds 500000 1000000 --stratify-cutoff|roh.bed ind.tsv
 "
 
@@ -2995,6 +2996,47 @@ stratified_cutoff() {
     expect_exit 1 "--stratify-cutoff with --kde-subsample" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --kde-subsample 10 --stratify-cutoff --out "$WORK/st_e2"
 }
 
+
+# ---------------------------------------------------------------------------
+# --exclude-regions.
+excluded_regions() {
+    echo "== --exclude-regions =="
+    [ -f "$EX/chr21.tped.gz" ] || { echo "  SKIP  chr21 fixture not present"; return; }
+    common="--build hg18 --winsize 60 --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --quiet --force"
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/mk_ref" >/dev/null 2>&1
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --exclude-regions "$WORK/mask.bed" --out "$WORK/mk_a" >/dev/null 2>"$WORK/mk_a.err"
+    if [ $? -ne 0 ]; then bad "--exclude-regions failed"; sed -n '1,3p' "$WORK/mk_a.err" | sed 's/^/        /'; return; fi
+    # Exactly the sites inside the intervals are gone from the frequency file
+    # (BED half-open: 20000000 < pos <= 25000000), and no others.
+    inside=$(gz "$WORK/mk_ref.freq.gz" | awk 'NR>1 && (($3>20000000 && $3<=25000000) || ($3>30000000 && $3<=30500000))' | wc -l | tr -d ' ')
+    left=$(gz "$WORK/mk_a.freq.gz" | awk 'NR>1 && (($3>20000000 && $3<=25000000) || ($3>30000000 && $3<=30500000))' | wc -l | tr -d ' ')
+    nref=$(gz "$WORK/mk_ref.freq.gz" | wc -l | tr -d ' '); nmask=$(gz "$WORK/mk_a.freq.gz" | wc -l | tr -d ' ')
+    if [ "$inside" -gt 0 ] && [ "$left" -eq 0 ]; then ok; else bad "masked sites survive in the frequency file ($left of $inside)"; fi
+    if [ $((nref - nmask)) -eq "$inside" ]; then ok; else bad "the mask dropped $((nref - nmask)) sites but $inside lie inside it"; fi
+    if grep -q "Loci dropped by --exclude-regions: $inside" "$WORK/mk_a.log"; then ok; else bad "the log does not state the dropped count"; fi
+    # A chromosome the mask names but the data lacks is not an error, and the
+    # two spellings of 21 both hit (both intervals dropped something).
+    if grep -q "WARNING" "$WORK/mk_a.err"; then bad "unexpected warning with a valid mask: $(grep WARNING "$WORK/mk_a.err" | head -1)"; else ok; fi
+    # Likelihood input goes through the same path and gives the same calls.
+    # shellcheck disable=SC2086
+    $GARLIC --gl-beagle "$WORK/c21.exact.beagle.gz" --tfam "$EX/chr21.tfam.gz" $common --exclude-regions "$WORK/mask.bed" --out "$WORK/mk_b" >/dev/null 2>&1
+    if [ "$(sum "$WORK/mk_a.roh.bed")" = "$(sum "$WORK/mk_b.roh.bed")" ]; then ok; else bad "mask gives different calls on TPED and degenerate beagle input"; fi
+    # A mask covering nothing warns and drops nothing.
+    printf 'chr21\t1\t2\n' > "$WORK/mask0.bed"
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --exclude-regions "$WORK/mask0.bed" --out "$WORK/mk_0" >/dev/null 2>"$WORK/mk_0.err"
+    if grep -q "covers no locus" "$WORK/mk_0.err" && [ "$(sum "$WORK/mk_0.roh.bed")" = "$(sum "$WORK/mk_ref.roh.bed")" ]; then ok
+    else bad "a mask covering nothing should warn and leave the calls unchanged"; fi
+    # Malformed BED and the --freq-only refusal.
+    printf 'chr21\t5\n' > "$WORK/bad.bed"
+    expect_exit 1 "BED line with two columns" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --exclude-regions "$WORK/bad.bed" --out "$WORK/mk_e1"
+    printf 'chr21\t50\t10\n' > "$WORK/bad2.bed"
+    expect_exit 1 "BED interval ending before it starts" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --exclude-regions "$WORK/bad2.bed" --out "$WORK/mk_e2"
+    expect_exit 1 "--exclude-regions with --freq-only" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --error 0.001 --freq-only --exclude-regions "$WORK/mask.bed" --quiet --force --out "$WORK/mk_e3"
+}
+
 echo "  binary: $GARLIC"
 [ -x "$GARLIC" ] || { echo "ERROR: $GARLIC is not executable. Run make in src/ first."; exit 1; }
 echo "  version: $("$GARLIC" --version 2>&1 | head -1)"
@@ -3012,6 +3054,11 @@ mk_tgls "$WORK/gq30_genome.tgls.gz" 30 "$EX/example.tped.gz"
 mk_beagle "$WORK/c21.exact.beagle.gz" exact
 mk_beagle "$WORK/c21.lowcov.beagle.gz" lowcov
 mk_beagle "$WORK/c21.mixed.beagle.gz" mixed
+# A mask for --exclude-regions: two chr21 intervals in the fixture's hg18
+# coordinates, one spelled chr21 and one 21, a chromosome absent from the
+# data, a track line, a comment and a fourth column -- everything standard BED
+# allows and the reader must take in stride.
+printf 'track name=mask\n# comment\nchr21\t20000000\t25000000\textra\nchr99\t1\t1000\n21\t30000000\t30500000\n' > "$WORK/mask.bed"
 
 unit_tests
 golden
@@ -3019,6 +3066,7 @@ determinism
 likelihood_guards
 beagle_input
 stratified_cutoff
+excluded_regions
 ind_metadata
 vcf_input
 vcf_likelihoods
