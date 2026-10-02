@@ -1,0 +1,71 @@
+root: /data/workspace/garlic-lowcov/bench/pop_bottleneck
+small: false
+tools:
+  garlic: /data/workspace/garlic-lowcov/bin/garlic
+  rohan: /data/workspace/garlic-lowcov/tools/rohan/bin/rohan
+  pedsim: /data/workspace/rohml/bin/ped-sim
+  simmap: /data/workspace/rohml/maps/refined_mf_X.simmap
+  intf: /data/workspace/rohml/tools/ped-sim/interfere/nu_p_campbell_X.tsv
+chromosomes:
+  '20': 63025520
+  '21': 48129895
+  '22': 51304566
+depths:
+- 1
+- 2
+- 4
+- 8
+rohan_depths:
+- 1
+- 4
+run_rohan: false
+founders:
+  n_haplotypes: 400
+  Ne: 20000
+  mu: 1.25e-08
+  seed: 2026
+  demography: bottleneck
+  bottleneck_Ne: 500
+  bottleneck_start: 40
+  bottleneck_end: 70
+  small_Ne: 2000
+cohort: population
+population_cohort:
+  n_individuals: 20
+  ibd_max_time: 100
+  ibd_min_span: 100000
+pedigrees:
+  fs:
+  - 1 0 1
+  - 2 0 2
+  - 3 1 1 1:1_2
+  c1:
+  - 1 0 1
+  - 2 0 2
+  - 3 0 2
+  - 4 1 1 1:1_2
+  c2:
+  - 1 0 1
+  - 2 0 2
+  - 3 0 2
+  - 4 0 2
+  - 5 1 1 1:1_2
+  ob:
+  - 1 0 1
+  - 2 1 1
+n_per_pedigree: 5
+reads:
+  length: 150
+  fragment: 350
+  fragment_sd: 40
+  system: HS25
+ascertainment_maf: 0.05
+garlic:
+  error: 0.001
+  error_sweep:
+  - 0.0001
+  - 0.01
+  winsize: 60
+  size_bounds: 500000 1000000
+score:
+  min_len: 1000000
