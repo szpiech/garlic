@@ -7,6 +7,25 @@ from common import read_simmap
 
 cfg = snakemake.config
 CHRS = {k: int(v) for k, v in snakemake.params.chrs.items()}
+
+def demography(F):
+    """One population; config founders.demography selects its history (times in generations ago).
+    constant:   Ne throughout.
+    bottleneck: Ne_now until t_start, Ne_bottleneck from t_start to t_end, Ne before t_end.
+    small:      a small constant population (Ne_small)."""
+    model = F.get('demography', 'constant')
+    dem = msprime.Demography()
+    if model == 'constant':
+        dem.add_population(name='P', initial_size=int(F['Ne']))
+    elif model == 'bottleneck':
+        dem.add_population(name='P', initial_size=int(F['Ne']))
+        dem.add_population_parameters_change(time=float(F['bottleneck_start']), initial_size=int(F['bottleneck_Ne']), population='P')
+        dem.add_population_parameters_change(time=float(F['bottleneck_end']), initial_size=int(F['Ne']), population='P')
+    elif model == 'small':
+        dem.add_population(name='P', initial_size=int(F['small_Ne']))
+    else:
+        raise ValueError(f"unknown demography {model}")
+    return dem
 F = cfg['founders']; SEED = int(F['seed']); NHAP = int(F['n_haplotypes'])
 rng = np.random.default_rng(SEED)
 maps = read_simmap(cfg['tools']['simmap'], CHRS)
@@ -23,9 +42,10 @@ with open(snakemake.output.ref, 'w') as ref_fa, gzip.open(snakemake.output.vcf, 
         pos = np.concatenate([[0], m[:, 0], [L]]); cm = np.concatenate([[0], m[:, 1], [m[-1, 1]]])
         pos, idx = np.unique(pos, return_index=True); cm = cm[idx]
         rate = np.diff(cm) / 100.0 / np.diff(pos); rate = np.where(np.isfinite(rate) & (rate >= 0), rate, 0.0)
-        ts = msprime.sim_ancestry(samples=NHAP // 2, population_size=int(F['Ne']), recombination_rate=msprime.RateMap(position=pos, rate=rate),
+        ts = msprime.sim_ancestry(samples=NHAP // 2, demography=demography(F), recombination_rate=msprime.RateMap(position=pos, rate=rate),
                                   sequence_length=L, random_seed=SEED + int(c), ploidy=2)
         ts = msprime.sim_mutations(ts, rate=float(F['mu']), random_seed=SEED + 100 + int(c), model=msprime.BinaryMutationModel())
+        ts.dump(f"{snakemake.params.treedir}/chr{c}.trees")
         seq = rng.choice(bases, size=L)
         ref_fa.write(f">{c}\n")
         for k in range(0, L, 60): ref_fa.write("".join(seq[k:k + 60]) + "\n")

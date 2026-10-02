@@ -30,6 +30,7 @@ if SMALL:
     config["n_per_pedigree"] = 1
 config["chromosomes"] = CHRS
 
+COHORT = config.get("cohort", "pedigree")          # pedigree (ped-sim) | population (unrelated simulated individuals)
 T = config["tools"]
 G = config["garlic"]
 R = config["reads"]
@@ -52,24 +53,36 @@ rule garlic_only:
 
 # ----------------------------------------------------------------------------------------- samples
 checkpoint pedsim:
+    # Produces the cohort: ped-sim pedigrees (cohort=pedigree) or the first n simulated individuals taken
+    # as unrelated members of the population (cohort=population; their runs come from demography alone).
     input:
         deffile = "pedsim/bench.def", simmap = "pedsim/map.simmap", intf = "pedsim/intf.tsv",
         vcf = "founders/founders.vcf.gz",
     output:
         vcf = "pedsim/bench.vcf.gz", tbi = "pedsim/bench.vcf.gz.tbi", seg = "pedsim/bench.seg",
         samples = "pedsim/samples.txt",
+    params: n_pop = lambda w: int(config.get("population_cohort", {}).get("n_individuals", 20))
     log: "pedsim/pedsim.log"
-    shell:
-        # ped-sim writes plain gzip (not bgzip), unphased by default, and injects 1e-3 genotyping error
-        # and missingness unless told otherwise.
-        r"""
-        cd pedsim && {T[pedsim]} -d bench.def -m map.simmap -i ../{input.vcf} -o bench --intf intf.tsv \
-            --seg_haps --keep_phase --founder_ids --err_rate 0 --miss_rate 0 > pedsim.log 2>&1
-        cd ..
-        if [ -f pedsim/bench.vcf ]; then bgzip -f pedsim/bench.vcf; else zcat pedsim/bench.vcf.gz | bgzip -c > pedsim/bench.bgz && mv pedsim/bench.bgz pedsim/bench.vcf.gz; fi
-        bcftools index -f -t pedsim/bench.vcf.gz
-        bcftools query -l pedsim/bench.vcf.gz > pedsim/samples.txt
-        """
+    run:
+        if COHORT == "pedigree":
+            # ped-sim writes plain gzip (not bgzip), unphased by default, and injects 1e-3 genotyping error
+            # and missingness unless told otherwise.
+            shell(r"""
+            cd pedsim && {T[pedsim]} -d bench.def -m map.simmap -i ../{input.vcf} -o bench --intf intf.tsv \
+                --seg_haps --keep_phase --founder_ids --err_rate 0 --miss_rate 0 > pedsim.log 2>&1
+            cd ..
+            if [ -f pedsim/bench.vcf ]; then bgzip -f pedsim/bench.vcf; else zcat pedsim/bench.vcf.gz | bgzip -c > pedsim/bench.bgz && mv pedsim/bench.bgz pedsim/bench.vcf.gz; fi
+            bcftools index -f -t pedsim/bench.vcf.gz
+            bcftools query -l pedsim/bench.vcf.gz > pedsim/samples.txt
+            """)
+        else:
+            shell(r"""
+            bcftools query -l {input.vcf} | head -n {params.n_pop} > pedsim/samples.txt
+            bcftools view -S pedsim/samples.txt -Oz -o pedsim/bench.vcf.gz {input.vcf}
+            bcftools index -f -t pedsim/bench.vcf.gz
+            : > pedsim/bench.seg
+            echo "population cohort: first {params.n_pop} simulated individuals" > pedsim/pedsim.log
+            """)
 
 def samples():
     with checkpoints.pedsim.get().output.samples.open() as fh:
@@ -89,8 +102,8 @@ def rohan_targets(w=None):
 
 # ---------------------------------------------------------------------------------------- founders
 rule founders:
-    output: vcf = "founders/founders.vcf.gz", ref = "founders/ref.fa", sites = "founders/sites.tsv"
-    params: chrs = CHRS, scriptdir = SCRIPTS
+    output: vcf = "founders/founders.vcf.gz", ref = "founders/ref.fa", sites = "founders/sites.tsv", trees = expand("founders/trees/chr{c}.trees", c=list(CHRS))
+    params: chrs = CHRS, scriptdir = SCRIPTS, treedir = "founders/trees"
     log: "founders/founders.log"
     resources: mem_mb = 8000
     script: "scripts/founders.py"
@@ -109,10 +122,10 @@ rule pedsim_inputs:
     script: "scripts/pedsim_inputs.py"
 
 rule truth:
-    input: seg = "pedsim/bench.seg"
+    input: seg = "pedsim/bench.seg", samples = "pedsim/samples.txt", trees = expand("founders/trees/chr{c}.trees", c=list(CHRS))
     output: "pedsim/truth_hbd.bed"
-    params: chrs = CHRS
-    script: "scripts/truth_hbd.py"
+    params: chrs = CHRS, treedir = "founders/trees"
+    script: "scripts/truth_hbd.py" if COHORT == "pedigree" else "scripts/truth_trees.py"
 
 # ------------------------------------------------------------------------------------------- reads
 rule hap_fasta:

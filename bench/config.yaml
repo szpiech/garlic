@@ -21,6 +21,17 @@ founders:
   Ne: 20000
   mu: 1.25e-8
   seed: 2026
+  demography: constant        # constant | bottleneck | small
+  bottleneck_Ne: 500          # bottleneck: Ne from bottleneck_start to bottleneck_end generations ago
+  bottleneck_start: 40
+  bottleneck_end: 70
+  small_Ne: 2000              # small: constant small population
+
+cohort: pedigree              # pedigree: ped-sim pedigrees below | population: unrelated simulated individuals
+population_cohort:
+  n_individuals: 20
+  ibd_max_time: 100           # truth = within-individual IBD segments coalescing <= this many generations ago
+  ibd_min_span: 100000
 
 pedigrees:                    # name -> ped-sim generation lines; "1:1_2" = branch 1's parents are branches 1 and 2
   fs: ["1 0 1", "2 0 2", "3 1 1 1:1_2"]
