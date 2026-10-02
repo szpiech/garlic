@@ -19,9 +19,11 @@ Pipeline (one stage per function, each idempotent and resumable):
    `-GL 1 -doGlf 2 -doMaf 1` beagle likelihoods per depth; `bcftools mpileup |
    call -m -C alleles` hard calls with PL at the same sites.
 6. `roh` – GARLIC on true genotypes (ceiling), on hard calls with `--error`, on
-   hard calls with `--gl-type PL`, and on the beagle file with `--gl-beagle`;
+   hard calls with `--gl-type PL` (bcftools emits PL, not GQ; this is the
+   per-genotype-quality arm, file prefix `pl_`), and on the beagle file with `--gl-beagle`;
    all with `--no-centromere --winsize 60 --size-bounds 500000 1000000`.
-7. `rohan` – ROHan per BAM (optional; skipped if the binary is absent).
+7. `rohan` – ROHan per BAM at 1x and 4x (optional; skipped if the binary is absent;
+   4-6 h per 162 Mb BAM with two threads).
 8. `score` – base-level precision/recall of called ROH against HBD truth and
    FROH error, per individual and method -> `bench_scores.csv`.
 
