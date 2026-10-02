@@ -1,0 +1,170 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,array}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\renewcommand{\Pr}[1]{\mathrm{Pr}\!\left[#1\right]}
+\newcommand{\LOD}{\mathrm{LOD}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{The GARLIC LOD score with called genotypes\\ and with genotype likelihoods, and the EM allele-frequency estimate}
+\author{Notes for the \texttt{low-cov} branch (GARLIC v2.0.0)}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\noindent These notes write out the three calculations behind \code{--gl-beagle} in the notation of the GARLIC manual and of Pemberton \emph{et al.}\ (2012, \emph{AJHG}): the LOD score on called genotypes (\S\ref{sec:hard}), its generalisation to genotype likelihoods (\S\ref{sec:gl}), and the EM estimate of allele frequencies from likelihoods (\S\ref{sec:em}). Section~\ref{sec:code} maps the symbols to the code.
+
+\section*{Notation}
+
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.62\textwidth}@{}}
+$i$ & individual \\
+$k = 1,\dots,K$ & the $K$ SNPs of a window $w$ ($K$ is \code{--winsize}) \\
+$A$, $B$ & the two alleles at SNP $k$; $B$ is the \emph{counted} allele \\
+$p_A$, $p_B = 1 - p_A$ & their frequencies in the population individual $i$ belongs to \\
+$G_{i,k} \in \{AA, AB, BB\}$ & the genotype; equivalently $g \in \{0,1,2\}$, the number of $B$ alleles \\
+$X_k \in \{0,1\}$ & the hidden state: $X_k = 1$ autozygous (both alleles identical by descent), $X_k = 0$ not \\
+$\epsilon$ & the error rate, \code{--error} \\
+$D_{i,k}$ & the sequence reads of individual $i$ covering SNP $k$ \\
+$L_{i,k}(g) = \Pr{D_{i,k} \mid G_{i,k} = g}$ & the genotype likelihood triplet (ANGSD \code{-doGlf 2}) \\
+\end{tabular}
+
+\section{LOD score on called genotypes}
+\label{sec:hard}
+
+For window $w$ of individual $i$, GARLIC sums over its $K$ SNPs the log-likelihood ratio of the observed genotype under autozygosity against non-autozygosity:
+\begin{equation}
+\LOD(w,i) = \sum_{k=1}^{K} \log_{10} \frac{\Pr{G_{i,k} \mid X_k = 1}}{\Pr{G_{i,k} \mid X_k = 0}} .
+\label{eq:lod}
+\end{equation}
+
+\paragraph{Non-autozygous state.} The two alleles are independent draws from the population, so the genotype follows Hardy--Weinberg proportions:
+\begin{equation}
+\Pr{G \mid X = 0} = N(G) =
+\begin{cases}
+p_A^2 & G = AA \\
+2 p_A p_B & G = AB \\
+p_B^2 & G = BB .
+\end{cases}
+\label{eq:N}
+\end{equation}
+
+\paragraph{Autozygous state.} The two alleles are one allele drawn from the population and copied, so the genotype is $AA$ with probability $p_A$ and $BB$ with probability $p_B$, never $AB$. The error rate $\epsilon$ enters as a \emph{mixture weight}: with probability $1 - \epsilon$ the site behaves as identical by descent, with probability $\epsilon$ it behaves as a non-autozygous site,
+\begin{equation}
+\Pr{G \mid X = 1} = A(G) = (1-\epsilon)\,\Pr{G \mid \text{IBD}} + \epsilon\, N(G) =
+\begin{cases}
+(1-\epsilon)\, p_A + \epsilon\, p_A^2 & G = AA \\
+2\epsilon\, p_A p_B & G = AB \\
+(1-\epsilon)\, p_B + \epsilon\, p_B^2 & G = BB .
+\end{cases}
+\label{eq:A}
+\end{equation}
+Both $A(\cdot)$ and $N(\cdot)$ sum to one over the three genotypes. Because $\epsilon$ is a mixture weight rather than a per-read or per-call error, it is the probability that a site inside a true run looks non-autozygous \emph{for any reason}: a genotyping error, a new mutation on the shared haplotype, gene conversion, a mis-mapped paralog, a reference artefact. Its most visible consequence is the cost of a heterozygote inside a run,
+\begin{equation}
+\log_{10} \frac{A(AB)}{N(AB)} = \log_{10} \frac{2\epsilon p_A p_B}{2 p_A p_B} = \log_{10} \epsilon ,
+\label{eq:hetcost}
+\end{equation}
+which is $-3$ at the usual $\epsilon = 10^{-3}$ and $-\infty$ at $\epsilon = 0$.
+
+\paragraph{Conventions.} A missing genotype has $\Pr{G \mid X=1} = \Pr{G \mid X=0} = 1$ and contributes $0$. A site with $p_A \in \{0, 1\}$ is monomorphic in the population and is removed before windows are formed (it would also contribute $0$, since then $A(G) = N(G)$ for the only observable genotype). The per-site term depends on $(k, i)$ only, so a window's score is updated in $O(1)$ as it slides: subtract the leaving SNP, add the entering one.
+
+\paragraph{Per-genotype error (\code{--gl-type}).} The same equations with $\epsilon$ replaced by a per-genotype $\epsilon_{i,k}$ derived from a caller's quality field: for \code{GQ}, $\epsilon_{i,k} = 10^{-\mathrm{GQ}/10}$; for a VCF \code{PL} array, the posterior under a flat prior is formed, $\Pr{g} \propto 10^{-\mathrm{PL}_g/10}$, and $\epsilon_{i,k} = 1 - \Pr{\text{called } g}$. This conflates the two roles of $\epsilon$ --- the read-level uncertainty about \emph{which} genotype is present and the model's allowance for a genuinely non-autozygous-looking site inside a run --- which is why it is refused together with \code{--gl-beagle} (\S\ref{sec:gl}).
+
+\section{LOD score on genotype likelihoods}
+\label{sec:gl}
+
+With low-coverage reads the genotype is not observed. What is observed is $D_{i,k}$, and the quantity that replaces $\Pr{G_{i,k} \mid X_k}$ in \eqref{eq:lod} is $\Pr{D_{i,k} \mid X_k}$. Assuming the reads depend on the hidden state only through the genotype --- $\Pr{D \mid G, X} = \Pr{D \mid G}$, i.e.\ the sequencing process does not know whether a site is autozygous --- the law of total probability gives
+\begin{equation}
+\Pr{D_{i,k} \mid X_k = x} = \sum_{g \in \{0,1,2\}} \Pr{D_{i,k} \mid G_{i,k} = g}\, \Pr{G_{i,k} = g \mid X_k = x} = \sum_{g} L_{i,k}(g)\, \Pr{g \mid X_k = x},
+\end{equation}
+and therefore
+\begin{equation}
+\boxed{\;
+\LOD_{\mathrm{GL}}(w,i) = \sum_{k=1}^{K} \log_{10}
+\frac{\sum_{g} L_{i,k}(g)\, A(g)}{\sum_{g} L_{i,k}(g)\, N(g)}
+\;}
+\label{eq:lodgl}
+\end{equation}
+with $A$ and $N$ exactly as in \eqref{eq:A} and \eqref{eq:N}. Written out with $g$ the number of $B$ alleles and $p = p_B$,
+\begin{equation}
+\begin{aligned}
+\LOD_{\mathrm{GL}}(w,i) &= \sum_{k=1}^{K} \log_{10} \frac{\mathcal{A}_{i,k}}{\mathcal{N}_{i,k}}, \\
+\mathcal{A}_{i,k} &= L_{i,k}(0)\big[(1-\epsilon)(1-p) + \epsilon(1-p)^2\big] + L_{i,k}(1)\,2\epsilon p(1-p) + L_{i,k}(2)\big[(1-\epsilon)p + \epsilon p^2\big], \\
+\mathcal{N}_{i,k} &= L_{i,k}(0)\,(1-p)^2 + L_{i,k}(1)\,2p(1-p) + L_{i,k}(2)\,p^2 .
+\end{aligned}
+\end{equation}
+
+\paragraph{Properties.}
+\begin{enumerate}
+\item \emph{Strict generalisation.} A triplet that names one genotype, $L(g) = \mathbf{1}[g = g^\ast]$, gives the called-genotype term $\log_{10} A(g^\ast)/N(g^\ast)$ of \eqref{eq:lod} exactly. A beagle file of called genotypes therefore reproduces a TPED run byte for byte; the test suite checks this.
+\item \emph{Missing data needs no rule.} A site with no reads has a flat triplet, $L(0) = L(1) = L(2)$. Numerator and denominator are then equal, because both $A$ and $N$ sum to one, and the term is exactly $0$, as for a missing genotype.
+\item \emph{Scale invariance.} Multiplying a triplet by any constant leaves the ratio unchanged, so the file's normalisation (ANGSD writes each triplet scaled to its maximum) is irrelevant.
+\item \emph{Boundedness.} Both sums are convex combinations of values in $(0,1)$, so nothing is clamped and the $\epsilon \to 10^{-16}$ pathology of the per-genotype-error path cannot arise.
+\item \emph{What $\epsilon$ does here.} The likelihoods carry the read-level uncertainty: a site whose reads do not settle the genotype has mass on two or three genotypes and contributes little in either direction, with no help from $\epsilon$. A site whose reads \emph{confidently} show a heterozygote inside a run contributes $\log_{10} \epsilon$ as in \eqref{eq:hetcost}, and with $\epsilon = 0$ a single such site would end the run. The two are therefore not double-counted; $\epsilon$ remains required, and with likelihood input it may reasonably be smaller than for the same data called hard, since calling error has moved out of $\epsilon$ and into $L$.
+\item \emph{Locality.} The term still depends on $(k,i)$ only; the $O(1)$ sliding window and every downstream step --- pooled density of window scores, the valley cutoff, size classes --- are unchanged.
+\end{enumerate}
+
+\paragraph{Likelihoods, not posteriors.} \eqref{eq:lodgl} requires $L(g) = \Pr{D \mid g}$. ANGSD's \code{-doPost}/\code{-doGeno} output is $\Pr{g \mid D} \propto L(g)\,\pi(g)$, with a Hardy--Weinberg (or panel) prior $\pi$ already applied; feeding it into \eqref{eq:lodgl} multiplies the denominator's $N(g)$ by a second copy of essentially itself and biases every site toward $X = 0$.
+
+\section{EM estimate of the allele frequency from likelihoods}
+\label{sec:em}
+
+The frequencies $p_A, p_B$ in \eqref{eq:N}--\eqref{eq:lodgl} are estimated per population from the same likelihoods, because frequencies from maximum-likelihood calls are pulled toward the major allele at low depth (by about $0.04$ at $0.5\times$ and $0.02$ at $2\times$ for alleles below $0.15$ in simulation). For one SNP, let $j = 1,\dots,n$ index the individuals of the population with reads at the site (a flat triplet carries no information and is left out), and write $p = p_B$ and the Hardy--Weinberg genotype proportions
+\begin{equation}
+\pi_0(p) = (1-p)^2, \qquad \pi_1(p) = 2p(1-p), \qquad \pi_2(p) = p^2 .
+\end{equation}
+Treating the $n$ individuals as independent draws from a population in Hardy--Weinberg equilibrium, the marginal likelihood of $p$ is
+\begin{equation}
+\mathcal{L}(p) = \prod_{j=1}^{n} \sum_{g=0}^{2} L_j(g)\, \pi_g(p),
+\label{eq:emlik}
+\end{equation}
+and the maximiser is found by EM with the genotypes as the missing data.
+
+\paragraph{E step.} Given the current $p^{(t)}$, the posterior genotype probabilities of individual $j$ are
+\begin{equation}
+w_{jg}^{(t)} = \frac{L_j(g)\, \pi_g(p^{(t)})}{\sum_{h=0}^{2} L_j(h)\, \pi_h(p^{(t)})} .
+\end{equation}
+
+\paragraph{M step.} The expected number of $B$ alleles is $\sum_j (w_{j1} + 2 w_{j2})$ out of $2n$, so
+\begin{equation}
+\boxed{\;
+p^{(t+1)} = \frac{1}{2n} \sum_{j=1}^{n} \big( w_{j1}^{(t)} + 2\, w_{j2}^{(t)} \big)
+\;}
+\label{eq:emstep}
+\end{equation}
+starting from $p^{(0)} = \tfrac12$ and stopping when $|p^{(t+1)} - p^{(t)}| < 10^{-8}$ or after $100$ iterations.
+
+\paragraph{Called genotypes recover the allele count.} With degenerate triplets $w_{jg} = \mathbf{1}[g = g_j]$ regardless of $p$, so a single step gives $p^{(1)} = \frac{1}{2n}\sum_j g_j$, the allele-count frequency, and the second step shows no change. The EM is thus also a strict generalisation of GARLIC's frequency from called genotypes.
+
+\paragraph{The half-copy rule.} The fixed points $p = 0$ and $p = 1$ are absorbing but never reached: on a monomorphic site the iteration stops on its step criterion at $p \approx 10^{-7}$, which passes the polymorphism test $0 < p < 1$ that drops a called site with no minor allele. Such a site contributes $\log_{10}\big(A(g)/N(g)\big) \approx 0$ to every window, and since the automatic cutoff on the pooled window density is normally negative, a window of such sites is called autozygous in every individual. GARLIC therefore treats the converged estimate as fixed when it implies less than half a copy of the minor allele among the informative individuals,
+\begin{equation}
+2n \min(p, 1-p) < \tfrac12 \;\Longrightarrow\; p \leftarrow 0 \text{ or } 1 ,
+\end{equation}
+and the site is dropped as monomorphic. This is the threshold a count of called genotypes applies implicitly: a singleton survives, nothing below it exists. A real singleton survives the rule only if its evidence is strong --- the Hardy--Weinberg prior at $p \approx 1/2n$ is $\pi_1 \approx 1/n$, so a heterozygote whose likelihood ratio against the homozygote is $16{:}1$ is outvoted by $19$ homozygotes and the EM runs to $0$, while one with $10^4{:}1$ holds the site at $p \approx 1/2n$.
+
+\paragraph{Where the estimate is used.} $p_B$ enters $A$ and $N$ in \eqref{eq:lodgl}; it is written to \code{<out>.freq.gz}; \code{--freq-file} overrides it (a column of ANGSD's \code{.mafs.gz}, the same estimator applied genome-wide, is a suitable source). On a shared sex chromosome the EM treats everyone as diploid, so there the frequency comes from maximum-likelihood calls with a hemizygous call contributing one allele.
+
+\section{Correspondence with the code}
+\label{sec:code}
+
+\begin{center}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.26\textwidth}>{\raggedright\arraybackslash}p{0.40\textwidth}>{\raggedright\arraybackslash}p{0.27\textwidth}@{}}
+\toprule
+symbol & code & where \\
+\midrule
+$g$, $p = p_B$, $\epsilon$ & \code{genotype}, \code{freq}, \code{error} & \code{lod()}, \code{garlic-roh.cpp} \\
+$N(g)$ & \code{nonAutozygous} & \code{lod()} \\
+$A(g)$ & \code{autozygous} & \code{lod()} \\
+$L_{i,k}(0..2)$ & \code{L[0..2]} (\code{float}, triplet scaled to its maximum) & \code{lodGL()} \\
+\eqref{eq:lodgl} per-site term & \code{lodGL(L, freq, error)} & routed by the \code{LODV} macro in \code{parallelLOD} \\
+\eqref{eq:emstep} & \code{emAlleleFrequency(like, keepInd)} & \code{garlic-data.cpp} \\
+half-copy rule & \code{minorCopies < 0.5} & end of \code{emAlleleFrequency} \\
+$\epsilon_{i,k}$ from GQ/PL & \code{glToError()}; PL array $\to$ posterior & \code{garlic-data.cpp} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Everything that reads a genotype rather than a likelihood --- the LD matrix of \code{--weighted}, \code{--features}, the site filters, the heterozygosity column of \code{<out>.ind.tsv} --- uses the maximum-likelihood genotype $\arg\max_g L_{i,k}(g)$, with a site whose maximum is shared (the flat triplet included) treated as missing. The LOD itself never touches it.
+
+\end{document}
