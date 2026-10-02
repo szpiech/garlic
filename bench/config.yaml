@@ -1,0 +1,40 @@
+# Low-coverage ROH benchmark — configuration.
+# Override on the command line, e.g.  snakemake --config small=true root=/path/to/smoke
+root: /data/workspace/garlic-lowcov/bench/full      # all outputs live here
+small: false                                         # smoke test: 24 Mb of chr21/22, one pedigree copy, depths 1 and 4
+
+tools:
+  garlic: /data/workspace/garlic-lowcov/bin/garlic
+  rohan:  /data/workspace/garlic-lowcov/tools/rohan/bin/rohan   # optional; the rohan rules are skipped if absent
+  pedsim: /data/workspace/rohml/bin/ped-sim
+  simmap: /data/workspace/rohml/maps/refined_mf_X.simmap        # Bherer map: chr pos male_cM female_cM
+  intf:   /data/workspace/rohml/tools/ped-sim/interfere/nu_p_campbell_X.tsv
+
+# GRCh37 lengths
+chromosomes: {"20": 63025520, "21": 48129895, "22": 51304566}
+depths: [1, 2, 4, 8]
+rohan_depths: [1, 4]          # ROHan takes 4-6 h per 162 Mb BAM; run it where it matters
+run_rohan: true               # false: score the GARLIC arms only
+
+founders:
+  n_haplotypes: 400
+  Ne: 20000
+  mu: 1.25e-8
+  seed: 2026
+
+pedigrees:                    # name -> ped-sim generation lines; "1:1_2" = branch 1's parents are branches 1 and 2
+  fs: ["1 0 1", "2 0 2", "3 1 1 1:1_2"]
+  c1: ["1 0 1", "2 0 2", "3 0 2", "4 1 1 1:1_2"]
+  c2: ["1 0 1", "2 0 2", "3 0 2", "4 0 2", "5 1 1 1:1_2"]
+  ob: ["1 0 1", "2 1 1"]
+n_per_pedigree: 5
+
+reads:  {length: 150, fragment: 350, fragment_sd: 40, system: HS25}
+ascertainment_maf: 0.05
+garlic:
+  error: 0.001
+  error_sweep: [1.0e-4, 1.0e-2]
+  winsize: 60
+  size_bounds: "500000 1000000"
+score:
+  min_len: 1000000

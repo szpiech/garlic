@@ -1,0 +1,286 @@
+# Low-coverage ROH benchmark for GARLIC's low-cov branch.
+#
+#   founders -> pedsim (checkpoint: sample names) -> hap FASTA -> ART reads -> bwa-mem2
+#            -> ANGSD beagle GLs + bcftools calls on one site list -> GARLIC x4 (+ ROHan) -> score
+#
+# Run (office box):
+#   conda activate /data/workspace/garlic-lowcov/env-bench
+#   snakemake -s bench/Snakefile --cores 32                                   # full
+#   snakemake -s bench/Snakefile --cores 16 --config small=true root=/data/workspace/garlic-lowcov/bench/smoke
+#   snakemake -s bench/Snakefile --cores 32 --config run_rohan=false           # everything but ROHan
+#   snakemake -s bench/Snakefile -n --rerun-triggers mtime                    # dry run
+#
+# Output layout is identical to the stage driver bench.py, so a directory produced by one can be
+# resumed by the other.  All paths under config['root'].
+
+import os
+configfile: os.path.join(workflow.basedir, "config.yaml")
+
+SMALL = str(config.get("small", "false")).lower() in ("1", "true", "yes")
+ROOT = config["root"].rstrip("/")
+workdir: ROOT
+
+CHRS = {str(k): int(v) for k, v in config["chromosomes"].items()}
+DEPTHS = list(config["depths"])
+ROHAN_DEPTHS = [d for d in config["rohan_depths"] if d in DEPTHS]
+N_PER_PED = int(config["n_per_pedigree"])
+if SMALL:
+    # the b37 map starts at 9.4 / 16.1 Mb on chr21 / chr22, so 24 Mb leaves a mapped stretch
+    CHRS = {"21": 24000000, "22": 24000000}; DEPTHS = [1, 4]; ROHAN_DEPTHS = [d for d in ROHAN_DEPTHS if d in DEPTHS]
+    config["n_per_pedigree"] = 1
+config["chromosomes"] = CHRS
+
+T = config["tools"]
+G = config["garlic"]
+R = config["reads"]
+SEED = int(config["founders"]["seed"])
+ERR = float(G["error"])
+HAVE_ROHAN = os.path.exists(T["rohan"]) and str(config.get("run_rohan", "true")).lower() in ("1", "true", "yes")
+ERR_TAGS = {f"e{abs(round(__import__('math').log10(e)))}": e for e in G["error_sweep"]}   # 1e-4 -> e4, 1e-2 -> e2
+SCRIPTS = os.path.join(workflow.basedir, "scripts")
+GARLIC_COMMON = f"--no-centromere --winsize {G['winsize']} --size-bounds {G['size_bounds']} --force --quiet"
+
+wildcard_constraints:
+    sample = r"[^/]+", depth = r"\d+"
+
+# The first rule is the default target.
+rule all:
+    input: "bench_scores.csv", "bench_summary.csv"
+
+rule garlic_only:
+    input: lambda w: garlic_targets()
+
+# ----------------------------------------------------------------------------------------- samples
+checkpoint pedsim:
+    input:
+        deffile = "pedsim/bench.def", simmap = "pedsim/map.simmap", intf = "pedsim/intf.tsv",
+        vcf = "founders/founders.vcf.gz",
+    output:
+        vcf = "pedsim/bench.vcf.gz", tbi = "pedsim/bench.vcf.gz.tbi", seg = "pedsim/bench.seg",
+        samples = "pedsim/samples.txt",
+    log: "pedsim/pedsim.log"
+    shell:
+        # ped-sim writes plain gzip (not bgzip), unphased by default, and injects 1e-3 genotyping error
+        # and missingness unless told otherwise.
+        r"""
+        cd pedsim && {T[pedsim]} -d bench.def -m map.simmap -i ../{input.vcf} -o bench --intf intf.tsv \
+            --seg_haps --keep_phase --founder_ids --err_rate 0 --miss_rate 0 > pedsim.log 2>&1
+        cd ..
+        if [ -f pedsim/bench.vcf ]; then bgzip -f pedsim/bench.vcf; else zcat pedsim/bench.vcf.gz | bgzip -c > pedsim/bench.bgz && mv pedsim/bench.bgz pedsim/bench.vcf.gz; fi
+        bcftools index -f -t pedsim/bench.vcf.gz
+        bcftools query -l pedsim/bench.vcf.gz > pedsim/samples.txt
+        """
+
+def samples():
+    with checkpoints.pedsim.get().output.samples.open() as fh:
+        return [l.strip() for l in fh if l.strip()]
+
+# ----------------------------------------------------------------------------------------- targets
+def garlic_targets(w=None):
+    out = ["roh/truth.roh.bed"]
+    for d in DEPTHS:
+        out += [f"roh/calls_d{d}.roh.bed", f"roh/pl_d{d}.roh.bed", f"roh/beagle_d{d}.roh.bed"]
+        out += [f"roh/beagle{tag}_d{d}.roh.bed" for tag in ERR_TAGS]
+    return out
+
+def rohan_targets(w=None):
+    if not HAVE_ROHAN: return []
+    return [f"roh/rohan/{s}_d{d}/out.mid.hmmrohl.gz" for d in ROHAN_DEPTHS for s in samples()]
+
+# ---------------------------------------------------------------------------------------- founders
+rule founders:
+    output: vcf = "founders/founders.vcf.gz", ref = "founders/ref.fa", sites = "founders/sites.tsv"
+    params: chrs = CHRS, scriptdir = SCRIPTS
+    log: "founders/founders.log"
+    resources: mem_mb = 8000
+    script: "scripts/founders.py"
+
+rule index_reference:
+    input: "founders/ref.fa"
+    output: fai = "founders/ref.fa.fai", bwt = "founders/ref.fa.bwt.2bit.64"
+    log: "founders/bwa_index.log"
+    shell:
+        # ANGSD refuses a .fai that is not strictly newer than the FASTA
+        "sleep 2 && samtools faidx {input} && touch {output.fai} && bwa-mem2 index {input} > {log} 2>&1"
+
+rule pedsim_inputs:
+    output: deffile = "pedsim/bench.def", simmap = "pedsim/map.simmap", intf = "pedsim/intf.tsv"
+    params: chrs = CHRS
+    script: "scripts/pedsim_inputs.py"
+
+rule truth:
+    input: seg = "pedsim/bench.seg"
+    output: "pedsim/truth_hbd.bed"
+    params: chrs = CHRS
+    script: "scripts/truth_hbd.py"
+
+# ------------------------------------------------------------------------------------------- reads
+rule hap_fasta:
+    input: vcf = "pedsim/bench.vcf.gz", tbi = "pedsim/bench.vcf.gz.tbi", ref = "founders/ref.fa", fai = "founders/ref.fa.fai"
+    output: h1 = "reads/{sample}/hap1.fa", h2 = "reads/{sample}/hap2.fa"
+    log: "reads/{sample}/consensus.log"
+    shell:
+        r"""
+        d=reads/{wildcards.sample}
+        bcftools view -s {wildcards.sample} -Oz -o $d/{wildcards.sample}.vcf.gz {input.vcf} && bcftools index -f $d/{wildcards.sample}.vcf.gz
+        bcftools consensus -f {input.ref} -H 1 $d/{wildcards.sample}.vcf.gz > {output.h1} 2> {log}
+        bcftools consensus -f {input.ref} -H 2 $d/{wildcards.sample}.vcf.gz > {output.h2} 2>> {log}
+        """
+
+rule reads:
+    input: h1 = "reads/{sample}/hap1.fa", h2 = "reads/{sample}/hap2.fa"
+    output: r1 = "reads/{sample}/d{depth}/r1.fq.gz", r2 = "reads/{sample}/d{depth}/r2.fq.gz"
+    params: half = lambda w: int(w.depth) / 2.0, seed = lambda w: SEED + int(w.depth) * 7
+    log: "reads/{sample}/d{depth}/art.log"
+    shell:
+        # half the depth from each haplotype
+        r"""
+        d=reads/{wildcards.sample}/d{wildcards.depth}
+        art_illumina -ss {R[system]} -i {input.h1} -p -l {R[length]} -f {params.half} -m {R[fragment]} -s {R[fragment_sd]} -na -q -rs $(({params.seed}+1)) -o $d/h1_ > {log} 2>&1
+        art_illumina -ss {R[system]} -i {input.h2} -p -l {R[length]} -f {params.half} -m {R[fragment]} -s {R[fragment_sd]} -na -q -rs $(({params.seed}+2)) -o $d/h2_ >> {log} 2>&1
+        cat $d/h1_1.fq $d/h2_1.fq | gzip -1 > {output.r1}
+        cat $d/h1_2.fq $d/h2_2.fq | gzip -1 > {output.r2}
+        rm -f $d/h?_?.fq
+        """
+
+rule map:
+    input: r1 = "reads/{sample}/d{depth}/r1.fq.gz", r2 = "reads/{sample}/d{depth}/r2.fq.gz", ref = "founders/ref.fa", idx = "founders/ref.fa.bwt.2bit.64"
+    output: bam = "reads/{sample}/d{depth}/aln.bam", bai = "reads/{sample}/d{depth}/aln.bam.bai"
+    threads: 4
+    log: "reads/{sample}/d{depth}/bwa.log"
+    shell:
+        r"""
+        bwa-mem2 mem -t {threads} -R '@RG\tID:{wildcards.sample}_d{wildcards.depth}\tSM:{wildcards.sample}' {input.ref} {input.r1} {input.r2} 2> {log} \
+          | samtools sort -@2 -o {output.bam} - 2>> {log} && samtools index {output.bam}
+        """
+
+# ------------------------------------------------------------------------------- likelihoods, calls
+rule sites:
+    input: sites = "founders/sites.tsv"
+    output:
+        sites = "gl/sites.txt", bed = "gl/sites.bed", alleles = "gl/alleles.tsv", regions = "gl/regions.txt",
+        mapped = "gl/mapped.bed", mapped_bed = "gl/sites.mapped.bed",
+    params: chrs = CHRS, scriptdir = SCRIPTS
+    log: "gl/sites.log"
+    script: "scripts/sites.py"
+
+rule index_sites:
+    input: sites = "gl/sites.txt", alleles = "gl/alleles.tsv"
+    output: idx = "gl/sites.txt.idx", bin = "gl/sites.txt.bin", alleles = "gl/alleles.tsv.gz", tbi = "gl/alleles.tsv.gz.tbi"
+    shell: "angsd sites index {input.sites} && bgzip -c {input.alleles} > {output.alleles} && tabix -f -s1 -b2 -e2 {output.alleles}"
+
+def bams(w): return [f"reads/{s}/d{w.depth}/aln.bam" for s in samples()]
+
+rule bamlist:
+    input: bams
+    output: "gl/bams_d{depth}.txt"
+    run:
+        with open(output[0], "w") as fh:
+            for b in input: fh.write(os.path.abspath(b) + "\n")
+
+rule angsd:
+    input: bams = "gl/bams_d{depth}.txt", ref = "founders/ref.fa", fai = "founders/ref.fa.fai", sites = "gl/sites.txt", idx = "gl/sites.txt.idx", regions = "gl/regions.txt"
+    output: beagle = "gl/d{depth}.beagle.gz", mafs = "gl/d{depth}.mafs.gz"
+    threads: 2          # ANGSD's GL pass is effectively single-threaded here; -P buys little
+    resources: mem_mb = 4000
+    log: "gl/angsd_d{depth}.log"
+    shell:
+        r"""
+        angsd -b {input.bams} -ref {input.ref} -out gl/d{wildcards.depth} -sites {input.sites} -rf {input.regions} \
+          -GL 1 -doGlf 2 -doMajorMinor 3 -doMaf 1 -doCounts 1 -dumpCounts 4 -minMapQ 20 -minQ 20 -baq 1 -C 50 -P {threads} > {log} 2>&1
+        """
+
+rule bcftools_call:
+    input: bams = "gl/bams_d{depth}.txt", ref = "founders/ref.fa", fai = "founders/ref.fa.fai", bed = "gl/sites.bed", alleles = "gl/alleles.tsv.gz", tbi = "gl/alleles.tsv.gz.tbi"
+    output: vcf = "gl/d{depth}.calls.vcf.gz", csi = "gl/d{depth}.calls.vcf.gz.csi"
+    log: "gl/call_d{depth}.log"
+    shell:
+        # -C alleles -T: force the ascertained REF/ALT so every site is biallelic with PL
+        r"""
+        bcftools mpileup -f {input.ref} -T {input.bed} -a FORMAT/AD,FORMAT/DP -q 20 -Q 20 -b {input.bams} -Ou 2> {log} \
+          | bcftools call -m -C alleles -T {input.alleles} -Oz -o {output.vcf} 2>> {log} && bcftools index -f {output.vcf}
+        """
+
+rule mapped_beagle:
+    input: beagle = "gl/d{depth}.beagle.gz", mapped = "gl/mapped.bed"
+    output: "gl/d{depth}.map.beagle.gz"
+    script: "scripts/filter_beagle.py"
+
+rule mapped_calls:
+    input: vcf = "gl/d{depth}.calls.vcf.gz", csi = "gl/d{depth}.calls.vcf.gz.csi", mapped = "gl/mapped.bed"
+    output: vcf = "gl/d{depth}.map.calls.vcf.gz", csi = "gl/d{depth}.map.calls.vcf.gz.csi"
+    shell: "bcftools view -T {input.mapped} -Oz -o {output.vcf} {input.vcf} && bcftools index -f {output.vcf}"
+
+# ------------------------------------------------------------------------------------------ GARLIC
+rule tfam:
+    input: "pedsim/samples.txt"
+    output: tfam = "roh/bench.tfam", popfile = "roh/bench.pop"
+    script: "scripts/tfam.py"
+
+rule truth_vcf:
+    input: vcf = "pedsim/bench.vcf.gz", tbi = "pedsim/bench.vcf.gz.tbi", bed = "gl/sites.mapped.bed", samples = "pedsim/samples.txt"
+    output: "roh/truth.vcf.gz"
+    shell: "bcftools view -T {input.bed} -S {input.samples} -Oz -o {output} {input.vcf}"
+
+rule garlic_truth:
+    input: vcf = "roh/truth.vcf.gz", popfile = "roh/bench.pop"
+    output: "roh/truth.roh.bed", "roh/truth.ind.tsv", "roh/truth.params.json"
+    threads: 8
+    log: "roh/truth.stderr"
+    shell: "cd roh && {T[garlic]} --vcf truth.vcf.gz --pop bench.pop {GARLIC_COMMON} --error {ERR} --threads {threads} --out truth > truth.stdout 2> truth.stderr"
+
+rule garlic_calls:
+    input: vcf = "gl/d{depth}.map.calls.vcf.gz", popfile = "roh/bench.pop"
+    output: "roh/calls_d{depth}.roh.bed", "roh/calls_d{depth}.ind.tsv"
+    threads: 8
+    log: "roh/calls_d{depth}.stderr"
+    shell:
+        # the automatic cutoff can fail at low depth; an empty .roh.bed is the recorded result, not an error
+        "cd roh && ({T[garlic]} --vcf ../{input.vcf} --pop bench.pop {GARLIC_COMMON} --error {ERR} --threads {threads} --out calls_d{wildcards.depth} "
+        "> calls_d{wildcards.depth}.stdout 2> calls_d{wildcards.depth}.stderr || true); cd .. && touch {output}"
+
+rule garlic_pl:
+    input: vcf = "gl/d{depth}.map.calls.vcf.gz", popfile = "roh/bench.pop"
+    output: "roh/pl_d{depth}.roh.bed", "roh/pl_d{depth}.ind.tsv"
+    threads: 8
+    log: "roh/pl_d{depth}.stderr"
+    shell:
+        # bcftools writes PL, not GQ: the per-genotype-quality arm uses --gl-type PL and no --error
+        "cd roh && ({T[garlic]} --vcf ../{input.vcf} --pop bench.pop --gl-type PL {GARLIC_COMMON} --threads {threads} --out pl_d{wildcards.depth} "
+        "> pl_d{wildcards.depth}.stdout 2> pl_d{wildcards.depth}.stderr || true); cd .. && touch {output}"
+
+def beagle_error(w): return ERR if w.tag == "" else ERR_TAGS[w.tag]
+
+rule garlic_beagle:
+    input: beagle = "gl/d{depth}.map.beagle.gz", tfam = "roh/bench.tfam"
+    output: "roh/beagle{tag}_d{depth}.roh.bed", "roh/beagle{tag}_d{depth}.ind.tsv"
+    wildcard_constraints: tag = r"(e\d)?"
+    params: error = beagle_error
+    threads: 8
+    log: "roh/beagle{tag}_d{depth}.stderr"
+    shell:
+        "cd roh && ({T[garlic]} --gl-beagle ../{input.beagle} --tfam bench.tfam {GARLIC_COMMON} --error {params.error} --threads {threads} "
+        "--out beagle{wildcards.tag}_d{wildcards.depth} > beagle{wildcards.tag}_d{wildcards.depth}.stdout 2> beagle{wildcards.tag}_d{wildcards.depth}.stderr || true); "
+        "cd .. && touch {output}"
+
+# ------------------------------------------------------------------------------------------- ROHan
+rule rohan:
+    input: bam = "reads/{sample}/d{depth}/aln.bam", bai = "reads/{sample}/d{depth}/aln.bam.bai", ref = "founders/ref.fa", fai = "founders/ref.fa.fai"
+    output: "roh/rohan/{sample}_d{depth}/out.mid.hmmrohl.gz", "roh/rohan/{sample}_d{depth}/out.summary.txt"
+    threads: 2
+    resources: mem_mb = 4000, runtime = 600
+    log: "roh/rohan/{sample}_d{depth}/rohan.log"
+    shell:
+        # 4-6 h per 162 Mb BAM; default 1 Mb windows
+        "cd roh/rohan/{wildcards.sample}_d{wildcards.depth} && {T[rohan]} -t {threads} --size 1000000 --seed {SEED} -o out ../../../{input.ref} ../../../{input.bam} > rohan.log 2>&1"
+
+# ------------------------------------------------------------------------------------------- score
+rule score:
+    input:
+        samples = "pedsim/samples.txt", truth = "pedsim/truth_hbd.bed", ceiling = "roh/truth.roh.bed",
+        garlic = lambda w: [f for f in garlic_targets() if f != "roh/truth.roh.bed"],
+        rohan = rohan_targets,
+    output: per_individual = "bench_scores.csv", summary = "bench_summary.csv"
+    params: chrs = CHRS, scriptdir = SCRIPTS
+    log: "score.log"
+    script: "scripts/score.py"
