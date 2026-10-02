@@ -14,7 +14,7 @@
 \begin{document}
 \maketitle
 
-\noindent These notes write out the three calculations behind \code{--gl-beagle} in the notation of the GARLIC manual and of Pemberton \emph{et al.}\ (2012, \emph{AJHG}): the LOD score on called genotypes (\S\ref{sec:hard}), its generalisation to genotype likelihoods (\S\ref{sec:gl}), and the EM estimate of allele frequencies from likelihoods (\S\ref{sec:em}). Section~\ref{sec:code} maps the symbols to the code.
+\noindent These notes write out the three calculations behind \code{--gl-beagle} in the notation of the GARLIC manual and of Pemberton \emph{et al.}\ (2012, \emph{AJHG}): the LOD score on called genotypes (\S\ref{sec:hard}), its generalisation to genotype likelihoods (\S\ref{sec:gl}), what is and is not done with a VCF's \code{PL} triplet (\S\ref{sec:pl}), and the EM estimate of allele frequencies from likelihoods (\S\ref{sec:em}). Section~\ref{sec:code} maps the symbols to the code.
 
 \section*{Notation}
 
@@ -69,7 +69,7 @@ which is $-3$ at the usual $\epsilon = 10^{-3}$ and $-\infty$ at $\epsilon = 0$.
 
 \paragraph{Conventions.} A missing genotype has $\Pr{G \mid X=1} = \Pr{G \mid X=0} = 1$ and contributes $0$. A site with $p_A \in \{0, 1\}$ is monomorphic in the population and is removed before windows are formed (it would also contribute $0$, since then $A(G) = N(G)$ for the only observable genotype). The per-site term depends on $(k, i)$ only, so a window's score is updated in $O(1)$ as it slides: subtract the leaving SNP, add the entering one.
 
-\paragraph{Per-genotype error (\code{--gl-type}).} The same equations with $\epsilon$ replaced by a per-genotype $\epsilon_{i,k}$ derived from a caller's quality field: for \code{GQ}, $\epsilon_{i,k} = 10^{-\mathrm{GQ}/10}$; for a VCF \code{PL} array, the posterior under a flat prior is formed, $\Pr{g} \propto 10^{-\mathrm{PL}_g/10}$, and $\epsilon_{i,k} = 1 - \Pr{\text{called } g}$. This conflates the two roles of $\epsilon$ --- the read-level uncertainty about \emph{which} genotype is present and the model's allowance for a genuinely non-autozygous-looking site inside a run --- which is why it is refused together with \code{--gl-beagle} (\S\ref{sec:gl}).
+\paragraph{Per-genotype error (\code{--gl-type}).} The same equations with $\epsilon$ replaced by a per-genotype $\epsilon_{i,k}$ derived from a caller's quality field: for \code{GQ}, $\epsilon_{i,k} = 10^{-\mathrm{GQ}/10}$; for a VCF \code{PL} triplet, see \S\ref{sec:pl}. In either form the genotype itself is still the \emph{called} one, $G_{i,k}$ from the \code{GT} field, and only the weight $\epsilon$ changes.
 
 \section{LOD score on genotype likelihoods}
 \label{sec:gl}
@@ -106,6 +106,53 @@ with $A$ and $N$ exactly as in \eqref{eq:A} and \eqref{eq:N}. Written out with $
 \end{enumerate}
 
 \paragraph{Likelihoods, not posteriors.} \eqref{eq:lodgl} requires $L(g) = \Pr{D \mid g}$. ANGSD's \code{-doPost}/\code{-doGeno} output is $\Pr{g \mid D} \propto L(g)\,\pi(g)$, with a Hardy--Weinberg (or panel) prior $\pi$ already applied; feeding it into \eqref{eq:lodgl} multiplies the denominator's $N(g)$ by a second copy of essentially itself and biases every site toward $X = 0$.
+
+\section{The VCF \code{PL} triplet}
+\label{sec:pl}
+
+A VCF's \code{PL} field for a biallelic diploid site is a triplet in the genotype order $0/0, 0/1, 1/1$, i.e.\ $g = 0, 1, 2$ copies of \code{ALT}, holding phred-scaled genotype likelihoods normalised so that the smallest is $0$:
+\begin{equation}
+\mathrm{PL}_g = -10 \log_{10} L_{i,k}(g) + c_{i,k}, \qquad c_{i,k} \text{ chosen so that } \min_g \mathrm{PL}_g = 0 .
+\end{equation}
+Inverting,
+\begin{equation}
+L_{i,k}(g) \;\propto\; 10^{-\mathrm{PL}_g / 10},
+\label{eq:pl2l}
+\end{equation}
+so a \code{PL} triplet \emph{is} a genotype-likelihood triplet, known up to the per-site constant $c_{i,k}$ --- and by the scale invariance of \eqref{eq:lodgl} that constant is irrelevant to the LOD. (\code{GL} is the same quantity as $\log_{10} L$, so $\mathrm{PL} = -10\,\mathrm{GL}$.) The called genotype in \code{GT} is normally the one with $\mathrm{PL}_g = 0$; that single value therefore carries no information about confidence, which is in how much larger the other two are.
+
+GARLIC uses this triplet in two different ways, and the distinction matters at low depth.
+
+\paragraph{What \code{--vcf --gl-type PL} does.} The triplet is reduced to \emph{one} number per genotype --- a per-genotype error rate for the called genotype $g^\ast$ --- by forming the posterior under a flat prior over the three genotypes,
+\begin{equation}
+\epsilon_{i,k} \;=\; 1 - \frac{10^{-\mathrm{PL}_{g^\ast}/10}}{\sum_{h=0}^{2} 10^{-\mathrm{PL}_h/10}} \;=\; 1 - \frac{L_{i,k}(g^\ast)}{\sum_h L_{i,k}(h)},
+\label{eq:pl2eps}
+\end{equation}
+floored at $10^{-16}$, and the per-site term is the \emph{called-genotype} term of \S\ref{sec:hard} with this $\epsilon_{i,k}$ in place of $\epsilon$:
+\begin{equation}
+\log_{10} \frac{A(g^\ast; p, \epsilon_{i,k})}{N(g^\ast; p)} .
+\label{eq:plterm}
+\end{equation}
+The other two likelihoods enter only through the denominator of \eqref{eq:pl2eps}; which genotypes they favour is discarded. In particular the term is always evaluated at $g^\ast$, so an uncertain homozygous call still counts \emph{for} autozygosity, only with a smaller weight.
+
+\paragraph{What \code{--gl-beagle} does with the same numbers.} If the triplet is converted with \eqref{eq:pl2l} and given to \eqref{eq:lodgl}, every genotype contributes in proportion to its likelihood and the run-wide $\epsilon$ keeps its single meaning. The two are not the same calculation, as three sites at $p_B = 0.3$ with $\epsilon = 10^{-3}$ show:
+
+\begin{center}
+{\small
+\begin{tabular}{@{}lllrrr@{}}
+\toprule
+reads & \code{PL} & $L(0{:}1{:}2)$ & \eqref{eq:plterm}, $\epsilon_{i,k}$ & \eqref{eq:lodgl} & $g^\ast$, flat $\epsilon$ \\
+\midrule
+one \code{REF} read & $(0, 3, 30)$ & $1 : 0.50 : 0.001$ & $+0.11$ \;($\epsilon_{i,k} = 0.33$) & $0.00$ & $+0.15$ \\
+one read, allele unresolved & $(0, 0, 30)$ & $1 : 1 : 0.001$ & $+0.08$ \;($\epsilon_{i,k} = 0.50$) & $-0.11$ & $+0.15$ \\
+confident heterozygote & $(30, 0, 30)$ & $0.001 : 1 : 0.001$ & $-2.70$ \;($\epsilon_{i,k} = 0.002$) & $-2.47$ & $-3.00$ \\
+\bottomrule
+\end{tabular}}
+\end{center}
+
+\noindent A single reference read is exactly the case low coverage produces at most sites. The marginalised term is $0.00$: one read cannot distinguish $AA$ from $AB$, so the site says nothing. The per-genotype-error term is $+0.11$: the call is $AA$, its confidence is low, and the result is a small vote \emph{for} autozygosity at every such site --- which is how allelic dropout accumulates into runs under the per-genotype path, and why that path called the whole genome autozygous at $0.5$--$1\times$ in the resampling simulation. Where the signal is strong (long planted runs, many of them) the two paths agree closely, as the read-level benchmark found; where it is weak, only the marginalised form is correct.
+
+\paragraph{Consequences.} (i) A VCF with \code{PL} already contains everything \code{--gl-beagle} needs; the beagle file is one \code{bcftools query} away (\code{-f '\%CHROM\_\%POS\textbackslash t\%REF\textbackslash t\%ALT[\textbackslash t\%PL]\textbackslash n'} followed by \eqref{eq:pl2l}), and running it that way is the recommended route for low-coverage VCFs. (ii) \code{--gl-type} is refused together with \code{--gl-beagle} because it would apply a second, per-site $\epsilon$ on top of the likelihoods. (iii) The legacy \code{--tgls --gl-type PL} path is a third, unrelated reading: a \emph{single} phred value per genotype interpreted as $P(\text{genotype correct})$, $\epsilon = 1 - 10^{-\mathrm{PL}/10}$; a VCF's values (an integer $0$ for every call) are rejected there.
 
 \section{EM estimate of the allele frequency from likelihoods}
 \label{sec:em}
@@ -160,7 +207,8 @@ $L_{i,k}(0..2)$ & \code{L[0..2]} (\code{float}, triplet scaled to its maximum) &
 \eqref{eq:lodgl} per-site term & \code{lodGL(L, freq, error)} & routed by the \code{LODV} macro in \code{parallelLOD} \\
 \eqref{eq:emstep} & \code{emAlleleFrequency(like, keepInd)} & \code{garlic-data.cpp} \\
 half-copy rule & \code{minorCopies < 0.5} & end of \code{emAlleleFrequency} \\
-$\epsilon_{i,k}$ from GQ/PL & \code{glToError()}; PL array $\to$ posterior & \code{garlic-data.cpp} \\
+$\epsilon_{i,k}$ from \code{GQ} & \code{glToError(value, \"GQ\")} & \code{garlic-data.cpp} \\
+\eqref{eq:pl2eps} from a \code{PL} triplet & \code{plToError(pl, calledIndex)} & \code{garlic-data.cpp} (\code{--vcf} reader) \\
 \bottomrule
 \end{tabular}
 \end{center}
