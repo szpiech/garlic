@@ -285,8 +285,12 @@ calls, {\tt --gl-type PL} & recall of HBD & 0.98 & 0.99 & 0.99 & 0.99 \\
  & precision vs attainable & 0.997 & 1.000 & 1.000 & 1.000 \\
 calls, {\tt --error} & recall of HBD & --- & --- & 0.66 & 0.99 \\
  & precision vs attainable & --- & --- & 0.992 & 1.000 \\
+ROHan on the BAMs$^\dagger$ & recall of HBD & 0.93 & & & \\
+ & precision vs attainable & 0.992 & & & \\
+ & $|F_{ROH} - F_{ROH}(\mathrm{true})|$ & 0.013 & & & \\
 \end{tabular}
 \end{center}
+\noindent $^\dagger$ROHan 1.0 (Renaud et al.\ 2019), default 1\,Mb windows, mid estimate, 18 of the 20 individuals (two outbred omitted); about six hours per 162\,Mb BAM on two threads, against under a minute for any {\tt garlic} run, which is why it was run at one depth.  Its recall is lower because its runs are placed at 1\,Mb window boundaries, which costs most on the shorter segments (0.5--0.6 of a 2--5\,Mb segment), and its own lower and upper estimates bracket the truth loosely at this depth (the lower calls 0.63 of the genome, the upper nothing).
 
 \noindent A dash is a run in which the valley between the LOD score modes lay outside $\pm$winsize and the cutoff fell back to $0$, which calls nothing of 1\,Mb.  The likelihood input is indifferent to {\tt --error} here: $10^{-4}$, $10^{-3}$ and $10^{-2}$ change no entry by more than $0.004$.  Two things in the table deserve emphasis.  The per-genotype {\tt PL} path, which the resampling simulation (\S\ref{sec:beagle}) found unusable at $1\times$ with {\tt GQ}, is as good as the likelihood input on this data; the planted runs are long and the cohort carries many of them, so the evidence per window is large and the symmetric-error approximation is not stretched.  And the automatic cutoff of the $1\times$ likelihood run sits at $-0.0001$: the method works there because the signal is strong, not because the window density has room to spare, and shorter or older runs at $1\times$ should not be expected to be found.
 
