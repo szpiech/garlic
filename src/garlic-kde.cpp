@@ -233,120 +233,90 @@ void kdeGaussian(double *data, int n, double h, const double *targets, int M, do
 }
 
 
+static double KDE_MODE_MIN_FRAC = 0.02;
+static int KDE_MODE_MIN_PERSIST = 10;
+void setModeFilters(double minFrac, int minPersist) { KDE_MODE_MIN_FRAC = minFrac; KDE_MODE_MIN_PERSIST = minPersist; }
+
+LODModes::LODModes()
+    : verdict(LOD_MODES_NONE), modeN(std::numeric_limits<double>::quiet_NaN()), modeA(std::numeric_limits<double>::quiet_NaN()),
+      cutoff(std::numeric_limits<double>::quiet_NaN()), valleyHeight(std::numeric_limits<double>::quiet_NaN()), nCandidates(0) {}
+
+const char *lodModeVerdictName(LODModeVerdict v)
+{
+    switch (v)
+    {
+    case LOD_MODES_BIMODAL: return "bimodal";
+    case LOD_MODES_UNIMODAL_NULL: return "unimodal-null";
+    case LOD_MODES_UNIMODAL_AUTOZYGOUS: return "unimodal-autozygous";
+    default: return "no-modes";
+    }
+}
+
+LODModes identifyLODModes(const double *x, const double *y, int size)
+{
+    LODModes m;
+    if (size < 3) return m;
+    const int span = KDE_MODE_SPAN < size ? KDE_MODE_SPAN : size;
+    double ymax = y[0];
+    for (int i = 1; i < size; i++) if (y[i] > ymax) ymax = y[i];
+    if (!(ymax > 0)) return m;
+
+    //Persistence: how many of the sliding windows of `span` grid points have
+    //their maximum at grid point i.  A real mode holds the window maximum
+    //for every window that contains it (up to `span`); a ripple on the flank
+    //of a broader bump holds it for a few.  This is the same windowed-argmax
+    //walk the previous rule built on, used here only as a smoothness filter
+    //and no longer to choose between modes.
+    vector<int> persist(size, 0);
+    for (int j = 0; j + span <= size; j++)
+    {
+        int a = j;
+        for (int k = j + 1; k < j + span; k++) if (y[k] > y[a]) a = k;
+        persist[a]++;
+    }
+
+    //Candidate modes: interior local maxima (plateaus count once, at their
+    //first point) that are at least KDE_MODE_MIN_FRAC of the tallest density
+    //and persist for at least KDE_MODE_MIN_PERSIST windows.
+    int bestN = -1, bestA = -1;
+    for (int i = 1; i + 1 < size; i++)
+    {
+        if (!(y[i] >= y[i - 1] && y[i] >= y[i + 1])) continue;
+        if (!(y[i] > y[i - 1] || y[i] > y[i + 1])) continue;
+        if (y[i] < KDE_MODE_MIN_FRAC * ymax) continue;
+        if (persist[i] < KDE_MODE_MIN_PERSIST) continue;
+        m.nCandidates++;
+        if (x[i] < 0) { if (bestN < 0 || y[i] > y[bestN]) bestN = i; }
+        else if (x[i] > 0) { if (bestA < 0 || y[i] > y[bestA]) bestA = i; }
+        //a peak at exactly 0 belongs to neither state and is ignored
+    }
+    if (bestN >= 0) m.modeN = x[bestN];
+    if (bestA >= 0) m.modeA = x[bestA];
+    if (bestN >= 0 && bestA >= 0)
+    {
+        int lo = bestN, hi = bestA;
+        int minIdx = lo;
+        for (int i = lo; i <= hi; i++) if (y[i] < y[minIdx]) minIdx = i;
+        m.verdict = LOD_MODES_BIMODAL;
+        m.cutoff = x[minIdx];
+        const double shorter = y[bestN] < y[bestA] ? y[bestN] : y[bestA];
+        m.valleyHeight = shorter > 0 ? y[minIdx] / shorter : 1.0;
+    }
+    else if (bestN >= 0) m.verdict = LOD_MODES_UNIMODAL_NULL;
+    else if (bestA >= 0) m.verdict = LOD_MODES_UNIMODAL_AUTOZYGOUS;
+    else m.verdict = LOD_MODES_NONE;
+    return m;
+}
+
 double get_min_btw_modes(double *x, double *y, int size, int wsize)
 {
-    //double initialGuess = 0;
-    
-    int winsize = KDE_MODE_SPAN;
-    double maxes;
-    vector<double> uniq_maxes(size-winsize);
-    vector<double> uniq_counts(size-winsize);
-    for(int i = 0; i < size-winsize; i++){
-        uniq_counts[i] = 0;
-        uniq_maxes[i] = 0;
-    }
-
-    //Record WHICH grid point was the windowed maximum alongside its value, so
-    //the mode's location never has to be recovered by scanning y for a float
-    //that compares exactly equal (see below).
-    vector<int> uniq_argmax(size-winsize);
-    for(int i = 0; i < size-winsize; i++) uniq_argmax[i] = -1;
-
-    int index = 0;
-    for(int i = 0; i < size-winsize; i++){
-        int argmax_i = get_arg_max(&(y[i]),winsize)+i;
-        maxes = y[argmax_i];
-        if(i == 1){
-            uniq_maxes[i] = maxes;
-            uniq_argmax[i] = argmax_i;
-            uniq_counts[i]++;
-        }
-        else if(uniq_maxes[index] == maxes){
-            uniq_counts[index]++;    
-        }
-        else if(uniq_maxes[index] != maxes){
-            index++;
-            uniq_maxes[index] = maxes;
-            uniq_argmax[index] = argmax_i;
-            uniq_counts[index]++;    
-        }
-    }
-
-    int maxCount = uniq_counts[0];
-    int secondMaxCount = 0;
-    for(int i = 1; i < size-winsize; i++){
-        if(maxCount <= uniq_counts[i]){
-            secondMaxCount = maxCount;
-            maxCount = uniq_counts[i];
-        }
-        else if (secondMaxCount <= uniq_counts[i]){
-            secondMaxCount = uniq_counts[i];
-        }
-    }
-
-    vector<double> values;
-    vector<int> valueIdx;
-    for(int i = 0; i < size-winsize; i++){
-        if((maxCount == uniq_counts[i] || secondMaxCount == uniq_counts[i]) && uniq_argmax[i] >= 0){
-            values.push_back(uniq_maxes[i]);
-            valueIdx.push_back(uniq_argmax[i]);
-        }
-    }
-
-    //Two distinct candidate modes are required; with fewer there is no
-    //"between the modes" to minimise over.  This used to leave
-    //leftMaxIndex/rightMaxIndex at -1 and index y[-1].
-    if(values.size() < 2){
-        LOG.err("ERROR: Found fewer than two modes in the LOD score density (", int(values.size()), false);
-        LOG.err(" candidate(s)).");
-        throw 0;
-    }
-
-    double firstMax = -1;
-    double secondMax = -1;
-    int leftMaxIndex = -1;
-    int rightMaxIndex = -1;
-    for(unsigned int i = 0; i < values.size(); i++){
-        if(firstMax <= values[i]){
-            secondMax = firstMax;
-            rightMaxIndex = leftMaxIndex;
-            firstMax = values[i];
-            leftMaxIndex = valueIdx[i];
-        }
-        else if (secondMax <= values[i]){
-            secondMax = values[i];
-            rightMaxIndex = valueIdx[i];
-        }
-    }
-
-
-    if(leftMaxIndex < 0 || rightMaxIndex < 0){
-        LOG.err("ERROR: Could not locate two modes in the LOD score density.");
-        throw 0;
-    }
-
-    if(rightMaxIndex < leftMaxIndex){
-        int tmp = rightMaxIndex;
-        rightMaxIndex = leftMaxIndex;
-        leftMaxIndex = tmp;
-    }
-
-    int minIndex = get_arg_min(&(y[leftMaxIndex]), rightMaxIndex - leftMaxIndex + 1) + leftMaxIndex;
-
-    //A valley more than one LOD-per-SNP away from zero is treated as
-    //implausible and 0 is used instead.  That substitution used to be silent;
-    //it fires on real inputs (a mixed-depth --tgls cohort puts the valley
-    //near -74 at winsize 60, and a single-depth high-coverage --tgls run
-    //within 10% of the boundary), so the discarded value is named here.  The
-    //applied value is unchanged so existing output is unaffected.
-    if(abs(x[minIndex]/wsize) < 1) return x[minIndex];
-
-    LOG.err("WARNING: The minimum between the LOD score modes lies at ", x[minIndex], false);
-    LOG.err(", outside +/-", wsize, false);
-    LOG.err(" (the window size); applying a LOD score cutoff of 0 instead.");
-    LOG.err("\tThe density has been written to file for inspection; a cutoff can be given with", ARG_LOD_CUTOFF);
-    return 0;
-
+    (void)wsize;   //the +/-wsize guard is gone: a valley is defined by the two modes it lies between, not by its distance from zero
+    LODModes m = identifyLODModes(x, y, size);
+    if (m.verdict == LOD_MODES_BIMODAL) return m.cutoff;
+    LOG.err("ERROR: The LOD score density is ", lodModeVerdictName(m.verdict), false);
+    LOG.err(": it does not have a non-autozygous mode below 0 and an autozygous mode above 0,");
+    LOG.err("\tso there is no valley between them to use as a cutoff.");
+    throw 0;
 }
 
 double slope(double x0, double y0, double x1, double y1)

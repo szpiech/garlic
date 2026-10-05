@@ -143,7 +143,8 @@ struct IndStandardization
     bool   own;         //the stratum's cutoff is its own valley (else borrowed)
     bool   small;       //stratum too small for a valley; took the largest stratum's cutoff
     bool   hasScale;    //mode and spread were estimated
-    IndStandardization() : mode(0), spread(1), cutoff(0), stratum(-1), stratumSize(0), own(false), small(false), hasScale(false) {}
+    bool   unresolved;  //enough windows, but no density peak at LOD < 0: the non-autozygous mode could not be located
+    IndStandardization() : mode(0), spread(1), cutoff(0), stratum(-1), stratumSize(0), own(false), small(false), hasScale(false), unresolved(false) {}
 };
 
 //How many evidence strata the cohort falls into, with each stratum's median
@@ -157,10 +158,13 @@ int countEvidenceStrata(vector< WinData * > *winDataByChr, IndData *indData, int
 //Returns the number of strata; perInd receives one entry per individual with
 //the cutoff actually applied.  The KDE written to kdeoutfile is of the
 //largest stratum's pooled windows.
+//`noAutozygousMode` is set when no stratum's density has an autozygous mode:
+//every individual then receives an infinite cutoff (no calls) and ok stays
+//true, as for the pooled selector.
 int selectLODCutoffStratified(vector< WinData * > *winDataByChr, IndData *indData,
                               string kdeoutfile, int step, int wsize, bool &ok,
                               const vector<ChrRole> *role, ChrRole keep,
-                              vector<IndStandardization> &perInd);
+                              vector<IndStandardization> &perInd, bool *noAutozygousMode = NULL);
 
 vector<IndReportRow> computeIndReport(vector< HapData * > *hapDataByChr,
                                       vector< FreqData * > *freqDataByChr,
@@ -309,9 +313,14 @@ vector<string> makeClassColors(int nclass);
 //by exactly the class letter the .roh.bed carries for the same run.
 int rohSizeClassIndex(double size, const vector<double> &bounds);
 
-double selectLODCutoff(KDEResult *kdeResult, int wisize, bool &ok);
+//Automatic cutoff from the pooled LOD density.  `modes` receives what the
+//density had (see identifyLODModes): on a bimodal density the return is the
+//valley; on a unimodal-null density the return is +infinity (no window
+//passes) and ok stays true -- the caller decides how to report it; on a
+//density with no non-autozygous mode ok is false.
+double selectLODCutoff(KDEResult *kdeResult, int wisize, bool &ok, LODModes *modes = NULL);
 double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wisize, bool &ok,
-                       const vector<ChrRole> *role = NULL, ChrRole keep = CHR_AUTOSOME);
+                       const vector<ChrRole> *role = NULL, ChrRole keep = CHR_AUTOSOME, LODModes *modes = NULL);
 
 //The cutoff the SEX CHROMOSOME's own windows would have given, logged and not
 //used.  Cotter et al. (2024) reused the autosomal cutoff on the X for want of

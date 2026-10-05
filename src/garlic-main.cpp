@@ -105,6 +105,12 @@ struct PopResult
     int            winsize;
     double         overlapFrac;
     double         lodCutoff;
+    //The automatic selector's reading of the pooled LOD density: verdict
+    //(bimodal / unimodal-null / ...) and the two mode locations (NaN when
+    //absent).  Empty verdict when the cutoff was given on the command line.
+    string         modeVerdict;
+    double         modeNonAutozygous;
+    double         modeAutozygous;
     vector<double> boundSizes;
     //What the shared sex chromosome was actually called at.  Equal to the
     //autosomal values unless --sexchr-winsize/--sexchr-lod-cutoff changed
@@ -137,6 +143,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
                                    ROHIndex *rohIndex)
 {
     PopResult res;
+    res.modeNonAutozygous = res.modeAutozygous = numeric_limits<double>::quiet_NaN();
     res.status = POP_OK;
 
     //Empty for a single-population run, so its messages read exactly as they
@@ -324,6 +331,11 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     //assembly and the per-individual report.
     vector<IndStandardization> indStd;
     vector<double> indCutoff;
+    //What the pooled LOD density had (modes and verdict), for the log and
+    //params.json.  noAutozygousMode: no autozygous mode could be resolved
+    //(pooled, or in any stratum) -- the run completes with no ROH calls.
+    LODModes pooledModes;
+    bool noAutozygousMode = false;
 
     if (AUTO_CUTOFF){
         //if ((!AUTO_WINSIZE && !WINSIZE_EXPLORE) || (AUTO_WINSIZE && WEIGHTED) )
@@ -335,7 +347,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
             //at that size.
             int nStrata = selectLODCutoffStratified(winDataByChr, indData, makeKDEFilename(outfile, winsize),
                                                     (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK,
-                                                    chrRole, CHR_AUTOSOME, indStd);
+                                                    chrRole, CHR_AUTOSOME, indStd, &noAutozygousMode);
             LOD_CUTOFF = nStrata;
             if (cutoffOK)
             {
@@ -348,9 +360,10 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
             if(kdeResult == NULL)
             {
                 LOD_CUTOFF = selectLODCutoff(winDataByChr, indData, KDE_SUBSAMPLE, makeKDEFilename(outfile, winsize), (KDE_THIN_STEP > 0 ? KDE_THIN_STEP : winsize), winsize, cutoffOK,
-                                             chrRole, CHR_AUTOSOME);
+                                             chrRole, CHR_AUTOSOME, &pooledModes);
             }
-            else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize, cutoffOK);
+            else LOD_CUTOFF = selectLODCutoff(kdeResult, winsize, cutoffOK, &pooledModes);
+            if (cutoffOK && pooledModes.verdict == LOD_MODES_UNIMODAL_NULL) noAutozygousMode = true;
 
             //One cutoff for everyone assumes everyone carries the same evidence
             //per window.  The location of an individual's non-autozygous mode
@@ -386,6 +399,26 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
             res.status = POP_ERROR; return res;
         }
 
+        //Unimodal-null: the density has a non-autozygous mode and nothing
+        //above zero to set it against.  That is a statement about the data
+        //-- the windows do not separate an autozygous excess -- and the
+        //honest cutoff is "none": the run completes with its reports and an
+        //empty ROH file rather than with calls from an invented threshold.
+        if (noAutozygousMode)
+        {
+            LOG.err("WARNING: the LOD score density" + where + " is unimodal-null: it has a non-autozygous mode");
+            if (pooledModes.verdict == LOD_MODES_UNIMODAL_NULL) { LOG.err("\tat", pooledModes.modeN, false); LOG.err(" and no autozygous mode above 0."); }
+            else LOG.err("\tin every stratum and no autozygous mode above 0.");
+            LOG.err("\tNo ROH are called.  This means the windows carry too little evidence to separate autozygous");
+            LOG.err("\tfrom non-autozygous stretches -- too little depth or too few sites per window for these samples");
+            LOG.err("\t(the small-population case needs more sites, not more depth), hard genotype calls at low depth");
+            LOG.err("\t(no-read genotypes imputed from the prior must be set missing), or individuals of very different");
+            LOG.err("\tdepth pooled together (see", ARG_STRATIFY_CUTOFF, false);
+            LOG.err(").  It does NOT mean the samples carry no ROH: a cohort");
+            LOG.err("\twithout long runs still shows a small autozygous mode from short background IBD.");
+            LOG.err("\tThe density is in <out>.<winsize>SNPs.kde; a cutoff can be imposed with", ARG_LOD_CUTOFF);
+        }
+
         if (STRATIFY_CUTOFF)
         {
             double lo = indStd[0].cutoff, hi = indStd[0].cutoff;
@@ -395,6 +428,7 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
             LOG.log(" to", hi, false);
             LOG.log("; see <out>.ind.tsv.");
         }
+        else if (noAutozygousMode) LOG.log("Selected LOD score cutoff: none (unimodal-null density; no ROH called)");
         else LOG.log("Selected LOD score cutoff:", LOD_CUTOFF);
         //Estimated on the autosomes and applied to the sex chromosome, which
         //is what Cotter et al. (2024) did and for the same reason.  Report
@@ -530,6 +564,9 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
     res.winsize     = winsize;
     res.overlapFrac = OVERLAP_FRAC;
     res.lodCutoff   = LOD_CUTOFF;
+    res.modeVerdict = AUTO_CUTOFF ? (noAutozygousMode ? "unimodal-null" : (STRATIFY_CUTOFF ? "bimodal (per stratum)" : lodModeVerdictName(pooledModes.verdict))) : "";
+    res.modeNonAutozygous = pooledModes.modeN;
+    res.modeAutozygous    = pooledModes.modeA;
     res.boundSizes  = boundSizes;
     res.haveSexChr  = haveSexChr;
     res.sexWinsize  = (SEXCHR_WINSIZE > 0) ? SEXCHR_WINSIZE : winsize;
@@ -1516,7 +1553,18 @@ int main(int argc, char *argv[])
             //the automatic one.
             v.str(""); v << pop.winsize;      resolved.push_back(make_pair("winsize", v.str()));
             v.str(""); v << pop.overlapFrac;  resolved.push_back(make_pair("overlap_frac", v.str()));
-            v.str(""); v << pop.lodCutoff;    resolved.push_back(make_pair("lod_cutoff", v.str()));
+            //An infinite cutoff (unimodal-null density: no ROH called) is
+            //written as null, which JSON can carry and "inf" cannot.
+            v.str(""); if (pop.lodCutoff == pop.lodCutoff && fabs(pop.lodCutoff) != numeric_limits<double>::infinity()) v << pop.lodCutoff; else v << "null";
+            resolved.push_back(make_pair("lod_cutoff", v.str()));
+            if (!pop.modeVerdict.empty())
+            {
+                resolved.push_back(make_pair("lod_density_verdict", "\"" + pop.modeVerdict + "\""));
+                v.str(""); if (pop.modeNonAutozygous == pop.modeNonAutozygous) v << pop.modeNonAutozygous; else v << "null";
+                resolved.push_back(make_pair("lod_mode_nonautozygous", v.str()));
+                v.str(""); if (pop.modeAutozygous == pop.modeAutozygous) v << pop.modeAutozygous; else v << "null";
+                resolved.push_back(make_pair("lod_mode_autozygous", v.str()));
+            }
             //Under --stratify-cutoff that number is the COUNT of strata and
             //the LOD cutoff differs per individual (<out>.ind.tsv); a reader
             //must not take it for a LOD.

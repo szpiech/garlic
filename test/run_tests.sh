@@ -2998,6 +2998,57 @@ stratified_cutoff() {
 
 
 # ---------------------------------------------------------------------------
+# LOD mode identification (sign anchor) and the unimodal verdicts.
+#
+# The automatic cutoff is the valley between the non-autozygous mode (the
+# dominant density peak at LOD < 0) and the autozygous mode (the dominant peak
+# at LOD > 0).  A density with no peak above zero has no cutoff: the run
+# completes with no calls, says so, and writes null to params.json.  The old
+# plateau-count rule had neither constraint; on chr21 of the bundled example
+# it took two bumps of the non-autozygous component (-62.7 and -51.5) as the
+# modes, cut at -55.7 and called 22 Mb of the chromosome per individual.
+lod_modes() {
+    echo "== LOD mode identification =="
+    [ -f "$EX/chr21.tped.gz" ] || { echo "  SKIP  chr21 fixture not present"; return; }
+    common="--build hg18 --winsize 60 --error 0.001 --size-bounds 500000 1000000 --quiet --force"
+    # Bimodal: modes on opposite sides of zero, valley between them, params record all three.
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/lm_c21" >/dev/null 2>"$WORK/lm_c21.err"
+    if [ $? -ne 0 ]; then bad "chr21 automatic cutoff failed"; sed -n '1,3p' "$WORK/lm_c21.err" | sed 's/^/        /'
+    else
+        mn=$(sed -n 's/.*"lod_mode_nonautozygous": *\([-0-9.e+]*\).*/\1/p' "$WORK/lm_c21.params.json")
+        ma=$(sed -n 's/.*"lod_mode_autozygous": *\([-0-9.e+]*\).*/\1/p' "$WORK/lm_c21.params.json")
+        cut=$(sed -n 's/.*"lod_cutoff": *\([-0-9.e+]*\).*/\1/p' "$WORK/lm_c21.params.json")
+        if grep -q '"lod_density_verdict": *"bimodal"' "$WORK/lm_c21.params.json"; then ok; else bad "chr21: params.json should record a bimodal verdict"; fi
+        if awk -v a="$mn" -v b="$ma" -v c="$cut" 'BEGIN { exit (a < 0 && b > 0 && c > a && c < b) ? 0 : 1 }'; then ok
+        else bad "chr21: modes must straddle zero with the cutoff between them (got $mn, $ma, cutoff $cut)"; fi
+        # The old rule's -55.7 called about 22 Mb per individual on a 47 Mb chromosome.
+        mb=$(awk '!/^track/ { s += $3 - $2 } END { printf "%.2f", s / 1e6 / 45 }' "$WORK/lm_c21.roh.bed")
+        if awk -v m="$mb" 'BEGIN { exit (m > 0.5 && m < 10) ? 0 : 1 }'; then ok
+        else bad "chr21: expected a few Mb of ROH per individual, got $mb Mb"; fi
+    fi
+    # Unimodal-null: the mixed-depth cohort pooled.  The density's only mode
+    # is below zero; no calls, a warning that says so, null in params.json.
+    # shellcheck disable=SC2086
+    $GARLIC --gl-beagle "$WORK/c21.mixed.beagle.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/lm_mix" >/dev/null 2>"$WORK/lm_mix.err"
+    if [ $? -ne 0 ]; then bad "pooled run on the mixed-depth fixture must complete (unimodal-null is not an error)"; sed -n '1,3p' "$WORK/lm_mix.err" | sed 's/^/        /'
+    else
+        if grep -q "unimodal-null" "$WORK/lm_mix.err"; then ok; else bad "mixed-depth pooled run should warn that the density is unimodal-null"; fi
+        if grep -q -- "--stratify-cutoff" "$WORK/lm_mix.err" && grep -q -- "--lod-cutoff" "$WORK/lm_mix.err"; then ok
+        else bad "the unimodal-null warning should name --stratify-cutoff and --lod-cutoff"; fi
+        n=$(grep -vc '^track' "$WORK/lm_mix.roh.bed")
+        if [ "$n" -eq 0 ]; then ok; else bad "unimodal-null run must call no ROH (called $n segments)"; fi
+        if grep -q '"lod_cutoff": *null' "$WORK/lm_mix.params.json" && grep -q '"lod_density_verdict": *"unimodal-null"' "$WORK/lm_mix.params.json"; then ok
+        else bad "params.json should carry lod_cutoff null and the unimodal-null verdict"; fi
+        if grep -q '"lod_mode_autozygous": *null' "$WORK/lm_mix.params.json"; then ok; else bad "params.json should record the missing autozygous mode as null"; fi
+    fi
+    # A user-supplied cutoff records no verdict: nothing was identified.
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --lod-cutoff 2.5 --out "$WORK/lm_fixed" >/dev/null 2>&1
+    if grep -q 'lod_density_verdict' "$WORK/lm_fixed.params.json"; then bad "--lod-cutoff run should not carry a density verdict"; else ok; fi
+}
+
+# ---------------------------------------------------------------------------
 # --exclude-regions.
 excluded_regions() {
     echo "== --exclude-regions =="
@@ -3066,6 +3117,7 @@ determinism
 likelihood_guards
 beagle_input
 stratified_cutoff
+lod_modes
 excluded_regions
 ind_metadata
 vcf_input
