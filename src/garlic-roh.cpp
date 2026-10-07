@@ -1584,8 +1584,8 @@ static int assignEvidenceStrata(vector< WinData * > *winDataByChr, IndData *indD
     //because the non-autozygous mode lies below zero at any depth (its
     //expectation is -KL per site; see identifyLODModes); lowest rather than
     //tallest, because the autozygous peak of a half-autozygous individual
-    //can be the tallest one and, with prior-imputed genotypes, can even sit
-    //slightly below zero.  Substantial means at least a tenth of the tallest
+    //can be the tallest one and, with hard calls made under a population
+    //prior at low depth (spurious heterozygotes), can even sit below zero.  Substantial means at least a tenth of the tallest
     //NEGATIVE peak -- measured against the tallest peak overall, the broad
     //null peak of an F = 0.5 individual is 0.245 of its narrow autozygous
     //peak and a quarter-of-tallest rule took the autozygous mode as the
