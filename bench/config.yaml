@@ -6,6 +6,7 @@ small: false                                         # smoke test: 24 Mb of chr2
 tools:
   garlic: /data/workspace/garlic-lowcov/bin/garlic
   rohan:  /data/workspace/garlic-lowcov/tools/rohan/bin/rohan   # optional; the rohan rules are skipped if absent
+  plink:  /data/workspace/garlic-lowcov/env-plink/bin/plink     # PLINK v1.90b6.21; the plink rules are skipped if absent
   pedsim: /data/workspace/rohml/bin/ped-sim
   simmap: /data/workspace/rohml/maps/refined_mf_X.simmap        # Bherer map: chr pos male_cM female_cM
   intf:   /data/workspace/rohml/tools/ped-sim/interfere/nu_p_campbell_X.tsv
@@ -13,8 +14,8 @@ tools:
 # GRCh37 lengths
 chromosomes: {"20": 63025520, "21": 48129895, "22": 51304566}
 depths: [1, 2, 4, 8]
-rohan_depths: [1, 4]          # ROHan takes 4-6 h per 162 Mb BAM; run it where it matters
-run_rohan: true               # false: score the GARLIC arms only
+rohan_depths: [1, 2, 4, 8]    # ROHan takes 4-6 h per 162 Mb BAM with two threads
+run_rohan: false              # true: also run ROHan at rohan_depths (4.5-6 h per BAM; off by default)
 
 founders:
   n_haplotypes: 400
@@ -49,3 +50,9 @@ garlic:
   size_bounds: "500000 1000000"
 score:
   min_len: 1000000
+score_by_size:                # recall/precision by size class (0.1-0.5, 0.5-1, >1 Mb) against any-age IBD tracts
+  min_truth: 100000            # tracts scored for recall and used as the precision reference
+  max_tmrca: 1000              # recall counts tracts with TMRCA <= this many generations ('effective ROH')
+plink:                        # PLINK 1.9 --homozyg, settings of Ceballos et al. 2018 (BMC Genomics 19:106)
+  window_het: [3, 1]           # --homozyg-window-het: 3 for low-coverage WGS (their recommendation), 1 = default/array
+  homozyg: {snp: 50, kb: 300, density: 50, gap: 1000, window-snp: 50, window-missing: 5, window-threshold: 0.05}

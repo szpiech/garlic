@@ -6,6 +6,7 @@ tools:
   pedsim: /data/workspace/rohml/bin/ped-sim
   simmap: /data/workspace/rohml/maps/refined_mf_X.simmap
   intf: /data/workspace/rohml/tools/ped-sim/interfere/nu_p_campbell_X.tsv
+  plink: /data/workspace/garlic-lowcov/env-plink/bin/plink
 chromosomes:
   '20': 63025520
   '21': 48129895
@@ -17,7 +18,9 @@ depths:
 - 8
 rohan_depths:
 - 1
+- 2
 - 4
+- 8
 run_rohan: false
 founders:
   n_haplotypes: 400

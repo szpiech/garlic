@@ -1,56 +1,85 @@
 # Low-coverage ROH benchmark
 
-Snakemake workflow used to benchmark the `low-cov` branch on simulated low-coverage
-sequence data. It is written for the lab office box (tool paths in `config.yaml`) and is
-kept here for provenance; it is not part of the build.
+Snakemake workflow used to benchmark the `low-cov` branch of GARLIC on simulated
+low-coverage sequence data. It simulates individuals with known runs of homozygosity (ROH),
+simulates reads at 1x, 2x, 4x and 8x, calls ROH with GARLIC, PLINK 1.9 and ROHan, and scores
+every call set against the simulated truth. Tool paths in the configuration files are those of
+the lab office server; edit the `tools` block for another machine.
+
+The full description (software, versions, install sources, every command and argument, and a
+flowchart) is in `garlic_lowcov_benchmark_pipeline.docx`.
+
+## Install
 
 ```
-conda activate /data/workspace/garlic-lowcov/env-bench
-snakemake -s bench/Snakefile --cores 32                                      # full benchmark
-snakemake -s bench/Snakefile --cores 16 --config small=true root=<dir>       # 24 Mb smoke test (~4 min)
-snakemake -s bench/Snakefile --cores 32 --config run_rohan=false             # GARLIC arms only
-snakemake -s bench/Snakefile -n --rerun-triggers mtime                       # what would run
+conda env create -f envs/env-bench.yaml      # Snakemake, msprime, tskit, samtools, bcftools, bwa-mem2, ART, ANGSD, ...
+conda env create -f envs/env-plink.yaml      # PLINK v1.90b6.21
 ```
 
-Pipeline (one rule per box; `pedsim` is a checkpoint because the sample names come from it):
+ped-sim (github.com/williamslab/ped-sim), ROHan (github.com/grenaud/ROHan) and GARLIC
+(`low-cov` branch, `cd src && make`) are built from source. The Bherer et al. (2017) map is
+converted to `refined_mf_X.simmap` with the commands in the ped-sim README, and the
+interference file is `interfere/nu_p_campbell_X.tsv` from the ped-sim repository. Put all of
+these paths in the `tools` block of `config.yaml` (the population configs inherit it).
+
+## Run
 
 ```
-founders ─┬─> index_reference ──────────────────────────┐
-          └─> pedsim_inputs ─> pedsim ─┬─> truth         │
-                                       ├─> tfam          │
-                                       └─> hap_fasta ─> reads ─> map ─┬─> bamlist ─┬─> angsd ─> mapped_beagle ─> garlic_beagle (x3 --error)
-founders ─> sites ─> index_sites ─────────────────────────────────────┘            └─> bcftools_call ─> mapped_calls ─┬─> garlic_calls
-                                                                       └─> rohan                                      └─> garlic_pl
-pedsim + sites ─> truth_vcf ─> garlic_truth (ceiling)
-everything ─> score ─> bench_scores.csv, bench_summary.csv
+conda activate env-bench
+snakemake -s bench/Snakefile --cores 32                                              # pedigree cohort
+snakemake -s bench/Snakefile --cores 32 --configfile bench/config_pop_bottleneck.yaml   # bottleneck population
+snakemake -s bench/Snakefile --cores 32 --configfile bench/config_pop_small.yaml        # Ne 2,000 population
+snakemake -s bench/Snakefile --cores 16 --config small=true root=<dir>                  # 24-Mb smoke test
+snakemake -s bench/Snakefile --cores 32 --config run_rohan=true                         # also ROHan (off by default)
+snakemake -s bench/Snakefile -n                                                         # dry run
 ```
 
-1. `founders` – msprime (Ne 20 000, mu 1.25e-8, Bherer sex-averaged map) founder
-   haplotypes on chr20-22 (GRCh37 lengths); a random reference with the ancestral allele
-   at every site; `founders.vcf.gz`, `sites.tsv`.
-2. `pedsim` – ped-sim pedigrees with planted consanguinity (config `pedigrees`: offspring
-   of full sibs, first cousins, second cousins, outbred; five each); `--seg_haps` HBD
-   segments are the truth; `--keep_phase --err_rate 0 --miss_rate 0`; output re-bgzipped.
-3. `hap_fasta`, `reads`, `map` – per-haplotype FASTA (`bcftools consensus`), ART HiSeq
-   2500 150 bp paired reads at 1/2/4/8x total depth, bwa-mem2 + samtools sort.
-4. `sites` – one shared ascertained site list (founder MAF >= 0.05) in the forms ANGSD,
-   bcftools and GARLIC need, plus `mapped.bed`: ped-sim transmits nothing outside the
-   genetic map, so every input and call is restricted to the map's span (118 of 162 Mb).
-5. `angsd` / `bcftools_call` – `-GL 1 -doGlf 2 -doMaf 1` beagle likelihoods per depth;
-   `mpileup | call -m -C alleles` hard calls with PL at the same sites.
-6. `garlic_*` – GARLIC on true genotypes (ceiling), on hard calls with `--error`, on hard
-   calls with `--gl-type PL` (bcftools emits PL, not GQ; file prefix `pl_`), and on the
-   beagle file with `--gl-beagle` at the shared `--error` and at the `error_sweep` values;
-   all with `--no-centromere --winsize 60 --size-bounds 500000 1000000`. A run that
-   cannot place the automatic cutoff leaves an empty `.roh.bed`; that is a result.
-7. `rohan` – ROHan per BAM at `rohan_depths` (4-6 h per 162 Mb BAM with two threads;
-   skipped when the binary is absent or `run_rohan=false`).
-8. `score` – base-level precision/recall of runs >= 1 Mb against pedigree HBD and against
-   the attainable set (pedigree HBD plus the segments called on the true genotypes, which
-   are background founder autozygosity), F_ROH error; per individual and pooled.
+`root` in each configuration file is the output directory. ROHan takes 4.5 to 6 h per BAM with
+two threads, so it runs only with `run_rohan=true`, at the depths in `rohan_depths`.
 
-`bench.py` is the earlier stage-by-stage driver with the same output layout; the numbers in
-the manual's benchmark section were produced with it, and a directory it produced can be
-resumed by the Snakefile (the dry run against such a directory reuses founders, pedigrees,
-reads, alignments and ROHan, and regenerates the site list and everything downstream of it
-because two of the `sites` outputs did not exist under the old layout).
+To reuse a directory made by the earlier stage driver `bench.py` (kept in the repository), add
+`--rerun-triggers mtime`. After changing a rule, rerun it and everything downstream with
+`-R <rule>`; deleting a rule's outputs does not trigger a rerun when the score tables are newer.
+
+## Rules, in order
+
+| rule | software | function |
+|---|---|---|
+| `founders` | msprime, tskit | 200 diploid founders on chr20-22 (GRCh37 lengths), tree sequences, random reference |
+| `pedsim_inputs`, `pedsim` | ped-sim or bcftools | pedigree cohort (offspring of full sibs, first and second cousins, outbred; five each) or 20 unrelated individuals |
+| `truth` | Python, tskit | pedigree HBD, or IBD with TMRCA <= 100 generations (used by `score`) |
+| `pedsim_bp` | ped-sim | rerun with the logged seed and `--bp`; must reproduce `bench.seg` exactly |
+| `truth_all` | Python, tskit | every within-individual IBD tract >= 10 kb with its TMRCA (used by `score_by_size`) |
+| `index_reference`, `hap_fasta`, `reads`, `map` | samtools, bcftools, ART, bwa-mem2 | haplotype FASTA, 150-bp paired reads, sorted BAM |
+| `sites`, `index_sites`, `bamlist` | Python, ANGSD, htslib | one shared site list (founder MAF >= 0.05) inside the genetic-map span |
+| `angsd` | ANGSD | beagle genotype likelihoods (`-GL 1 -doGlf 2`) |
+| `bcftools_call`, `gt_check` | bcftools | `call -m -G - -P 0`: maximum-likelihood genotypes with PL; check of GT against argmin(PL) |
+| `mapped_beagle`, `mapped_calls`, `tfam`, `truth_vcf` | Python, bcftools | inputs restricted to the map span |
+| `garlic_truth`, `garlic_calls`, `garlic_pl`, `garlic_beagle` | GARLIC | true genotypes, genotype calls, `--gl-type PL`, `--gl-beagle` at three `--error` values |
+| `plink_roh` | PLINK 1.9 | `--homozyg` with the Ceballos et al. (2018) settings, `--homozyg-window-het` 3 and 1 |
+| `rohan` | ROHan | BAM at `rohan_depths` (only with `run_rohan=true`) |
+| `score` | Python | runs >= 1 Mb: recall vs `truth`, precision vs the attainable set, FROH error |
+| `score_by_size` | Python | recall and precision by size class (0.1-0.5, 0.5-1, >1 Mb) against `truth_all` |
+
+## Genotype calls
+
+`bcftools call -m` by default multiplies each sample's likelihoods by a Hardy-Weinberg prior over
+all samples, and at one or two reads that prior decides the genotype (70% of heterozygous calls
+at 1x in the pedigree cohort had PL favouring a homozygote). `-G -` removes that prior but leaves
+the substitution-rate prior (`-P`), which turned 10% of two-or-more-read heterozygotes into 0/0.
+`-G - -P 0` gives the maximum-likelihood genotype; `gl/d<depth>.gtcheck.tsv` tabulates GT against
+argmin(PL) by read count.
+
+## Outputs (under `root`)
+
+- `bench_summary.csv`, `bench_scores.csv`: runs >= 1 Mb, pooled and per individual.
+- `bench_scores_by_size.csv`: per caller, input, depth and size class: `recall` (truth tracts
+  >= 100 kb with TMRCA <= 1000 generations), `recall_any_age`, `precision` (called bases inside
+  tracts >= 100 kb of any age), `precision_10kb`, and the TMRCA composition of the called bases.
+- `bench_recall_by_size_tmrca.csv`: recall by size and TMRCA class.
+- `bench_scores_by_size_ind.csv`: the same bases per individual.
+- `roh/`: GARLIC `.roh.bed`, PLINK `plink/*.hom`, ROHan `rohan/<sample>_d<depth>/`.
+
+A GARLIC run that cannot place its automatic LOD cutoff leaves an empty `.roh.bed`; that is a
+result (no calls), not a pipeline error. PLINK reads the shared site list with no further MAF or
+HWE filter.

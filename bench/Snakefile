@@ -1,13 +1,15 @@
 # Low-coverage ROH benchmark for GARLIC's low-cov branch.
 #
 #   founders -> pedsim (checkpoint: sample names) -> hap FASTA -> ART reads -> bwa-mem2
-#            -> ANGSD beagle GLs + bcftools calls on one site list -> GARLIC x4 (+ ROHan) -> score
+#            -> ANGSD beagle GLs + bcftools ML genotype calls on one site list -> GARLIC x4, PLINK, ROHan
+#            -> score (runs >= 1 Mb) and score_by_size (0.1-0.5 / 0.5-1 / >1 Mb against any-age IBD truth)
 #
 # Run (office box):
 #   conda activate /data/workspace/garlic-lowcov/env-bench
 #   snakemake -s bench/Snakefile --cores 32                                   # full
 #   snakemake -s bench/Snakefile --cores 16 --config small=true root=/data/workspace/garlic-lowcov/bench/smoke
-#   snakemake -s bench/Snakefile --cores 32 --config run_rohan=false           # everything but ROHan
+#   snakemake -s bench/Snakefile --cores 32 --config run_rohan=true            # also ROHan at rohan_depths (off by default)
+#   snakemake -s bench/Snakefile --cores 32 --configfile bench/config_pop_small.yaml --config root=<dir>   # a population cohort
 #   snakemake -s bench/Snakefile -n --rerun-triggers mtime                    # dry run
 #
 # Output layout is identical to the stage driver bench.py, so a directory produced by one can be
@@ -36,17 +38,22 @@ G = config["garlic"]
 R = config["reads"]
 SEED = int(config["founders"]["seed"])
 ERR = float(G["error"])
-HAVE_ROHAN = os.path.exists(T["rohan"]) and str(config.get("run_rohan", "true")).lower() in ("1", "true", "yes")
+HAVE_ROHAN = os.path.exists(T["rohan"]) and str(config.get("run_rohan", "false")).lower() in ("1", "true", "yes")
 ERR_TAGS = {f"e{abs(round(__import__('math').log10(e)))}": e for e in G["error_sweep"]}   # 1e-4 -> e4, 1e-2 -> e2
 SCRIPTS = os.path.join(workflow.basedir, "scripts")
 GARLIC_COMMON = f"--no-centromere --winsize {G['winsize']} --size-bounds {G['size_bounds']} --force --quiet"
+PLK = config.get("plink", {})
+PLINK_HETS = [int(h) for h in PLK.get("window_het", [3, 1])]
+PLINK_OPTS = " ".join(f"--homozyg-{k} {v}" for k, v in PLK.get("homozyg", {}).items())
+HAVE_PLINK = os.path.exists(T.get("plink", "")) and str(config.get("run_plink", "true")).lower() in ("1", "true", "yes")
+SBS = config.get("score_by_size", {"min_truth": 100000, "max_tmrca": 1000})
 
 wildcard_constraints:
     sample = r"[^/]+", depth = r"\d+"
 
 # The first rule is the default target.
 rule all:
-    input: "bench_scores.csv", "bench_summary.csv"
+    input: "bench_scores.csv", "bench_summary.csv", "bench_scores_by_size.csv", expand("gl/d{depth}.gtcheck.tsv", depth=DEPTHS)
 
 rule garlic_only:
     input: lambda w: garlic_targets()
@@ -100,6 +107,10 @@ def rohan_targets(w=None):
     if not HAVE_ROHAN: return []
     return [f"roh/rohan/{s}_d{d}/out.mid.hmmrohl.gz" for d in ROHAN_DEPTHS for s in samples()]
 
+def plink_targets(w=None):
+    if not HAVE_PLINK: return []
+    return [f"roh/plink/h{h}_{src}.hom" for h in PLINK_HETS for src in ["truth"] + [f"d{d}" for d in DEPTHS]]
+
 # ---------------------------------------------------------------------------------------- founders
 rule founders:
     output: vcf = "founders/founders.vcf.gz", ref = "founders/ref.fa", sites = "founders/sites.tsv", trees = expand("founders/trees/chr{c}.trees", c=list(CHRS))
@@ -126,6 +137,38 @@ rule truth:
     output: "pedsim/truth_hbd.bed"
     params: chrs = CHRS, treedir = "founders/trees"
     script: "scripts/truth_hbd.py" if COHORT == "pedigree" else "scripts/truth_trees.py"
+
+# Any-age truth for scoring by size class: every within-individual IBD tract >= 10 kb with its TMRCA.
+# Population cohorts read it from the founder tree sequences directly.  Pedigree individuals are mosaics of
+# founder haplotypes: ped-sim is rerun with its logged seed and --bp (the rerun must reproduce bench.seg
+# exactly), and at each position the two founder haplotypes are either the same (pedigree HBD) or are
+# IBD, at some depth in the founders' tree, as read from the tree sequence.
+rule pedsim_bp:
+    input: deffile = "pedsim/bench.def", simmap = "pedsim/map.simmap", intf = "pedsim/intf.tsv", vcf = "founders/founders.vcf.gz", seg = "pedsim/bench.seg"
+    output: bp = "pedsim/bp/bench.bp", ids = "pedsim/bp/bench.ids", seg = "pedsim/bp/bench.seg"
+    log: "pedsim/bp/pedsim.log"
+    shell:
+        r"""
+        seed=$(grep -m1 -i 'random seed' pedsim/pedsim.log | grep -oE '[0-9]+' | tail -1)
+        cd pedsim/bp && {T[pedsim]} -d ../bench.def -m ../map.simmap -i ../../{input.vcf} -o bench --intf ../intf.tsv \
+            --seg_haps --keep_phase --founder_ids --err_rate 0 --miss_rate 0 --bp --seed $seed > pedsim.log 2>&1
+        rm -f bench.vcf bench.vcf.gz bench.fam
+        cmp -s bench.seg ../bench.seg || {{ echo "ped-sim rerun with seed $seed does not reproduce pedsim/bench.seg" >&2; exit 1; }}
+        """
+
+def truth_all_input(w):
+    d = {"samples": "pedsim/samples.txt", "trees": expand("founders/trees/chr{c}.trees", c=list(CHRS))}
+    if COHORT == "pedigree":
+        d.update(bp = "pedsim/bp/bench.bp", ids = "pedsim/bp/bench.ids", hbd = "pedsim/truth_hbd.bed",
+                 fvcf = "founders/founders.vcf.gz", ivcf = "pedsim/bench.vcf.gz")
+    return d
+
+rule truth_all:
+    input: unpack(truth_all_input)
+    output: "truth/ibd_all.bed.gz"
+    params: chrs = CHRS, min_span = 10000, cohort = COHORT
+    log: "truth/ibd_all.log"
+    script: "scripts/truth_all.py"
 
 # ------------------------------------------------------------------------------------------- reads
 rule hap_fasta:
@@ -208,11 +251,21 @@ rule bcftools_call:
     output: vcf = "gl/d{depth}.calls.vcf.gz", csi = "gl/d{depth}.calls.vcf.gz.csi"
     log: "gl/call_d{depth}.log"
     shell:
-        # -C alleles -T: force the ascertained REF/ALT so every site is biallelic with PL
+        # -C alleles -T: force the ascertained REF/ALT so every site is biallelic with PL.
+        # -G - -P 0: no HWE prior across samples and no substitution-rate prior, so GT is the maximum-likelihood
+        # genotype from PL.  With the default priors, 1-2-read samples were called from the population prior
+        # (70% of het calls at 1x had PL favouring a homozygote); -G - alone still applied -P per sample and
+        # turned 10% of 2+-read hets into 0/0.  rule gt_check records the agreement of GT with argmin(PL).
         r"""
         bcftools mpileup -f {input.ref} -T {input.bed} -a FORMAT/AD,FORMAT/DP -q 20 -Q 20 -b {input.bams} -Ou 2> {log} \
-          | bcftools call -m -C alleles -T {input.alleles} -Oz -o {output.vcf} 2>> {log} && bcftools index -f {output.vcf}
+          | bcftools call -m -G - -P 0 -C alleles -T {input.alleles} -Oz -o {output.vcf} 2>> {log} && bcftools index -f {output.vcf}
         """
+
+rule gt_check:
+    input: "gl/d{depth}.map.calls.vcf.gz"
+    output: "gl/d{depth}.gtcheck.tsv"
+    params: scriptdir = SCRIPTS
+    shell: "python {params.scriptdir}/ml_genotypes.py {input} /dev/null {output}"
 
 rule mapped_beagle:
     input: beagle = "gl/d{depth}.beagle.gz", mapped = "gl/mapped.bed"
@@ -276,6 +329,22 @@ rule garlic_beagle:
         "--out beagle{wildcards.tag}_d{wildcards.depth} > beagle{wildcards.tag}_d{wildcards.depth}.stdout 2> beagle{wildcards.tag}_d{wildcards.depth}.stderr || true); "
         "cd .. && touch {output}"
 
+# ------------------------------------------------------------------------------------------- PLINK
+# PLINK 1.9 --homozyg with the settings of Ceballos et al. (2018, BMC Genomics 19:106) for low-coverage WGS;
+# --homozyg-window-het is swept over config plink.window_het (3 = their low-coverage setting, 1 = PLINK default).
+# Input is the same shared site list as every other arm; no further MAF/HWE filtering.
+def plink_input(w): return "roh/truth.vcf.gz" if w.src == "truth" else f"gl/d{w.src[1:]}.map.calls.vcf.gz"
+
+rule plink_roh:
+    input: plink_input
+    output: "roh/plink/h{het}_{src}.hom"
+    wildcard_constraints: het = r"\d+", src = r"truth|d\d+"
+    params: prefix = "roh/plink/h{het}_{src}", opts = PLINK_OPTS
+    log: "roh/plink/h{het}_{src}.stderr"
+    shell:
+        "{T[plink]} --vcf {input} --double-id --vcf-half-call m --allow-no-sex --homozyg {params.opts} "
+        "--homozyg-window-het {wildcards.het} --out {params.prefix} > {log} 2>&1"
+
 # ------------------------------------------------------------------------------------------- ROHan
 rule rohan:
     input: bam = "reads/{sample}/d{depth}/aln.bam", bai = "reads/{sample}/d{depth}/aln.bam.bai", ref = "founders/ref.fa", fai = "founders/ref.fa.fai"
@@ -297,3 +366,14 @@ rule score:
     params: chrs = CHRS, scriptdir = SCRIPTS
     log: "score.log"
     script: "scripts/score.py"
+
+# Recall and precision by size class (0.1-0.5, 0.5-1, >1 Mb) for every caller at every depth, against all
+# within-individual IBD tracts of any age (truth/ibd_all.bed.gz).
+rule score_by_size:
+    input:
+        samples = "pedsim/samples.txt", truth = "truth/ibd_all.bed.gz", mapped = "gl/mapped.bed",
+        garlic = lambda w: garlic_targets(), plink = lambda w: plink_targets(), rohan = rohan_targets,
+    output: by_size = "bench_scores_by_size.csv", by_tmrca = "bench_recall_by_size_tmrca.csv", per_individual = "bench_scores_by_size_ind.csv"
+    params: scriptdir = SCRIPTS, min_truth = SBS["min_truth"], max_tmrca = SBS["max_tmrca"], cohort = os.path.basename(ROOT)
+    log: "score_by_size.log"
+    script: "scripts/score_by_size.py"
