@@ -1445,8 +1445,7 @@ static double cutoffFromModes(const KDEResult *kde, bool &ok, LODModes *modesOut
         LOG.log("; no autozygous mode above 0 (unimodal-null).");
         return numeric_limits<double>::infinity();
     }
-    LOG.err("ERROR: The LOD score density has no non-autozygous mode below zero (", lodModeVerdictName(m.verdict), false);
-    LOG.err(").");
+    LOG.err("ERROR: The LOD score density has no non-autozygous mode below zero (" + string(lodModeVerdictName(m.verdict)) + ").");
     if (m.verdict == LOD_MODES_UNIMODAL_AUTOZYGOUS)
     {
         LOG.err("\tIts only mode is at", m.modeA, false);

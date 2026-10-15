@@ -313,8 +313,8 @@ double get_min_btw_modes(double *x, double *y, int size, int wsize)
     (void)wsize;   //the +/-wsize guard is gone: a valley is defined by the two modes it lies between, not by its distance from zero
     LODModes m = identifyLODModes(x, y, size);
     if (m.verdict == LOD_MODES_BIMODAL) return m.cutoff;
-    LOG.err("ERROR: The LOD score density is ", lodModeVerdictName(m.verdict), false);
-    LOG.err(": it does not have a non-autozygous mode below 0 and an autozygous mode above 0,");
+    LOG.err("ERROR: The LOD score density is " + string(lodModeVerdictName(m.verdict))
+            + ": it does not have a non-autozygous mode below 0 and an autozygous mode above 0,");
     LOG.err("\tso there is no valley between them to use as a cutoff.");
     throw 0;
 }

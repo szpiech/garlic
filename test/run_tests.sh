@@ -36,6 +36,7 @@ fi
 # gzip -cd is spelled the same on macOS and Linux; gzcat/zcat are not.
 gz() { gzip -cd "$1"; }
 
+
 # Builds a .tgls fixture from a tracked .tped: same four leading columns, the
 # same number of genotype columns, every value set to $2.  Derived rather than
 # committed so there is no new binary fixture to keep in step with the data.
@@ -3042,6 +3043,17 @@ lod_modes() {
         else bad "params.json should carry lod_cutoff null and the unimodal-null verdict"; fi
         if grep -q '"lod_mode_autozygous": *null' "$WORK/lm_mix.params.json"; then ok; else bad "params.json should record the missing autozygous mode as null"; fi
     fi
+    # Unimodal-autozygous: every individual homozygous at every site, so every
+    # window looks autozygous.  The run stops, names the verdict and asks for
+    # --lod-cutoff.  (The verdict name is a const char *; before errlog had an
+    # overload for it, it converted to bool and printed as TRUE.)
+    gz "$EX/chr21.tped.gz" | awk '{ for (i = 5; i < NF; i += 2) $(i + 1) = $i; print }' > "$WORK/lm_hom.tped"
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$WORK/lm_hom.tped" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/lm_hom" >/dev/null 2>"$WORK/lm_hom.err"
+    if [ $? -ne 0 ]; then ok; else bad "an all-homozygous cohort must stop rather than choose a cutoff"; fi
+    if grep -q "no non-autozygous mode below zero (unimodal-autozygous)" "$WORK/lm_hom.err"; then ok
+    else bad "the unimodal-autozygous error should name the verdict"; sed -n '1,2p' "$WORK/lm_hom.err" | sed 's/^/        /'; fi
+    if grep -q -- "--lod-cutoff" "$WORK/lm_hom.err"; then ok; else bad "the unimodal-autozygous error should point at --lod-cutoff"; fi
     # A user-supplied cutoff records no verdict: nothing was identified.
     # shellcheck disable=SC2086
     $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --lod-cutoff 2.5 --out "$WORK/lm_fixed" >/dev/null 2>&1

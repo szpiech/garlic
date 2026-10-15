@@ -57,6 +57,9 @@ public:
 	void err(string str, double val, bool nl = true);
 	void err(string str, bool val, bool nl = true);
 	void err(string str, string val, bool nl = true);
+	//Without this a const char* value converts to bool (a standard conversion
+	//beats the user-defined one to string) and prints as TRUE.
+	void err(string str, const char *val, bool nl = true);
 	void err(string str, char val, bool nl = true);
 
 	void erra(string str, string *val, int size, bool nl = true);
@@ -82,6 +85,7 @@ public:
 	void log(string str, double val, bool nl = true);
 	void log(string str, bool val, bool nl = true);
 	void log(string str, string val, bool nl = true);
+	void log(string str, const char *val, bool nl = true);   //see err(string, const char *)
 	void log(string str, char val, bool nl = true);
 
 	void loga(string str, string *val, int size, bool nl = true);

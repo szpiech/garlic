@@ -79,7 +79,7 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     if (argerr) return OPTIONS_USAGE_ERROR;
     if (opt.vcffile.compare(DEFAULT_VCF) != 0) {
         LOG.log("VCF file:", opt.vcffile);
-        if (opt.VCF_PASS_ONLY) LOG.log("Skipping sites whose FILTER is not PASS.", "");
+        if (opt.VCF_PASS_ONLY) LOG.log("Skipping sites whose FILTER is not PASS.");
     }
     else if (opt.beaglefile.compare(DEFAULT_BEAGLE) != 0) LOG.log("Beagle genotype likelihood file:", opt.beaglefile);
     else LOG.log("TPED file:", opt.tpedfile);
