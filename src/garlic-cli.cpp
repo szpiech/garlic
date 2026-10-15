@@ -178,15 +178,21 @@ const string HELP_GL_TYPE = "Which genotype-quality field to use.  With --vcf it
 	  	VCF PLs here is rejected.  Use --vcf --gl-type PL instead.\n\
 	GL	error = 1 - 10^GL, with the same caveat.\n\
 	\n\
-	Not for low-coverage sequence data (below roughly 4x).  Every form\n\
-	above reduces to one symmetric error rate per genotype, and the\n\
-	dominant error at low depth is not symmetric: allelic dropout turns\n\
-	heterozygotes into homozygotes, which is what autozygosity looks\n\
-	like.  In simulation at 0.5-1x this called essentially the whole\n\
-	genome autozygous.  Hard calls with --error behave better there but\n\
-	still lose the automatic cutoff by about 2x; a genotype-likelihood\n\
-	input that keeps all three genotype probabilities is the intended\n\
-	route for such data.";
+	Below roughly 4x, use --gl-beagle instead.  Every form above reduces\n\
+	to one error rate per genotype and is evaluated at the called\n\
+	genotype, so an uncertain homozygous call still counts as evidence for\n\
+	autozygosity, only with a smaller weight.  With GQ at 0.5-1x in the\n\
+	resampling simulation this called essentially the whole genome\n\
+	autozygous.  In the read-level benchmark --vcf --gl-type PL matched\n\
+	--gl-beagle down to 1x where the planted runs were several megabases\n\
+	long and the cohort carried many of them, and it found no usable\n\
+	cutoff at 1x in a population of low diversity (Ne 2,000).  How far\n\
+	down it holds depends on run length and on how much autozygosity the\n\
+	cohort carries, not on depth alone.  It also depends on the genotype\n\
+	caller, because the called genotype is the one evaluated: on the\n\
+	benchmark reads, removing the population prior from bcftools call left\n\
+	the 1x density with no mode below zero.  --gl-beagle averages over all\n\
+	three genotypes and is the intended input for such data.";
 
 const string ARG_MAP = "--map";
 const string DEFAULT_MAP = "none";
