@@ -18,7 +18,7 @@
 
 \newcommand{\negspace}{\!\!\!\!\!\!\!\!\!\!\!\!}
 
-\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v2.0.0 User Manual}
+\title{{\tt GARLIC - Genomic Autozygosity Regions Likelihood-based Inference and Classification} v2.1.0 User Manual}
 \date{\today}
 \author{Zachary A Szpiech}
 
@@ -44,7 +44,7 @@
 
 \section{Introduction}
 
-Extended tracts of homozygosity in individual genomes manifest as a result of haplotypes inherited identical by descent (IBD) from both biological parents. These runs of homozygosity (ROH) are important genomic features, with their length distributions and genomic locations informative about population history and useful for the mapping of recessive loci contributing to Mendelian and complex diseases. However, precisely because the length distribution of ROH is affected by population history, a simple one-size-fits-all genotype-counting approach to inferring ROH in multiple populations is ill-advised. Here, we present a model-based method and accompanying software package for inferring ROH in microarray-derived SNP genotype that incorporates population-specific parameters and genotyping error rates as described in \cite{PembertonEtAl12:AJHG}. Version 1.1.0 added a method for reweighting LOD scores by gaps between SNPs, the option to report ROH lengths in cM, and the ability to provide per-genotype error rates.  Version 2.0.0 reads VCF input directly (Section~\ref{sec:vcf}), analyses each population in a file separately rather than pooling them (Section~\ref{sec:multipop}), calls runs on the shared sex chromosome instead of treating it as an autosome (Section~\ref{sec:sexchr}), and counts classified genotypes inside and outside the calls (Section~\ref{sec:features}).  It is not backward compatible with files written by v1.1.6a; the change log in Section~\ref{sec:changelog} says how.
+Extended tracts of homozygosity in individual genomes manifest as a result of haplotypes inherited identical by descent (IBD) from both biological parents. These runs of homozygosity (ROH) are important genomic features, with their length distributions and genomic locations informative about population history and useful for the mapping of recessive loci contributing to Mendelian and complex diseases. However, precisely because the length distribution of ROH is affected by population history, a simple one-size-fits-all genotype-counting approach to inferring ROH in multiple populations is ill-advised. Here, we present a model-based method and accompanying software package for inferring ROH in microarray-derived SNP genotype that incorporates population-specific parameters and genotyping error rates as described in \cite{PembertonEtAl12:AJHG}. Version 1.1.0 added a method for reweighting LOD scores by gaps between SNPs, the option to report ROH lengths in cM, and the ability to provide per-genotype error rates.  Version 2.0.0 reads VCF input directly (Section~\ref{sec:vcf}), analyses each population in a file separately rather than pooling them (Section~\ref{sec:multipop}), calls runs on the shared sex chromosome instead of treating it as an autosome (Section~\ref{sec:sexchr}), and counts classified genotypes inside and outside the calls (Section~\ref{sec:features}).  It is not backward compatible with files written by v1.1.6a; the change log in Section~\ref{sec:changelog} says how.  Version 2.1.0 reads genotype likelihoods for low-coverage sequence data (Section~\ref{sec:beagle}), can choose the automatic cutoff within strata of individuals of similar depth (Section~\ref{sec:stratify}), drops masked regions (Section~\ref{sec:refbias}), reports the evidence available for each individual, and identifies the two modes of the LOD score density by their sign when it chooses the cutoff.
 
 If you use GARLIC please cite the following articles,
 
@@ -117,7 +117,7 @@ choose a window size of 60 SNPs, then you would run
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --out example}
 ~\\\\
-\noindent The automatic cutoff is the valley between the two modes of the window LOD score density, pooled over the cohort, and it presumes that the cohort contains runs: a cohort with few or none has a single mode, and what happens then depends on the input.  With likelihood input {\tt garlic} finds no valley and stops, asking for {\tt --lod-cutoff}; with called genotypes it may find a spurious shoulder and call a few percent of every genome (a four-individual simulated cohort with no runs at all was called at $5$--$8\%$).  A cohort of a handful of individuals, or one expected to carry little autozygosity, is therefore a case for a cutoff carried over from a comparable, larger cohort rather than for the automatic rule.
+\noindent The automatic cutoff is the minimum of the window LOD score density, pooled over the cohort, between its two modes.  The non-autozygous mode is the tallest peak below zero and the autozygous mode is the tallest peak above zero ({\tt manual/lod-mode-rule.tex} gives the derivation).  A cohort without long runs still has a small mode above zero from short runs of background autozygosity, and gets a cutoff that calls only short runs (a simulated cohort whose chromosomes were built from independent 1-Mb blocks at an effective size of $200\,000$ was called at $1.2\%$ of the genome, in runs of at most 261\,kb).  A density with no peak above zero therefore means that the windows carry too little evidence, not that the cohort carries no autozygosity.  Examples are genotypes called from one or two reads under a population prior, likelihoods at $1\times$ in a population of low diversity, and a cohort of mixed depth pooled without {\tt --stratify-cutoff}.  Such a run completes with no calls and a warning, and {\tt .params.json} records the verdict with {\tt lod\_cutoff} null.  A density with no peak below zero stops and asks for {\tt --lod-cutoff}.  A cohort of a handful of individuals is still a case for a cutoff carried over from a comparable, larger cohort rather than for the automatic rule.
 
 \noindent If you already know what LOD score cutoff to use (say you are
 analyzing more individuals from a previously studied population), you can use
@@ -292,7 +292,7 @@ ROHan on the BAMs$^\dagger$ & recall of HBD & 0.93 & --- & 0.92 & --- \\
 \end{center}
 \noindent $^\dagger$ROHan (Renaud et al.\ 2019), default 1\,Mb windows, mid estimate; 18 individuals at $1\times$ (two outbred omitted), all 20 at $4\times$; not run at $2\times$ and $8\times$ because it takes four to six hours per 162\,Mb BAM on two threads, against under a minute for any {\tt garlic} run.  Its recall does not improve with depth because it is limited by resolution, not evidence: runs are placed at 1\,Mb window boundaries, which costs 0.4--0.5 of a 2--5\,Mb segment at either depth.  At $1\times$ its lower and upper estimates bracket the truth loosely (the lower calls 0.63 of the genome, the upper nothing); at $4\times$ the three agree.
 
-\noindent A dash is a run in which the valley between the LOD score modes lay outside $\pm$winsize and the cutoff fell back to $0$, which calls nothing of 1\,Mb.  The likelihood input is indifferent to {\tt --error} here: $10^{-4}$, $10^{-3}$ and $10^{-2}$ change no entry by more than $0.004$.  Two things in the table deserve emphasis.  The per-genotype {\tt PL} path, which the resampling simulation (\S\ref{sec:beagle}) found unusable at $1\times$ with {\tt GQ}, is as good as the likelihood input on this data; the planted runs are long and the cohort carries many of them, so the evidence per window is large and the symmetric-error approximation is not stretched.  And the automatic cutoff of the $1\times$ likelihood run sits at $-0.0001$: the method works there because the signal is strong, not because the window density has room to spare, and shorter or older runs at $1\times$ should not be expected to be found.
+\noindent A dash is a run in which the window LOD density had no mode above zero, so the automatic cutoff declined and nothing was called.  These hard calls came from {\tt bcftools call -m} with its default priors, which decide the genotype at one or two reads; the workflow now calls maximum-likelihood genotypes ({\tt bench/README.md}).  The likelihood input is indifferent to {\tt --error} here: $10^{-4}$, $10^{-3}$ and $10^{-2}$ change no entry by more than $0.004$.  Two things in the table deserve emphasis.  The per-genotype {\tt PL} path, which the resampling simulation (\S\ref{sec:beagle}) found unusable at $1\times$ with {\tt GQ}, is as good as the likelihood input on this data; the planted runs are long and the cohort carries many of them, so the evidence per window is large and the symmetric-error approximation is not stretched.  And the automatic cutoff of the $1\times$ likelihood run sits at $-0.0001$: the method works there because the signal is strong, not because the window density has room to spare, and shorter or older runs at $1\times$ should not be expected to be found.
 
 The benchmark also exposed the monomorphic-site defect in the EM frequencies described in \S\ref{sec:beagle}: the unmapped first 14.7\,Mb of chromosome 21 and 17\,Mb of chromosome 22, reference-homozygous in every individual, were called autozygous in all twenty at every depth before the half-copy rule.  Its limits are those of the simulation: no reference or mapping bias (a random reference maps perfectly), no post-mortem damage, uniform depth across the cohort, a site list ascertained from the founders, and twenty individuals.  Each of these moves real data away from the ceiling, and the first two are addressed only by the upstream measures in \S\ref{sec:refbias}.
 
@@ -800,47 +800,19 @@ accepted -- and to miss every flag added since.
 \label{sec:changelog}
 
 \begin{lstlisting}
---features counts classified genotypes inside and outside the calls, replacing the
-count_features_in_roh.pl and count_damaging_genotypes_in_roh.pl scripts, which are removed.
-See "Counting classified genotypes" under Program Options. Any number of arbitrary class
-labels, a site may carry several, and the table reports hom, het and a denominator n per
-(class, size class) with a separate UNASSESSED bucket for sites where no run could have been
-called. --roh-file counts against a .roh.bed that already exists.
+2.1.0 - Low-coverage sequence data.
 
-A sex chromosome is no longer analysed as an autosome; a run containing one stops until
---sex-system says which sex code is heterogametic. See "Sex chromosomes" under Program Options.
-Frequencies there come from everyone with the heterogametic sex contributing one allele, calling
-is restricted to the individuals who are diploid, the cutoff and size classes are estimated on
-the autosomes, and FROH is reported for the two regions separately with NA where an individual
-cannot be autozygous. The FROH table is now one row per individual. --autosomes-only drops every
-non-autosomal role rather than four names, and 23-26 are resolved only under a human --build.
---par excludes pseudoautosomal regions by coordinate, any number of them. A hemizygous VCF is
-readable on a declared sex chromosome. Chromosome names match case-insensitively and ignoring a
-chr prefix.
+The automatic LOD cutoff identifies the two modes of the window LOD density by their sign.
+The non-autozygous mode is the tallest peak below zero and the autozygous mode is the tallest
+peak above zero, and the cutoff is the minimum between them. The previous rule could take two
+peaks of the non-autozygous component (on the bundled chr21 example its cutoff was -55.7; it
+is now -0.33). A density with no peak above zero gives no calls and a warning, with
+lod_cutoff null in .params.json. A density with no peak below zero stops and asks for
+--lod-cutoff. The substitution of 0 for a valley more than winsize from zero is gone. See
+manual/lod-mode-rule.tex.
 
-UNRELEASED - Input with more than one population label is now analysed one population at a
-time; see "Multiple populations" under Program Options. Each population gets allele frequencies from its own individuals, its
-own site filtering, its own automatically selected window size, LOD cutoff and size-class
-boundaries, and its own random stream. A value given on the command line is not re-derived
-and applies to every population. Analysing several populations together gives each of them
-what analysing it alone gives.
-
-With ONE population nothing changes. With more than one, the label is inserted before the
-extension: <out>.<POP>.roh.bed and so on. --pool-populations restores the previous behaviour
-exactly, and its output is byte-identical to the previous version's.
-
-Column 1 of a TFAM is garlic's population label but PLINK's FAMILY ID, so a file that uses it
-per family will now produce one analysis per family. garlic warns, but use --pop or
---pool-populations.
-
---freq-file accepts one frequency column per population, matched by header; a single-column
-file still applies to everything. The .freq.gz garlic writes, from the analysis or from
---freq-only, can be given straight back with --freq-file.
-
-The automatic LOD cutoff now warns when it discards an implausible valley (|cutoff| >= winsize)
-and applies 0, naming the value; the applied value is unchanged. --gl-type documents that no
-per-genotype quality form suits low-coverage data (below roughly 4x); see "Low-coverage
-sequence data" under Input Files.
+--gl-type documents that no per-genotype quality form suits low-coverage data (below roughly
+4x); see "Low-coverage sequence data" under Input Files.
 
 --gl-beagle reads genotype likelihoods (ANGSD -doGlf 2) for low-coverage sequence data: the
 LOD's per-site term is averaged over the genotypes with the likelihood as weight, called
@@ -864,6 +836,45 @@ one stratum. See "Cohorts of mixed depth" under Input Files.
 computed, on every chromosome. The one correction for mapping bias garlic applies: the regional
 part. Read-level bias did not move the calls at >= 2x in simulation and is reported, not
 corrected (dropout_hat in <out>.ind.tsv). See "Reference and mapping bias" under Input Files.
+
+2.0.0 - Correctness, performance, and command line work.
+
+--features counts classified genotypes inside and outside the calls, replacing the
+count_features_in_roh.pl and count_damaging_genotypes_in_roh.pl scripts, which are removed.
+See "Counting classified genotypes" under Program Options. Any number of arbitrary class
+labels, a site may carry several, and the table reports hom, het and a denominator n per
+(class, size class) with a separate UNASSESSED bucket for sites where no run could have been
+called. --roh-file counts against a .roh.bed that already exists.
+
+A sex chromosome is no longer analysed as an autosome; a run containing one stops until
+--sex-system says which sex code is heterogametic. See "Sex chromosomes" under Program Options.
+Frequencies there come from everyone with the heterogametic sex contributing one allele, calling
+is restricted to the individuals who are diploid, the cutoff and size classes are estimated on
+the autosomes, and FROH is reported for the two regions separately with NA where an individual
+cannot be autozygous. The FROH table is now one row per individual. --autosomes-only drops every
+non-autosomal role rather than four names, and 23-26 are resolved only under a human --build.
+--par excludes pseudoautosomal regions by coordinate, any number of them. A hemizygous VCF is
+readable on a declared sex chromosome. Chromosome names match case-insensitively and ignoring a
+chr prefix.
+
+Input with more than one population label is now analysed one population at a
+time; see "Multiple populations" under Program Options. Each population gets allele frequencies from its own individuals, its
+own site filtering, its own automatically selected window size, LOD cutoff and size-class
+boundaries, and its own random stream. A value given on the command line is not re-derived
+and applies to every population. Analysing several populations together gives each of them
+what analysing it alone gives.
+
+With ONE population nothing changes. With more than one, the label is inserted before the
+extension: <out>.<POP>.roh.bed and so on. --pool-populations restores the previous behaviour
+exactly, and its output is byte-identical to the previous version's.
+
+Column 1 of a TFAM is garlic's population label but PLINK's FAMILY ID, so a file that uses it
+per family will now produce one analysis per family. garlic warns, but use --pop or
+--pool-populations.
+
+--freq-file accepts one frequency column per population, matched by header; a single-column
+file still applies to everything. The .freq.gz garlic writes, from the analysis or from
+--freq-only, can be given straight back with --freq-file.
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 

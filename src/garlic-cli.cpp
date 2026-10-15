@@ -6,7 +6,7 @@
 #include "garlic-platform.h"   //garlicMkdir, garlicIsPathSep
 #include <cerrno>
 
-const string VERSION = "2.0.0";
+const string VERSION = "2.1.0";
 
 const string PREAMBLE = "\ngarlic v" + VERSION + " -- a program to call runs of homozygosity in genetic data.\n\
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.\n\

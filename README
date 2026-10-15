@@ -100,6 +100,110 @@ archives and vendored headers from the repository, and with them the main obstac
 building on a cluster.
 
 ---CHANGES---
+2.1.0 - Low-coverage sequence data.
+
+This release adds genotype-likelihood input for low-coverage sequence data (--gl-beagle), a
+per-individual information report (<out>.ind.tsv), an automatic cutoff chosen within strata
+of individuals of similar depth (--stratify-cutoff), and a mask of regions to drop
+(--exclude-regions). It also changes how the automatic LOD cutoff finds the two modes of the
+LOD score density, which moves the cutoff in cohorts where the previous rule took the wrong
+peaks. Output formats are those of 2.0.0, with <out>.ind.tsv and three fields of .params.json
+added.
+
+*** BEHAVIOUR CHANGE: the automatic LOD cutoff identifies the two modes of the window LOD
+density by their sign. *** The non-autozygous mode is the tallest peak below zero and the
+autozygous mode is the tallest peak above zero. The cutoff is the minimum of the density
+between them, as before. A peak counts only if it reaches 2% of the height of the tallest
+peak and persists over half the KDE mode span. The previous rule took the two most persistent
+peaks. However, its persistence count saturated, so ties were broken by height with no
+constraint on sign, and a small bump in the tail of the non-autozygous component could be
+taken as a mode. On the bundled chr21 example the cutoff moves from -55.7 to -0.33, and the
+calls from 22 Mb to 3.6 Mb per individual. The genome-wide example is unchanged at 1.88. A
+density with no peak above zero (unimodal-null) now completes with no calls and a warning
+that names --lod-cutoff and --stratify-cutoff, and .params.json writes lod_cutoff as null. A
+density with no peak below zero stops and asks for --lod-cutoff. .params.json records the
+verdict and both modes (lod_density_verdict, lod_mode_nonautozygous, lod_mode_autozygous).
+The substitution of 0 for a valley more than --winsize from zero is gone, since a valley is
+now defined by the two modes it lies between. With --stratify-cutoff, an individual's
+non-autozygous mode is its lowest peak below zero that reaches 10% of the height of its
+tallest. manual/lod-mode-rule.tex gives the derivation and the comparison with the previous
+rule.
+
+--gl-type documents that none of its forms suit low-coverage sequence data (below roughly
+4x). Each reduces to one symmetric error rate per genotype, and the dominant low-depth error,
+allelic dropout, is directional: it turns heterozygotes into homozygotes, which is what
+autozygosity looks like. In simulation at 0.5-1x a GQ-derived error called essentially the
+whole genome autozygous. Hard calls with --error degrade more gracefully. However, a caller
+that applies a population prior at one or two reads (bcftools call -m by default) makes
+heterozygous calls the reads do not support, and those calls lose the automatic cutoff by
+about 2x. With maximum-likelihood calls (bcftools call -m -G - -P 0) the automatic cutoff
+held at 1x and 2x in the pedigree and bottleneck cohorts of the read-level benchmark. A
+genotype-likelihood input (--gl-beagle, below) is the intended route.
+
+--gl-beagle reads genotype likelihoods in beagle format (ANGSD -doGlf 2) and is the input for
+low-coverage sequence data. The per-site term of the LOD score is averaged over the three
+genotypes with the reads' likelihood as the weight, instead of being evaluated at a called
+genotype: an uncertain site contributes little evidence rather than confident wrong evidence,
+a site with no reads (a flat triplet) contributes exactly 0, and a triplet that names one
+genotype gives exactly the called-genotype value, so a beagle file of called genotypes
+reproduces a TPED run byte for byte (the suite checks this). --error keeps its meaning.
+Allele frequencies are estimated by EM over the likelihoods, per population, which is
+unbiased at low depth where frequencies from called genotypes are pulled toward the major
+allele; --freq-file (a column of ANGSD's .mafs.gz will do) overrides them. --tfam is required
+for IDs, labels and sex, matched by position. Give LIKELIHOODS, not -doPost/-doGeno
+posteriors, which have the Hardy-Weinberg prior already folded in. In the resampling
+simulation this holds the called autozygous fraction at its true value down to 2x. In the
+read-level benchmark it held down to 1x on long planted runs, so how far down it holds
+depends on run length and on how much autozygosity the cohort carries, not on depth alone.
+Cohorts of mixed depth are over-called in their shallow members unless --stratify-cutoff is
+used. See the manual, "Genotype likelihood input". A site whose EM frequency implies less
+than half a minor-allele copy among the individuals with reads is treated as fixed and
+dropped, as a called site with no minor allele is: the EM stops short of 0 on a monomorphic
+site, and such sites, kept with a frequency of 1e-7, gave every window they filled a LOD of
+about 0, which is above the usual (negative) automatic cutoff -- an invariant region, or a
+beagle file written without a site list, was called autozygous in every individual.
+
+Every run writes <out>.ind.tsv, a per-individual information report. A window LOD is a sum
+over its sites, and a site with no information for an individual (missing genotype, or a
+flat likelihood triplet) contributes exactly 0, so two individuals with the same window size
+can be summing very different amounts of evidence. Per individual: the fraction of
+informative sites, the median and 5th percentile of informative sites per window, the
+observed/expected heterozygote ratio over windows whose LOD is below 0 (a cutoff-free
+stand-in for "not autozygous"), and, for --gl-beagle, dropout_hat, a profile-likelihood
+estimate of P(true het observed as hom) that is 0 without allelic dropout and rises with it.
+garlic warns when an individual's 5th percentile is below half the window size. The het
+ratio is a sample-quality statistic for called data and NOT a low-depth estimator (it reads
+~0.5 at 2x with no bias); dropout_hat is. Both carry sampling noise of about
+1/sqrt(n_het_expected), which the table states. Nothing is corrected from this report.
+
+--stratify-cutoff chooses the automatic LOD cutoff within strata of individuals that carry the
+same evidence per window. The pooled cutoff assumes everyone does; in a cohort of mixed depth
+the shallow individuals have both LOD modes compressed toward zero and one cutoff calls most of
+their genome (1.6x the called-genotype length for the 2x third of a simulated 2x/4x/30x cohort).
+The location of an individual's non-autozygous LOD mode measures that evidence precisely (sd
+1.3 LOD within the bundled cohort, 18-29 LOD between depth classes), so individuals are sorted
+by it, neighbours whose modes differ by less than a quarter of the smaller spread share a
+stratum, and the pooled rule runs within each stratum. A uniform cohort is one stratum and gets
+exactly the pooled cutoff (byte-identical calls; the suite checks it). Per-individual mode,
+spread, stratum and applied cutoff go to <out>.ind.tsv; .params.json records lod_cutoff as the
+stratum count and flags it. Strata of fewer than three individuals take the largest stratum's
+cutoff, with a warning. Without the flag, garlic warns when the cohort would form more than one
+stratum. What stratification removes is the pooling artefact; the noisier emission at low depth
+remains (1.3x at 2x in that simulation) and no cutoff can undo it.
+
+--exclude-regions <bed> drops every site inside the regions of a standard BED file before
+anything is computed -- a mappability or repeat mask, segmental duplications, any region where
+calls are not to be trusted. On every chromosome, autosomes included; chromosomes the file names
+that are not in the data are ignored, a file covering no site warns. Dropped sites are gone from
+the frequency file and every window; the FROH denominator is not reduced by them (unlike --par),
+since a run can span a short masked region. This is the one correction garlic applies for
+mapping bias, the regional part. The read-level part (ALT read fraction below one half at
+heterozygotes) was simulated at 0.45-0.35 in half a cohort and did not move the calls at 2x and
+above under the likelihood emission; two emission corrections reproduced the uncorrected result,
+so neither ships, and dropout_hat in <out>.ind.tsv reports it instead. The manual's "Reference
+and mapping bias" lists what belongs upstream (alt-aware mapping, -baq, read-length and quality
+filters, damage rescaling, unbiased frequencies).
+
 2.0.0 - Correctness, performance, and command line work.
 
 A major version because this release is NOT backward compatible with files written by
@@ -430,80 +534,6 @@ The command line reference in this file and in the manual is generated from the 
 own help strings by 'make docs' in src/. It had drifted to documenting 33 of 53 flags, and
 described one flag the program has never accepted.
 
-The automatic LOD cutoff warns when it discards the valley it found. A minimum between the
-two modes more than one LOD-per-SNP from zero (|cutoff| >= --winsize) has always been replaced
-by 0; that substitution was silent and fires on real inputs, so it now names the discarded
-value and points at --lod-cutoff. The applied value is unchanged.
-
---gl-type documents that none of its forms suit low-coverage sequence data (below roughly 4x).
-Each reduces to one symmetric error rate per genotype, and the dominant low-depth error,
-allelic dropout, is directional: it turns heterozygotes into homozygotes, which is what
-autozygosity looks like. In simulation at 0.5-1x a GQ-derived error called essentially the
-whole genome autozygous. Hard calls with --error degrade more gracefully but lose the automatic
-cutoff by about 2x. A genotype-likelihood input is the intended route and is in progress.
-
---gl-beagle reads genotype likelihoods in beagle format (ANGSD -doGlf 2) and is the input
-for low-coverage sequence data. The per-site term of the LOD score is averaged over the three
-genotypes with the reads' likelihood as the weight, instead of being evaluated at a called
-genotype: an uncertain site contributes little evidence rather than confident wrong evidence,
-a site with no reads (a flat triplet) contributes exactly 0, and a triplet that names one
-genotype gives exactly the called-genotype value, so a beagle file of called genotypes
-reproduces a TPED run byte for byte (the suite checks this). --error keeps its meaning. Allele
-frequencies are estimated by EM over the likelihoods, per population, which is unbiased at
-low depth where frequencies from called genotypes are pulled toward the major allele;
---freq-file (a column of ANGSD's .mafs.gz will do) overrides them. --tfam is required for
-IDs, labels and sex, matched by position. Give LIKELIHOODS, not -doPost/-doGeno posteriors,
-which have the Hardy-Weinberg prior already folded in. In simulation this holds the called
-autozygous fraction at its true value down to 2x; below that the automatic cutoff cannot be
-placed whatever the input, and cohorts of mixed depth are over-called in their shallow
-members -- see the manual, "Genotype likelihood input". A site whose EM frequency implies
-less than half a minor-allele copy among the individuals with reads is treated as fixed and
-dropped, as a called site with no minor allele is: the EM stops short of 0 on a monomorphic
-site, and such sites, kept with a frequency of 1e-7, gave every window they filled a LOD of
-about 0, which is above the usual (negative) automatic cutoff -- an invariant region, or a
-beagle file written without a site list, was called autozygous in every individual.
-
-Every run writes <out>.ind.tsv, a per-individual information report. A window LOD is a sum
-over its sites, and a site with no information for an individual (missing genotype, or a
-flat likelihood triplet) contributes exactly 0, so two individuals with the same window size
-can be summing very different amounts of evidence. Per individual: the fraction of
-informative sites, the median and 5th percentile of informative sites per window, the
-observed/expected heterozygote ratio over windows whose LOD is below 0 (a cutoff-free
-stand-in for "not autozygous"), and, for --gl-beagle, dropout_hat, a profile-likelihood
-estimate of P(true het observed as hom) that is 0 without allelic dropout and rises with it.
-garlic warns when an individual's 5th percentile is below half the window size. The het
-ratio is a sample-quality statistic for called data and NOT a low-depth estimator (it reads
-~0.5 at 2x with no bias); dropout_hat is. Both carry sampling noise of about
-1/sqrt(n_het_expected), which the table states. Nothing is corrected from this report.
-
---stratify-cutoff chooses the automatic LOD cutoff within strata of individuals that carry the
-same evidence per window. The pooled cutoff assumes everyone does; in a cohort of mixed depth
-the shallow individuals have both LOD modes compressed toward zero and one cutoff calls most of
-their genome (1.6x the called-genotype length for the 2x third of a simulated 2x/4x/30x cohort).
-The location of an individual's non-autozygous LOD mode measures that evidence precisely (sd
-1.3 LOD within the bundled cohort, 18-29 LOD between depth classes), so individuals are sorted
-by it, neighbours whose modes differ by less than a quarter of the smaller spread share a
-stratum, and the pooled rule runs within each stratum. A uniform cohort is one stratum and gets
-exactly the pooled cutoff (byte-identical calls; the suite checks it). Per-individual mode,
-spread, stratum and applied cutoff go to <out>.ind.tsv; .params.json records lod_cutoff as the
-stratum count and flags it. Strata of fewer than three individuals take the largest stratum's
-cutoff, with a warning. Without the flag, garlic warns when the cohort would form more than one
-stratum. What stratification removes is the pooling artefact; the noisier emission at low depth
-remains (1.3x at 2x in that simulation) and no cutoff can undo it.
-
---exclude-regions <bed> drops every site inside the regions of a standard BED file before
-anything is computed -- a mappability or repeat mask, segmental duplications, any region where
-calls are not to be trusted. On every chromosome, autosomes included; chromosomes the file names
-that are not in the data are ignored, a file covering no site warns. Dropped sites are gone from
-the frequency file and every window; the FROH denominator is not reduced by them (unlike --par),
-since a run can span a short masked region. This is the one correction garlic applies for
-mapping bias, the regional part. The read-level part (ALT read fraction below one half at
-heterozygotes) was simulated at 0.45-0.35 in half a cohort and did not move the calls at 2x and
-above under the likelihood emission; two emission corrections reproduced the uncorrected result,
-so neither ships, and dropout_hat in <out>.ind.tsv reports it instead. The manual's "Reference
-and mapping bias" lists what belongs upstream (alt-aware mapping, -baq, read-length and quality
-filters, damage rescaling, unbiased frequencies).
-
 05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers. ***I'm having trouble getting mscOS versions to compile, so the current binary for mscOS is still v1.6.0 and still has this bug.***
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
@@ -535,7 +565,7 @@ This update also introduces a new command-line flag --overlap-frac which is desi
 least OVERLAP_FRAC (default 0.25) proportion of high scoring windows to be included in an ROH call.  This helps to reduce false positive calls near the 
 boundaries of true ROH.
 
-garlic v2.0.0 -- a program to call runs of homozygosity in genetic data.
+garlic v2.1.0 -- a program to call runs of homozygosity in genetic data.
 Source code and binaries can be found at <https://www.github.com/szpiech/garlic>.
 
 Citations:
