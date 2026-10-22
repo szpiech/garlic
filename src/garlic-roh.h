@@ -77,6 +77,38 @@ void setGMMParams(int maxIter, double tol);
 //popLabel is empty for a single-population run and pooled marks
 //--pool-populations, so a table can be told apart from one produced by a file
 //that really had a single population.
+//Per-individual information report, <out>.ind.tsv.
+//
+//What a window's LOD means depends on how many of its sites carried
+//information for THIS individual: a missing genotype contributes exactly 0,
+//so two individuals with the same window size can be summing very different
+//amounts of evidence.  This records, per individual: the fraction of sites
+//with a called genotype, the median and 5th percentile of called sites per
+//window, and the observed/expected heterozygote ratio over the sites in
+//windows judged non-autozygous (window LOD < 0, a cutoff-free rule so this
+//can run before the genotype matrices are released).  The het ratio is the
+//ordinary sample-quality statistic for called data; it is a diagnostic, and
+//nothing corrects for it.
+struct IndReportRow
+{
+    long long nSites;        //analysed sites (autosomes + shared sex chromosome where diploid)
+    long long nInformative;  //called genotypes
+    double    snpsPerWindowMedian;
+    double    snpsPerWindowP05;
+    double    hetExpected;   //sum of 2p(1-p) over the non-autozygous sites used: the sample size behind hetObsExp
+    double    hetObsExp;     //NaN when no expected hets
+};
+
+vector<IndReportRow> computeIndReport(vector< HapData * > *hapDataByChr,
+                                      vector< FreqData * > *freqDataByChr,
+                                      vector< WinData * > *winDataByChr,
+                                      IndData *indData,
+                                      int winsize,
+                                      const vector<ChrRole> *role);
+
+void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *indData,
+                    int winsize, double lodCutoff);
+
 void writeFROH(string outfile,
                vector< ROHData * > *rohDataByInd,
                vector< MapData * > *mapDataByChr,

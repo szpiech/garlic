@@ -506,6 +506,126 @@ double lod(const int genotype, const double &freq, const double &error)
     return log10(autozygous / nonAutozygous);
 }
 
+static double percentile(vector<double> &v, double q)
+{
+    if (v.empty()) return 0.0 / 0.0;
+    sort(v.begin(), v.end());
+    double pos = q * (v.size() - 1);
+    size_t lo = size_t(pos);
+    if (lo + 1 >= v.size()) return v.back();
+    double frac = pos - lo;
+    return v[lo] * (1 - frac) + v[lo + 1] * frac;
+}
+
+vector<IndReportRow> computeIndReport(vector< HapData * > *hapDataByChr,
+                                      vector< FreqData * > *freqDataByChr,
+                                      vector< WinData * > *winDataByChr,
+                                      IndData *indData,
+                                      int winsize,
+                                      const vector<ChrRole> *role)
+{
+    const int nind = indData->nind;
+    vector<IndReportRow> rows(nind);
+    const double NaN = 0.0 / 0.0;
+
+    for (int ind = 0; ind < nind; ind++)
+    {
+        IndReportRow &r = rows[ind];
+        r.nSites = 0; r.nInformative = 0;
+        r.hetObsExp = NaN;
+        vector<double> perWindow;
+        double hetObs = 0, hetExp = 0;
+
+        for (unsigned int chr = 0; chr < hapDataByChr->size(); chr++)
+        {
+            //Only chromosomes where this individual is diploid count; a
+            //heterogametic individual's X windows are masked downstream.
+            if (role != NULL && chr < role->size() && role->at(chr) != CHR_AUTOSOME
+                    && !eligibleForCalling(role->at(chr), indData->zygo[ind])) continue;
+            HapData *hap = hapDataByChr->at(chr);
+            const int nloci = hap->nloci;
+            const double *freq = freqDataByChr->at(chr)->freq.data();
+            WinData *win = winDataByChr->at(chr);
+
+            //Informative flags, and a sliding count over winsize.
+            vector<unsigned char> inf(nloci);
+            for (int i = 0; i < nloci; i++)
+            {
+                const bool ok = genoIsCalled(hap->data[i][ind]);
+                inf[i] = ok ? 1 : 0;
+                r.nSites++;
+                if (ok) r.nInformative++;
+            }
+            if (nloci >= winsize)
+            {
+                int c = 0;
+                for (int i = 0; i < winsize; i++) c += inf[i];
+                perWindow.push_back(c);
+                for (int i = 1; i + winsize <= nloci; i++)
+                {
+                    c += inf[i + winsize - 1] - inf[i - 1];
+                    perWindow.push_back(c);
+                }
+            }
+
+            //Non-autozygous sites: those whose window (the one starting at the
+            //site) has a LOD below 0.  The trailing winsize-1 sites have no
+            //window of their own and are left out.
+            for (int i = 0; i + winsize <= nloci && i < win->nloci; i++)
+            {
+                const double w = win->data[ind][i];
+                if (w == MISSING || !(w < 0)) continue;
+                const double p = freq[i];
+                if (p <= 0 || p >= 1) continue;
+                if (!inf[i]) continue;
+                const geno_t g = hap->data[i][ind];
+                if (genoIsCalled(g))
+                {
+                    hetObs += (g == 1);
+                    hetExp += 2 * p * (1 - p);
+                }
+            }
+        }
+
+        r.snpsPerWindowMedian = percentile(perWindow, 0.5);
+        r.snpsPerWindowP05    = percentile(perWindow, 0.05);
+        r.hetExpected = hetExp;
+        if (hetExp > 0) r.hetObsExp = hetObs / hetExp;
+
+    }
+    return rows;
+}
+
+void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *indData,
+                    int winsize, double lodCutoff)
+{
+    ofstream out;
+    out.open(outfile.c_str(), ios::binary);
+    if (out.fail())
+    {
+        LOG.err("ERROR: Failed to open", outfile);
+        throw 0;
+    }
+    out << "## garlic per-individual information report\n";
+    out << "## winsize\t" << winsize << "\n";
+    out << "## lod_cutoff\t" << lodCutoff << "\n";
+    out << "## nonautozygous_rule\twindows with LOD < 0 (cutoff-free; used for het_obs_exp)\n";
+    out << "## het_obs_exp\tobserved/expected heterozygotes from called genotypes in those windows; a sample-quality statistic for called data, NOT a low-depth estimator\n";
+    out << "## n_het_expected\tsum of 2p(1-p) over the sites behind het_obs_exp; its sampling noise is about 1/sqrt(n_het_expected), so read it against the cohort, not as an absolute\n";
+    out << "ind\tpop\tn_sites\tfrac_informative\tsnps_per_window_median\tsnps_per_window_p05\tn_het_expected\thet_obs_exp\n";
+    for (unsigned int i = 0; i < rows.size(); i++)
+    {
+        const IndReportRow &r = rows[i];
+        out << indData->indID[i] << "\t" << indData->pop[i] << "\t" << r.nSites << "\t";
+        out << (r.nSites > 0 ? double(r.nInformative) / double(r.nSites) : 0.0) << "\t";
+        out << r.snpsPerWindowMedian << "\t" << r.snpsPerWindowP05 << "\t";
+        out << (long long)(r.hetExpected + 0.5) << "\t";
+        if (r.hetObsExp == r.hetObsExp) out << r.hetObsExp; else out << "NA";
+        out << "\n";
+    }
+    out.close();
+}
+
 vector< ROHData * > *initROHData(IndData *indData)
 {
     vector< ROHData * > *rohDataByInd = new vector< ROHData * >;
