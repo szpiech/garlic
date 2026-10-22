@@ -613,7 +613,7 @@ void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *i
     if (perInd != NULL)
     {
         out << "## lod_cutoff_strata\t" << int(lodCutoff + 0.5) << "\tthe cutoff applied to each individual is its lod_cutoff column: the valley of its stratum's pooled LOD density (stratum_valley), or borrowed from the other strata through its own mode and spread when that density has no valley\n";
-        out << "## lod_mode\tlocation of the individual's non-autozygous LOD mode (tallest peak of a smooth KDE of its windows); individuals whose modes differ by less than a quarter of the smaller spread share a stratum\n";
+        out << "## lod_mode\tlocation of the individual's non-autozygous LOD mode (lowest substantial peak at LOD < 0 of a smooth KDE of its windows; 0 with cutoff_source pooled_unresolved_mode when there is none); individuals whose modes differ by less than a quarter of the smaller spread share a stratum\n";
         out << "## lod_spread\t1.4826 * median |LOD - lod_mode| over windows at or below the mode\n";
     }
     else out << "## lod_cutoff\t" << lodCutoff << "\n";
@@ -635,7 +635,7 @@ void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *i
         {
             const IndStandardization &st = perInd->at(i);
             out << "\t" << st.mode << "\t" << st.spread << "\t" << st.cutoff << "\t" << (st.stratum + 1) << "\t" << st.stratumSize
-                << "\t" << (st.own ? "stratum_valley" : st.small ? "largest_stratum" : "borrowed_z");
+                << "\t" << (st.own ? "stratum_valley" : st.small ? "largest_stratum" : st.unresolved ? "pooled_unresolved_mode" : st.hasScale ? "borrowed_z" : "pooled_few_windows");
         }
         out << "\n";
     }
@@ -1333,21 +1333,46 @@ string makeROHFilename(string outfile)
     return outfile;
 }
 
-double selectLODCutoff(KDEResult *kdeResult, int wsize, bool &ok)
+//Shared tail of both pooled selectors: identify the modes, log them, and
+//turn the verdict into a cutoff (valley), a no-call cutoff (+inf) or a
+//failure.
+static double cutoffFromModes(const KDEResult *kde, bool &ok, LODModes *modesOut)
 {
-    double LOD_CUTOFF;
-    ok = true;
-    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x.data(), kdeResult->y.data(), kdeResult->size, wsize); }
-    catch (...)
+    LODModes m = identifyLODModes(kde->x.data(), kde->y.data(), kde->size);
+    if (modesOut != NULL) *modesOut = m;
+    if (m.verdict == LOD_MODES_BIMODAL)
     {
-        logCurrentException("locating the minimum between LOD score modes");
-        LOG.err("ERROR: Failed to find the minimum between modes in the LOD score density.");
-        LOG.err("\tResults from density estimation have been written to file for inspection.");
-        LOG.err("\tA cutoff can be manually specified on the command line with", ARG_LOD_CUTOFF);
-        ok = false;
-        return -1;
+        LOG.log("LOD score modes: non-autozygous at", m.modeN, false);
+        LOG.log(", autozygous at", m.modeA, false);
+        LOG.log("; valley between them at", m.cutoff);
+        return m.cutoff;
     }
-    return LOD_CUTOFF;
+    if (m.verdict == LOD_MODES_UNIMODAL_NULL)
+    {
+        LOG.log("LOD score modes: non-autozygous at", m.modeN, false);
+        LOG.log("; no autozygous mode above 0 (unimodal-null).");
+        return numeric_limits<double>::infinity();
+    }
+    LOG.err("ERROR: The LOD score density has no non-autozygous mode below zero (" + string(lodModeVerdictName(m.verdict)) + ").");
+    if (m.verdict == LOD_MODES_UNIMODAL_AUTOZYGOUS)
+    {
+        LOG.err("\tIts only mode is at", m.modeA, false);
+        LOG.err(" > 0, which says every window looks autozygous.  Either the sample really is");
+        LOG.err("\tautozygous throughout (a cutoff can then be given with", ARG_LOD_CUTOFF, false);
+        LOG.err("), or the input does not");
+        LOG.err("\tmean what the model assumes: posterior probabilities instead of likelihoods, allele");
+        LOG.err("\tfrequencies from the wrong population, or genotypes called under a model that removes heterozygotes.");
+    }
+    else LOG.err("\tThe density has no usable peak at all; it has been written to file for inspection.");
+    ok = false;
+    return -1;
+}
+
+double selectLODCutoff(KDEResult *kdeResult, int wsize, bool &ok, LODModes *modes)
+{
+    (void)wsize;
+    ok = true;
+    return cutoffFromModes(kdeResult, ok, modes);
 }
 
 
@@ -1460,15 +1485,21 @@ static int assignEvidenceStrata(vector< WinData * > *winDataByChr, IndData *indD
     strata.clear();
 
     //Per-individual mode and spread.  The mode is the LOWEST substantial peak
-    //of a deliberately smooth KDE (twice nrd0): at nrd0 a few hundred windows
-    //give a bumpy density whose bumps would compete, and at twice that the
-    //two real modes stand tens of LOD apart.  Lowest rather than tallest,
-    //because an individual more than half autozygous on the analysed
-    //chromosomes -- three of the 45 on the bundled chr21 fixture -- has the
-    //autozygous mode as its tallest peak, and taking that as "non-autozygous"
-    //puts it in a stratum of its own with a cutoff below everything.
-    //Substantial means at least a quarter of the tallest peak.  The spread is
-    //the left-half MAD, which the autozygous tail cannot inflate.
+    //at LOD < 0 of a deliberately smooth KDE (twice nrd0): at nrd0 a few
+    //hundred windows give a bumpy density whose bumps would compete, and at
+    //twice that the two real modes stand tens of LOD apart.  Negative,
+    //because the non-autozygous mode lies below zero at any depth (its
+    //expectation is -KL per site; see identifyLODModes); lowest rather than
+    //tallest, because the autozygous peak of a half-autozygous individual
+    //can be the tallest one and, with hard calls made under a population
+    //prior at low depth (spurious heterozygotes), can even sit below zero.  Substantial means at least a tenth of the tallest
+    //NEGATIVE peak -- measured against the tallest peak overall, the broad
+    //null peak of an F = 0.5 individual is 0.245 of its narrow autozygous
+    //peak and a quarter-of-tallest rule took the autozygous mode as the
+    //null.  No negative peak at all (the two components merged, as at 1x for
+    //an inbred individual) leaves the mode unresolved; such an individual
+    //takes the largest stratum's cutoff below.  The spread is the left-half
+    //MAD, which the autozygous tail cannot inflate.
     vector<double> win;
     for (int ind = 0; ind < nind; ind++)
     {
@@ -1482,14 +1513,21 @@ static int assignEvidenceStrata(vector< WinData * > *winDataByChr, IndData *indD
         vector<double> grid(M), dens(M);
         for (int i = 0; i < M; i++) grid[i] = lo + (hi - lo) * double(i) / double(M - 1);
         kdeGaussian(sorted.data(), int(sorted.size()), h, grid.data(), M, dens.data());
-        int tallest = 0;
-        for (int i = 1; i < M; i++) if (dens[i] > dens[tallest]) tallest = i;
-        int best = tallest;
+        const double IND_MODE_MIN_FRAC = 0.10;
+        int tallestNeg = -1;
         for (int i = 1; i + 1 < M; i++)
         {
+            if (grid[i] >= 0) break;
             if (!(dens[i] >= dens[i - 1] && dens[i] >= dens[i + 1])) continue;
-            if (dens[i] < 0.25 * dens[tallest]) continue;
-            best = i;       //the first (lowest x) qualifying maximum
+            if (tallestNeg < 0 || dens[i] > dens[tallestNeg]) tallestNeg = i;
+        }
+        if (tallestNeg < 0) { st.unresolved = true; continue; }
+        int best = tallestNeg;
+        for (int i = 1; i + 1 < M && grid[i] < 0; i++)
+        {
+            if (!(dens[i] >= dens[i - 1] && dens[i] >= dens[i + 1])) continue;
+            if (dens[i] < IND_MODE_MIN_FRAC * dens[tallestNeg]) continue;
+            best = i;       //the first (lowest x) qualifying negative maximum
             break;
         }
         st.mode = grid[best];
@@ -1549,9 +1587,11 @@ int countEvidenceStrata(vector< WinData * > *winDataByChr, IndData *indData, int
 int selectLODCutoffStratified(vector< WinData * > *winDataByChr, IndData *indData,
                               string kdeoutfile, int step, int wsize, bool &ok,
                               const vector<ChrRole> *role, ChrRole keep,
-                              vector<IndStandardization> &perInd)
+                              vector<IndStandardization> &perInd, bool *noAutozygousMode)
 {
+    (void)wsize;
     ok = true;
+    if (noAutozygousMode != NULL) *noAutozygousMode = false;
     const int nind = indData->nind;
     if (!LOG.isQuiet()) cerr << "Locating each individual's non-autozygous LOD mode:\n";
     vector< vector<int> > strata;
@@ -1575,6 +1615,7 @@ int selectLODCutoffStratified(vector< WinData * > *winDataByChr, IndData *indDat
     vector<double> stratumCut(nStrata, 0.0), stratumMode(nStrata), stratumSpread(nStrata);
     vector<bool> stratumOK(nStrata, false), stratumSmall(nStrata, false);
     vector<double> zOwn;
+    int nUnimodalNull = 0;
     int largest = 0;
     for (int k = 0; k < nStrata; k++) if (strata[k].size() > strata[largest].size()) largest = k;
     for (int k = 0; k < nStrata; k++)
@@ -1597,13 +1638,14 @@ int selectLODCutoffStratified(vector< WinData * > *winDataByChr, IndData *indDat
             try { writeKDEResult(kde, kdeoutfile); }
             catch (...) { logCurrentException("writing the KDE"); releaseKDEResult(kde); ok = false; return 0; }
         }
-        try
+        LODModes m = identifyLODModes(kde->x.data(), kde->y.data(), kde->size);
+        if (m.verdict == LOD_MODES_BIMODAL)
         {
-            stratumCut[k] = get_min_btw_modes(kde->x.data(), kde->y.data(), kde->size, wsize);
+            stratumCut[k] = m.cutoff;
             stratumOK[k] = true;
             zOwn.push_back((stratumCut[k] - stratumMode[k]) / stratumSpread[k]);
         }
-        catch (...) { /* no two modes in this stratum: borrows below */ }
+        else if (m.verdict == LOD_MODES_UNIMODAL_NULL) nUnimodalNull++;   //no autozygous mode in this stratum: borrows below
         releaseKDEResult(kde);
     }
     //The largest stratum's density is the one on file; if it was not the
@@ -1612,9 +1654,20 @@ int selectLODCutoffStratified(vector< WinData * > *winDataByChr, IndData *indDat
 
     if (zOwn.empty())
     {
-        LOG.err("ERROR: No stratum's LOD score density has two modes, so no cutoff could be chosen.");
-        LOG.err("\tThe cohort shows no autozygous excess, or the windows carry too little evidence");
-        LOG.err("\tto separate it (below roughly 2x depth).  A cutoff can be given with", ARG_LOD_CUTOFF);
+        if (nUnimodalNull > 0)
+        {
+            //Every stratum that could be read is unimodal-null: the same
+            //outcome as the pooled selector's, reported by the caller.
+            for (int ind = 0; ind < nind; ind++)
+            {
+                perInd[ind].cutoff = numeric_limits<double>::infinity();
+                if (perInd[ind].stratum < 0) { perInd[ind].stratum = largest; perInd[ind].stratumSize = int(strata[largest].size()); }
+            }
+            if (noAutozygousMode != NULL) *noAutozygousMode = true;
+            return nStrata;
+        }
+        LOG.err("ERROR: No stratum's LOD score density has a non-autozygous mode below zero, so no cutoff could be chosen.");
+        LOG.err("\tA cutoff can be given with", ARG_LOD_CUTOFF);
         ok = false;
         return 0;
     }
@@ -1634,10 +1687,11 @@ int selectLODCutoffStratified(vector< WinData * > *winDataByChr, IndData *indDat
     }
     //Individuals with too few windows for a mode of their own: the largest
     //stratum's cutoff, which is the pooled answer.
-    int nNoScale = 0;
+    int nNoScale = 0, nUnresolved = 0;
     for (int ind = 0; ind < nind; ind++)
         if (!perInd[ind].hasScale)
         {
+            if (perInd[ind].unresolved) nUnresolved++;
             perInd[ind].cutoff = stratumOK[largest] ? stratumCut[largest] : stratumMode[largest] + zMed * stratumSpread[largest];
             perInd[ind].stratum = largest; perInd[ind].stratumSize = int(strata[largest].size());
             nNoScale++;
@@ -1667,17 +1721,25 @@ int selectLODCutoffStratified(vector< WinData * > *winDataByChr, IndData *indDat
         LOG.err("\tnon-autozygous mode stands apart from everyone else's may be more than half autozygous");
         LOG.err("\ton the analysed chromosomes (see <out>.ind.tsv).");
     }
-    if (nNoScale > 0)
+    if (nNoScale - nUnresolved > 0)
     {
-        LOG.err("WARNING:", nNoScale, false);
+        LOG.err("WARNING:", nNoScale - nUnresolved, false);
         LOG.err(" individual(s) had too few windows to place in a stratum and use the largest stratum's cutoff.");
+    }
+    if (nUnresolved > 0)
+    {
+        LOG.err("WARNING:", nUnresolved, false);
+        LOG.err(" individual(s) have no LOD density peak below zero, so their non-autozygous mode could not be");
+        LOG.err("\tlocated (their two LOD components have merged: usual for an inbred individual at very low depth);");
+        LOG.err("\tthey use the largest stratum's cutoff (see <out>.ind.tsv).");
     }
     return nStrata;
 }
 
 double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wsize, bool &ok,
-                       const vector<ChrRole> *role, ChrRole keep)
+                       const vector<ChrRole> *role, ChrRole keep, LODModes *modes)
 {
+    (void)wsize;
     ok = true;
     //Format the LOD window data into a single array per pop with no missing data
     //Prepped for KDE
@@ -1696,17 +1758,7 @@ double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int 
     try { writeKDEResult(kdeResult, kdeoutfile); }
     catch (...) { logCurrentException("writing the KDE"); ok = false; return -1; }
 
-    try { LOD_CUTOFF = get_min_btw_modes(kdeResult->x.data(), kdeResult->y.data(), kdeResult->size, wsize); }
-    catch (...)
-    {
-        logCurrentException("locating the minimum between LOD score modes");
-        LOG.err("ERROR: Failed to find the minimum between modes in the LOD score density.");
-        LOG.err("\tResults from density estimation have been written to file for inspection.");
-        LOG.err("\tA cutoff can be manually specified on the command line with", ARG_LOD_CUTOFF);
-        ok = false;
-        return -1;
-    }
-
+    LOD_CUTOFF = cutoffFromModes(kdeResult, ok, modes);
     releaseKDEResult(kdeResult);
     return LOD_CUTOFF;
 }

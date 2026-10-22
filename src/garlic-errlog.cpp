@@ -203,6 +203,11 @@ void errlog::err(string str, string val, bool nl)
 	return;
 }
 
+void errlog::err(string str, const char *val, bool nl)
+{
+	this->err(str, string(val == NULL ? "" : val), nl);
+}
+
 void errlog::err(string str, char val, bool nl)
 {
 	this->out(&cerr, str, val, nl);
@@ -354,6 +359,11 @@ void errlog::log(string str, string val, bool nl)
 	this->out(&cout, str, val, nl);
 	this->out(logstream, str, val, nl);
 	return;
+}
+
+void errlog::log(string str, const char *val, bool nl)
+{
+	this->log(str, string(val == NULL ? "" : val), nl);
 }
 
 void errlog::log(string str, char val, bool nl)

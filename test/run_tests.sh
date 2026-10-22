@@ -36,6 +36,7 @@ fi
 # gzip -cd is spelled the same on macOS and Linux; gzcat/zcat are not.
 gz() { gzip -cd "$1"; }
 
+
 # Builds a .tgls fixture from a tracked .tped: same four leading columns, the
 # same number of genotype columns, every value set to $2.  Derived rather than
 # committed so there is no new binary fixture to keep in step with the data.
@@ -75,6 +76,25 @@ mk_mixed_tped() {
             a = $(5 + 2 * k); b = $(6 + 2 * k); h = NR * 7 + k * 3
             if (k < n / 3) keep = (h % 6 == 0); else if (k < 2 * n / 3) keep = (h % 2 == 0); else keep = 1
             if (keep) printf " %s %s", a, b; else printf " 0 0"
+        }
+        printf "\n"
+    }' | gzip > "$1"
+}
+# Builds a cohort whose calls carry spurious heterozygotes: one genotype in
+# four (by (NR*7 + k*3) mod 4, no rand()) at a site with two observed alleles
+# becomes the heterozygote.  This is what a population prior does to hard calls
+# at one or two reads, and it leaves the window LOD density with no mode above
+# zero.  $1 = output (.tped.gz), $2 = source TPED (default chr21).
+mk_noisy_tped() {
+    gz "${2:-$EX/chr21.tped.gz}" | awk '{
+        one = ""; other = ""
+        for (i = 5; i <= NF; i++) if ($i != "0") { if (one == "") one = $i; else if ($i != one && other == "") other = $i }
+        printf "%s %s %s %s", $1, $2, $3, $4
+        n = (NF - 4) / 2
+        for (k = 0; k < n; k++) {
+            a = $(5 + 2 * k); b = $(6 + 2 * k)
+            if (other != "" && a != "0" && b != "0" && (NR * 7 + k * 3) % 4 == 0) { a = one; b = other }
+            printf " %s %s", a, b
         }
         printf "\n"
     }' | gzip > "$1"
@@ -2896,6 +2916,70 @@ stratified_cutoff() {
 
 
 # ---------------------------------------------------------------------------
+# LOD mode identification (sign anchor) and the unimodal verdicts.
+#
+# The automatic cutoff is the valley between the non-autozygous mode (the
+# dominant density peak at LOD < 0) and the autozygous mode (the dominant peak
+# at LOD > 0).  A density with no peak above zero has no cutoff: the run
+# completes with no calls, says so, and writes null to params.json.  The old
+# plateau-count rule had neither constraint; on chr21 of the bundled example
+# it took two bumps of the non-autozygous component (-62.7 and -51.5) as the
+# modes, cut at -55.7 and called 22 Mb of the chromosome per individual.
+lod_modes() {
+    echo "== LOD mode identification =="
+    [ -f "$EX/chr21.tped.gz" ] || { echo "  SKIP  chr21 fixture not present"; return; }
+    common="--build hg18 --winsize 60 --error 0.001 --size-bounds 500000 1000000 --quiet --force"
+    # Bimodal: modes on opposite sides of zero, valley between them, params record all three.
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/lm_c21" >/dev/null 2>"$WORK/lm_c21.err"
+    if [ $? -ne 0 ]; then bad "chr21 automatic cutoff failed"; sed -n '1,3p' "$WORK/lm_c21.err" | sed 's/^/        /'
+    else
+        mn=$(sed -n 's/.*"lod_mode_nonautozygous": *\([-0-9.e+]*\).*/\1/p' "$WORK/lm_c21.params.json")
+        ma=$(sed -n 's/.*"lod_mode_autozygous": *\([-0-9.e+]*\).*/\1/p' "$WORK/lm_c21.params.json")
+        cut=$(sed -n 's/.*"lod_cutoff": *\([-0-9.e+]*\).*/\1/p' "$WORK/lm_c21.params.json")
+        if grep -q '"lod_density_verdict": *"bimodal"' "$WORK/lm_c21.params.json"; then ok; else bad "chr21: params.json should record a bimodal verdict"; fi
+        if awk -v a="$mn" -v b="$ma" -v c="$cut" 'BEGIN { exit (a < 0 && b > 0 && c > a && c < b) ? 0 : 1 }'; then ok
+        else bad "chr21: modes must straddle zero with the cutoff between them (got $mn, $ma, cutoff $cut)"; fi
+        # The old rule's -55.7 called about 22 Mb per individual on a 47 Mb chromosome.
+        mb=$(awk '!/^track/ { s += $3 - $2 } END { printf "%.2f", s / 1e6 / 45 }' "$WORK/lm_c21.roh.bed")
+        if awk -v m="$mb" 'BEGIN { exit (m > 0.5 && m < 10) ? 0 : 1 }'; then ok
+        else bad "chr21: expected a few Mb of ROH per individual, got $mb Mb"; fi
+    fi
+    # Unimodal-null: chr21 with a heterozygous call at one genotype in four,
+    # which is what a population prior does to calls at one or two reads.  The
+    # density's only mode is below zero; no calls, a warning that says so,
+    # null in params.json.
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$WORK/c21.noisy.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/lm_mix" >/dev/null 2>"$WORK/lm_mix.err"
+    if [ $? -ne 0 ]; then bad "run on the noisy fixture must complete (unimodal-null is not an error)"; sed -n '1,3p' "$WORK/lm_mix.err" | sed 's/^/        /'
+    else
+        if grep -q "unimodal-null" "$WORK/lm_mix.err"; then ok; else bad "noisy-fixture run should warn that the density is unimodal-null"; fi
+        if grep -q -- "--stratify-cutoff" "$WORK/lm_mix.err" && grep -q -- "--lod-cutoff" "$WORK/lm_mix.err"; then ok
+        else bad "the unimodal-null warning should name --stratify-cutoff and --lod-cutoff"; fi
+        n=$(grep -vc '^track' "$WORK/lm_mix.roh.bed")
+        if [ "$n" -eq 0 ]; then ok; else bad "unimodal-null run must call no ROH (called $n segments)"; fi
+        if grep -q '"lod_cutoff": *null' "$WORK/lm_mix.params.json" && grep -q '"lod_density_verdict": *"unimodal-null"' "$WORK/lm_mix.params.json"; then ok
+        else bad "params.json should carry lod_cutoff null and the unimodal-null verdict"; fi
+        if grep -q '"lod_mode_autozygous": *null' "$WORK/lm_mix.params.json"; then ok; else bad "params.json should record the missing autozygous mode as null"; fi
+    fi
+    # Unimodal-autozygous: every individual homozygous at every site, so every
+    # window looks autozygous.  The run stops, names the verdict and asks for
+    # --lod-cutoff.  (The verdict name is a const char *; before errlog had an
+    # overload for it, it converted to bool and printed as TRUE.)
+    gz "$EX/chr21.tped.gz" | awk '{ for (i = 5; i < NF; i += 2) $(i + 1) = $i; print }' > "$WORK/lm_hom.tped"
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$WORK/lm_hom.tped" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/lm_hom" >/dev/null 2>"$WORK/lm_hom.err"
+    if [ $? -ne 0 ]; then ok; else bad "an all-homozygous cohort must stop rather than choose a cutoff"; fi
+    if grep -q "no non-autozygous mode below zero (unimodal-autozygous)" "$WORK/lm_hom.err"; then ok
+    else bad "the unimodal-autozygous error should name the verdict"; sed -n '1,2p' "$WORK/lm_hom.err" | sed 's/^/        /'; fi
+    if grep -q -- "--lod-cutoff" "$WORK/lm_hom.err"; then ok; else bad "the unimodal-autozygous error should point at --lod-cutoff"; fi
+    # A user-supplied cutoff records no verdict: nothing was identified.
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --lod-cutoff 2.5 --out "$WORK/lm_fixed" >/dev/null 2>&1
+    if grep -q 'lod_density_verdict' "$WORK/lm_fixed.params.json"; then bad "--lod-cutoff run should not carry a density verdict"; else ok; fi
+}
+
+# ---------------------------------------------------------------------------
 # --exclude-regions.
 excluded_regions() {
     echo "== --exclude-regions =="
@@ -2946,6 +3030,7 @@ mk_tgls "$WORK/gq30.tgls.gz" 30
 # instead.  GQ 30 is an error rate of 0.001.
 mk_tgls "$WORK/gq30_genome.tgls.gz" 30 "$EX/example.tped.gz"
 mk_mixed_tped "$WORK/c21.mixed.tped.gz"
+mk_noisy_tped "$WORK/c21.noisy.tped.gz"
 # A mask for --exclude-regions: two chr21 intervals in the fixture's hg18
 # coordinates, one spelled chr21 and one 21, a chromosome absent from the
 # data, a track line, a comment and a fourth column -- everything standard BED
@@ -2957,6 +3042,7 @@ golden
 determinism
 likelihood_guards
 stratified_cutoff
+lod_modes
 excluded_regions
 ind_metadata
 vcf_input

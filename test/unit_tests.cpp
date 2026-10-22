@@ -955,41 +955,75 @@ static void test_kde_helpers()
     double one[1] = {42.0};
     ck(get_arg_max(one, 1) == 0 && get_arg_min(one, 1) == 0, "arg_max/arg_min on a single element");
 
-    // A synthetic bimodal density with its trough at a known place.  Two
-    // Gaussian bumps at x = -2 and x = +2; the minimum between the modes is
-    // at x = 0 by symmetry.
+    // Synthetic densities on a 401-point grid.  bump(c, s, a) adds a Gaussian
+    // of centre c, width s and height a.
     const int N = 401;
     double x[N], y[N];
-    for (int i = 0; i < N; i++)
-    {
-        x[i] = -5.0 + 10.0 * double(i) / double(N - 1);
-        y[i] = exp(-(x[i] + 2.0) * (x[i] + 2.0) / 0.5) + exp(-(x[i] - 2.0) * (x[i] - 2.0) / 0.5);
-    }
-    double cut = get_min_btw_modes(x, y, N, 20);
-    ckd(cut, 0.0, 0.25, "get_min_btw_modes finds the trough of a symmetric bimodal density");
+    auto reset = [&](double lo, double hi) { for (int i = 0; i < N; i++) { x[i] = lo + (hi - lo) * double(i) / double(N - 1); y[i] = 0; } };
+    auto bump = [&](double c0, double s, double a) { for (int i = 0; i < N; i++) y[i] += a * exp(-(x[i] - c0) * (x[i] - c0) / (2 * s * s)); };
 
-    // The same two bumps shifted so their trough sits at x = -70: more than
-    // one LOD-per-SNP from zero at wsize 20, so the function discards it and
-    // applies 0.  That substitution used to be silent; it must now be named
-    // on stderr, with the discarded value in the message.
-    for (int i = 0; i < N; i++) x[i] -= 70.0;
-    quietErrors(true);
-    double far = get_min_btw_modes(x, y, N, 20);
-    string said = cerrSink.str();
-    quietErrors(false);
-    ckd(far, 0.0, 1e-12, "a trough outside +/- wsize is replaced by 0, as before");
-    ck(said.find("WARNING") != string::npos && said.find("-70") != string::npos,
-       "the out-of-range substitution is reported, naming the discarded valley");
-    ck(said.find("--lod-cutoff") != string::npos,
-       "the warning points at the flag that overrides the automatic cutoff");
+    // Clean bimodal: non-autozygous bump at -2, autozygous at +2, trough at 0.
+    reset(-5, 5); bump(-2, 0.5, 1.0); bump(2, 0.5, 1.0);
+    LODModes m = identifyLODModes(x, y, N);
+    ck(m.verdict == LOD_MODES_BIMODAL, "two bumps on opposite sides of zero: bimodal");
+    ckd(m.modeN, -2.0, 0.05, "non-autozygous mode located"); ckd(m.modeA, 2.0, 0.05, "autozygous mode located");
+    ckd(m.cutoff, 0.0, 0.25, "cutoff is the trough between the modes");
+    ckd(get_min_btw_modes(x, y, N, 20), m.cutoff, 1e-12, "get_min_btw_modes returns the same valley");
 
-    // Within range the warning must stay silent.
-    for (int i = 0; i < N; i++) x[i] += 70.0;
+    // The modes compressed toward zero (low depth): still bimodal, same rule.
+    reset(-5, 5); bump(-0.6, 0.25, 1.0); bump(0.4, 0.15, 0.3);
+    m = identifyLODModes(x, y, N);
+    ck(m.verdict == LOD_MODES_BIMODAL && m.cutoff > -0.6 && m.cutoff < 0.4, "modes close to zero are still identified by sign");
+
+    // An autozygous mode TALLER than the null mode (an individual or cohort
+    // more than half autozygous): the sign, not the height, assigns them.
+    reset(-80, 30); bump(-50, 15, 0.3); bump(8, 3, 1.0);
+    m = identifyLODModes(x, y, N);
+    ck(m.verdict == LOD_MODES_BIMODAL, "tall autozygous / short null: bimodal");
+    ckd(m.modeN, -50.0, 1.0, "the broad short negative peak is the non-autozygous mode");
+    ckd(m.modeA, 8.0, 0.5, "the tall positive peak is the autozygous mode");
+
+    // Two bumps both below zero (hard calls at 1x; a cohort pooled across
+    // depths): the old rule took the valley between them (-30 here).  There
+    // is no autozygous mode, so there is no cutoff.
+    reset(-80, 20); bump(-50, 8, 1.0); bump(-10, 4, 0.6);
+    m = identifyLODModes(x, y, N);
+    ck(m.verdict == LOD_MODES_UNIMODAL_NULL, "two negative bumps: unimodal-null, not a valley at -30");
+    ckd(m.modeN, -50.0, 1.0, "the tallest negative bump is the non-autozygous mode");
+    ck(m.cutoff != m.cutoff, "no cutoff is returned for a unimodal-null density");
+    bool threw = false;
     quietErrors(true);
-    get_min_btw_modes(x, y, N, 20);
-    bool quiet = cerrSink.str().find("WARNING") == string::npos;
+    try { get_min_btw_modes(x, y, N, 20); } catch (...) { threw = true; }
     quietErrors(false);
-    ck(quiet, "an in-range trough produces no warning");
+    ck(threw, "get_min_btw_modes throws on a unimodal-null density");
+
+    // A lone bump above zero: unimodal-autozygous.
+    reset(-20, 30); bump(10, 3, 1.0);
+    m = identifyLODModes(x, y, N);
+    ck(m.verdict == LOD_MODES_UNIMODAL_AUTOZYGOUS && m.modeN != m.modeN, "a single positive bump: unimodal-autozygous");
+
+    // A tail bump far below the height floor must not count as a mode (the
+    // old rule took a density-1e-4 bump at -61 as a mode and cut at -58).
+    reset(-80, 20); bump(-10, 4, 1.0); bump(-61, 3, 0.0005); bump(3, 1.5, 0.4);
+    m = identifyLODModes(x, y, N);
+    ck(m.verdict == LOD_MODES_BIMODAL, "tail bump ignored: still bimodal");
+    ckd(m.modeN, -10.0, 0.5, "the real null mode, not the tail bump, is chosen");
+    ck(m.cutoff > -10 && m.cutoff < 3, "the cutoff lies between the real modes");
+
+    // A valley far from zero is no longer replaced by 0: the two bumps
+    // shifted so their trough sits at -70 are both negative, which is the
+    // unimodal-null case, and the modes themselves decide, not a distance.
+    reset(-75, -65); bump(-72, 0.5, 1.0); bump(-68, 0.5, 1.0);
+    m = identifyLODModes(x, y, N);
+    ck(m.verdict == LOD_MODES_UNIMODAL_NULL, "a trough at -70 between two negative bumps is not a cutoff (and not 0)");
+
+    // Ripples on the flank of a broad bump (short persistence) are not
+    // modes: a broad null bump with small wiggles and one real positive mode.
+    reset(-80, 20); bump(-45, 12, 1.0); bump(5, 2, 0.1);
+    for (int i = 0; i < N; i++) if (x[i] < -20) y[i] *= 1.0 + 0.02 * sin(x[i] * 3.0);
+    m = identifyLODModes(x, y, N);
+    ck(m.verdict == LOD_MODES_BIMODAL && m.nCandidates == 2, "flank ripples do not become candidate modes");
+    ckd(m.modeN, -45.0, 2.0, "the broad bump's top is the null mode despite ripples");
 }
 
 // ----------------------------------------------------- getMapInfo() -------
