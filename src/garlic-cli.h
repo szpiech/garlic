@@ -243,6 +243,9 @@ extern const string ARG_PAR;
 extern const string HELP_PAR;
 
 extern const string ARG_PAR_FILE;
+extern const string ARG_EXCLUDE_REGIONS;
+extern const string DEFAULT_EXCLUDE_REGIONS;
+extern const string HELP_EXCLUDE_REGIONS;
 extern const string DEFAULT_PAR_FILE;
 extern const string HELP_PAR_FILE;
 

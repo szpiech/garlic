@@ -930,6 +930,22 @@ int main(int argc, char *argv[])
     //leaving them in would both inflate the sex check's count of impossible
     //calls and bias the allele frequency of the heterogametic sex -- dropping
     //heterozygotes while keeping homozygotes is not a random thinning.
+    //--exclude-regions, before the pseudoautosomal handling and the sex check
+    //so that neither sees a site the user asked to have ignored.
+    {
+        string maskFile = params->getStringFlag(ARG_EXCLUDE_REGIONS);
+        if (maskFile.compare(DEFAULT_EXCLUDE_REGIONS) != 0)
+        {
+            ExcludedRegions mask;
+            if (readBEDRegions(maskFile, mask) < 0) return 1;
+            if (mask.finalise() < 0) return 1;
+            int left = dropMaskedSites(&mapDataByChr, &hapDataByChr, &freqDataByChr, &GLDataByChr,
+                                       mask, USE_GL, PHASED);
+            if (left < 0) return 1;
+            if (left > 0) numLoci = left;
+        }
+    }
+
     ExcludedRegions par;
     {
         bool any = false, suppressed = false, fromBuild = false;

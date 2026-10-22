@@ -549,6 +549,26 @@ int readChrLengthsFile(const string &filename, ChrLengths &out);
 int parsePARSpecs(const vector<string> &specs, ExcludedRegions &par);
 int readPARFile(const string &filename, ExcludedRegions &par);
 
+//--exclude-regions: a BED of regions whose sites are dropped before anything
+//is computed -- a mappability or repeat mask, typically.  BED coordinates
+//are 0-based half-open; they become the 1-based inclusive intervals
+//ExcludedRegions holds.  track/browser/# lines are skipped; columns beyond
+//the third are ignored.  Returns the number of regions read, or -1.
+int readBEDRegions(const string &filename, ExcludedRegions &mask);
+
+//Drop every site inside a masked region, on any chromosome; chromosomes
+//the mask names that are absent from the data are fine (a genome-wide mask
+//names them all).  Sorted intervals against sorted positions, so one sweep
+//per chromosome.  Logs the count per chromosome; warns when nothing at all
+//was dropped, which usually means the wrong assembly or chromosome naming.
+//Returns the number of loci left, or -1.
+int dropMaskedSites(vector< MapData * > **mapDataByChr,
+                    vector< HapData * > **hapDataByChr,
+                    vector< FreqData * > **freqDataByChr,
+                    vector< GenoLikeData * > **GLDataByChr,
+                    const ExcludedRegions &mask,
+                    bool USE_GL, bool PHASED);
+
 //The pseudoautosomal regions of a human assembly, as the Genome Reference
 //Consortium defines them; see centromeres/par_regions.txt, which records the
 //rows and where they came from.  X only: Y is dropped whole, so a region on it

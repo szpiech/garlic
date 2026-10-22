@@ -1,6 +1,7 @@
 #include "garlic-roh.h"
 #include <iomanip>
 #include <sstream>
+#include <algorithm>   //sort: libc++ provided it transitively, libstdc++ does not
 
 static double AUTO_WINSIZE_THRESHOLD_G = 0.50;
 static double AUTO_WINSIZE_SLOPE = 8.3235;

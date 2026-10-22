@@ -1165,6 +1165,107 @@ static int filterSitesByKeep(vector< MapData * > **mapDataByChr,
                              const vector< vector<int> > &keepByChr,
                              bool USE_GL, bool PHASED);
 
+int readBEDRegions(const string &filename, ExcludedRegions &mask)
+{
+    igzstream fin;
+    fin.open(filename.c_str());
+    if (fin.fail())
+    {
+        LOG.err("ERROR: Failed to open", filename);
+        return -1;
+    }
+    string line;
+    int lineno = 0, nread = 0;
+    while (getline(fin, line))
+    {
+        lineno++;
+        if (line.empty() || line[0] == '#') continue;
+        if (line.compare(0, 5, "track") == 0 || line.compare(0, 7, "browser") == 0) continue;
+        if (countFields(line) < 3)
+        {
+            LOG.err("ERROR: line", lineno, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" has fewer than the three BED columns <chrom> <chromStart> <chromEnd>.");
+            return -1;
+        }
+        istringstream ss(line);
+        string chr; long long a, b;
+        ss >> chr >> a >> b;
+        if (ss.fail() || a < 0 || b < a)
+        {
+            LOG.err("ERROR: could not read line", lineno, false);
+            LOG.err(" of", filename, false);
+            LOG.err(" as <chrom> <chromStart> <chromEnd> with 0 <= start <= end.");
+            return -1;
+        }
+        if (b == a) continue;                         //an empty BED interval covers nothing
+        //BED is 0-based, half-open: [a, b) covers 1-based positions a+1 .. b.
+        mask.add(chr, (pos_t)(a + 1), (pos_t)b);
+        nread++;
+    }
+    fin.close();
+    LOG.log("Read", nread, false);
+    LOG.log(" masked regions from", filename);
+    return nread;
+}
+
+int dropMaskedSites(vector< MapData * > **mapDataByChr,
+                    vector< HapData * > **hapDataByChr,
+                    vector< FreqData * > **freqDataByChr,
+                    vector< GenoLikeData * > **GLDataByChr,
+                    const ExcludedRegions &mask,
+                    bool USE_GL, bool PHASED)
+{
+    const unsigned int nchr = (*mapDataByChr)->size();
+    vector< vector<int> > keepByChr(nchr);
+    long long totalDropped = 0;
+    unsigned int chrWithMask = 0;
+    for (unsigned int chr = 0; chr < nchr; chr++)
+    {
+        MapData *md = (*mapDataByChr)->at(chr);
+        const vector<Interval> *iv = mask.get(md->chr);
+        keepByChr[chr].reserve(md->nloci);
+        if (iv == NULL)
+        {
+            for (int locus = 0; locus < md->nloci; locus++) keepByChr[chr].push_back(locus);
+            continue;
+        }
+        chrWithMask++;
+        //Both sorted: advance the interval pointer past every interval that
+        //ends before this position, then test the one it stopped at.
+        size_t j = 0;
+        long long dropped = 0;
+        for (int locus = 0; locus < md->nloci; locus++)
+        {
+            const pos_t p = md->physicalPos[locus];
+            while (j < iv->size() && iv->at(j).end < p) j++;
+            if (j < iv->size() && p >= iv->at(j).start) { dropped++; continue; }
+            keepByChr[chr].push_back(locus);
+        }
+        totalDropped += dropped;
+        LOG.log("Chromosome", md->chr, false);
+        LOG.log(": masked regions dropped", dropped, false);
+        LOG.log(" of", md->nloci, false);
+        LOG.log(" loci.");
+    }
+    if (chrWithMask == 0)
+    {
+        LOG.err("WARNING: no chromosome in the data appears in the --exclude-regions file; nothing was");
+        LOG.err("\tdropped.  Check the chromosome naming.");
+        return 0;
+    }
+    if (totalDropped == 0)
+    {
+        LOG.err("WARNING: the --exclude-regions file covers no locus in the data; nothing was dropped.");
+        LOG.err("\tCheck that its coordinates are in the same assembly as the data.");
+        return 0;
+    }
+    int numLoci = filterSitesByKeep(mapDataByChr, hapDataByChr, freqDataByChr, GLDataByChr,
+                                    keepByChr, USE_GL, PHASED);
+    LOG.log("Loci dropped by --exclude-regions:", totalDropped);
+    return numLoci;
+}
+
 int dropExcludedSites(vector< MapData * > **mapDataByChr,
                       vector< HapData * > **hapDataByChr,
                       vector< FreqData * > **freqDataByChr,
