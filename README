@@ -207,7 +207,7 @@ across columns, replacing one row per individual per size class.
 as coordinates rather than by a chromosome code.  For the human X, --build supplies them from
 the Genome Reference Consortium's definition for that assembly, filed under whatever the data
 calls the chromosome; see centromeres/par_regions.txt for the coordinates and where they came
-from.  --par replaces them and --par none keeps them all.
+from.  --par replaces them and --par none turns them off.
 
 Chromosome names are matched case-insensitively and ignoring a leading chr, so --chr x finds
 chrX and a --build table matches a file that spells its chromosomes as bare numbers.  Two
@@ -430,17 +430,67 @@ The command line reference in this file and in the manual is generated from the 
 own help strings by 'make docs' in src/. It had drifted to documenting 33 of 53 flags, and
 described one flag the program has never accepted.
 
-The automatic LOD cutoff warns when it discards the valley it found. A minimum between the
-two modes more than one LOD-per-SNP from zero (|cutoff| >= --winsize) has always been replaced
-by 0; that substitution was silent and fires on real inputs, so it now names the discarded
-value and points at --lod-cutoff. The applied value is unchanged.
+*** BEHAVIOUR CHANGE: the automatic LOD cutoff identifies the two modes of the window LOD
+density by their sign. *** The non-autozygous mode is the tallest peak below zero and the
+autozygous mode is the tallest peak above zero. The cutoff is the minimum of the density
+between them, as before. A peak counts only if it reaches 2% of the height of the tallest
+peak and persists over half the KDE mode span. The previous rule took the two most persistent
+peaks. However, its persistence count saturated, so ties were broken by height with no
+constraint on sign, and a small bump in the tail of the non-autozygous component could be
+taken as a mode. On the bundled chr21 example the cutoff moves from -55.7 to -0.33, and the
+calls from 22 Mb to 3.6 Mb per individual. The genome-wide example is unchanged at 1.88. A
+density with no peak above zero (unimodal-null) now completes with no calls and a warning
+that names --lod-cutoff and --stratify-cutoff, and .params.json writes lod_cutoff as null. A
+density with no peak below zero stops and asks for --lod-cutoff. .params.json records the
+verdict and both modes (lod_density_verdict, lod_mode_nonautozygous, lod_mode_autozygous).
+The substitution of 0 for a valley more than --winsize from zero is gone, since a valley is
+now defined by the two modes it lies between. With --stratify-cutoff, an individual's
+non-autozygous mode is its lowest peak below zero that reaches 10% of the height of its
+tallest. manual/lod-mode-rule.tex gives the derivation and the comparison with the previous
+rule.
 
---gl-type documents that none of its forms suit low-coverage sequence data (below roughly 4x).
-Each reduces to one symmetric error rate per genotype, and the dominant low-depth error,
-allelic dropout, is directional: it turns heterozygotes into homozygotes, which is what
+--gl-type documents that none of its forms suits low-coverage sequence data (below roughly
+4x). Each of its forms gives one error rate per genotype, evaluated at the called genotype,
+so an uncertain homozygous call still counts as evidence for autozygosity. At low depth the
+dominant error, allelic dropout, turns heterozygotes into homozygotes, which is what
 autozygosity looks like. In simulation at 0.5-1x a GQ-derived error called essentially the
-whole genome autozygous. Hard calls with --error degrade more gracefully but lose the automatic
-cutoff by about 2x. A genotype-likelihood input is the intended route and is in progress.
+whole genome autozygous. Hard calls with --error degrade more gracefully there but lose the
+automatic cutoff by about 2x.
+
+Every run writes <out>.ind.tsv, a per-individual information report. A window LOD is a sum
+over its sites, and a site with no information for an individual (a missing genotype)
+contributes exactly 0, so two individuals with the same window size can be summing very
+different amounts of evidence. Per individual: the fraction of informative sites, the median
+and 5th percentile of informative sites per window, and the observed/expected heterozygote
+ratio over windows whose LOD is below 0 (a cutoff-free stand-in for "not autozygous"). garlic
+warns when an individual's 5th percentile is below half the window size. The het ratio is a
+sample-quality statistic for called data and NOT a low-depth estimator. It carries sampling
+noise of about 1/sqrt(n_het_expected), which the table states. Nothing is corrected from this
+report.
+
+--stratify-cutoff chooses the automatic LOD cutoff within strata of individuals that carry
+the same evidence per window. The pooled cutoff assumes everyone does; in a cohort of mixed
+depth the shallow individuals have both LOD modes compressed toward zero and one cutoff calls
+most of their genome. The location of an individual's non-autozygous LOD mode measures that
+evidence precisely (sd 1.3 LOD within the bundled cohort), so individuals are sorted by it,
+neighbours whose modes differ by less than a quarter of the smaller spread share a stratum,
+and the pooled rule runs within each stratum. A uniform cohort is one stratum and gets
+exactly the pooled cutoff (byte-identical calls; the suite checks it). Per-individual mode,
+spread, stratum and applied cutoff go to <out>.ind.tsv; .params.json records lod_cutoff as
+the stratum count and flags it. Strata of fewer than three individuals take the largest
+stratum's cutoff, with a warning. Without the flag, garlic warns when the cohort would form
+more than one stratum.
+
+--exclude-regions <bed> drops every site inside the regions of a standard BED file before
+anything is computed -- a mappability or repeat mask, segmental duplications, any region
+where calls are not to be trusted. On every chromosome, autosomes included; chromosomes the
+file names that are not in the data are ignored, a file covering no site warns. Dropped sites
+are gone from the frequency file and every window; the FROH denominator is not reduced by
+them (unlike --par), since a run can span a short masked region. This is the one correction
+garlic applies for mapping bias, the regional part. The read-level part (ALT read fraction
+below one half at heterozygotes) is not corrected. The manual's "Reference and mapping bias"
+lists what belongs upstream (alt-aware mapping, -baq, read-length and quality filters, damage
+rescaling, unbiased frequencies).
 
 05JUN2020 - v1.1.6a Fixes a bug when using --auto-overlap-frac that can cause segmentation faults when not using chromosomes/contigs with numbers. ***I'm having trouble getting mscOS versions to compile, so the current binary for mscOS is still v1.6.0 and still has this bug.***
 
@@ -489,152 +539,155 @@ strings. Do not edit by hand.
 
 ----- Input files -----
 
---freq-file <string>: A file specifying allele frequencies for each population for all variants. File format: CHR SNP POS ALLELE FREQ <chr> <locus ID> <allele> <freq> By default, this is calculated automatically from the provided data.
+--freq-file <string>: A file of allele frequencies for every variant, with one frequency column per population headed by its label, or a single column that applies to every population: CHR SNP POS ALLELE FREQ <chr> <locus ID> <pos> <allele> <freq> By default the frequencies are calculated from the data. The .freq.gz that a run writes can be given back here.
 	Default: none
 
---gl-type <string>: Which genotype-quality field to use.  With --vcf it is read from the FORMAT column; with --tgls it names the form of the single value per genotype in the .tgls file.  The two sources are NOT equivalent.
-With --vcf (recommended): GQ error = 10^(-GQ/10), the VCF spec's definition directly. PL The whole PL array is read and converted to a posterior:     P(g) proportional to 10^(-PL_g/10),  error = 1 - P(called)/sum.   This is the only correct use of a VCF's PL.  A VCF normalises PL   so the CALLED genotype is exactly 0, so that one value carries no   information -- it is 0 for every call, confident or not.  The   information is in how much worse the alternatives are. GL The same, via PL = -10*GL.   A missing field is an error naming whichever of GQ/PL/GL the file   does carry, and a called genotype with '.' for the field is an   error rather than a silent fall back to --error.
-With --tgls (legacy; the format holds ONE value per genotype): GQ As above.  The only form a VCF's values can be dropped into. PL error = 1 - 10^(-PL/10), i.e. P(genotype CORRECT).   *** NOT the VCF PL field. *** Under this definition PL=0 means an   error of 0, and the integers map to 0, 0.21, 0.37, 0.50, ... --   none a realistic error rate (0.001 would be PL=0.00435).  Feeding   VCF PLs here is rejected.  Use --vcf --gl-type PL instead. GL error = 1 - 10^GL, with the same caveat.
-Not for low-coverage sequence data (below roughly 4x).  Every form above reduces to one symmetric error rate per genotype, and the dominant error at low depth is not symmetric: allelic dropout turns heterozygotes into homozygotes, which is what autozygosity looks like.  In simulation at 0.5-1x this called essentially the whole genome autozygous.  Hard calls with --error behave better there but still lose the automatic cutoff by about 2x; a genotype-likelihood input that keeps all three genotype probabilities is the intended route for such data.
+--gl-type <string>: Which genotype-quality field to use. With --vcf it is read from the FORMAT column. With --tgls it names the form of the single value per genotype in the .tgls file. The two are not equivalent.
+With --vcf (recommended): GQ error = 10^(-GQ/10), as the VCF specification defines it. PL The whole PL array is converted to a posterior:     P(g) proportional to 10^(-PL_g/10),  error = 1 - P(called)/sum.   A VCF normalises PL so that the called genotype's value is 0 for   every call, and the information is in how much worse the   alternatives are. GL The same, via PL = -10*GL.   A missing field is an error that names whichever of GQ, PL and GL   the file does carry, and '.' for a called genotype is an error.
+With --tgls (legacy, one value per genotype): GQ As above. The only form a VCF's values can be used in directly. PL error = 1 - 10^(-PL/10), where 10^(-PL/10) is P(genotype correct).   This is not the VCF PL field. Integer PLs give errors of 0, 0.21,   0.37, 0.50, ..., and an error of 0.001 is PL = 0.00435. VCF PLs   given here are rejected. Use --vcf --gl-type PL instead. GL error = 1 - 10^GL, with the same caveat.
+None of these forms suits low-coverage sequence data (below roughly 4x). Each gives one error rate per genotype, evaluated at the called genotype, so an uncertain homozygous call still counts as evidence for autozygosity. See "Low-coverage sequence data" in the manual.
 	Default: none
 
---map <string>: Provide a scaffold genetic map, sites that aren't present within this file are interpolated. Sites outside the bounds are filtered. This is required for wLOD calculations and any runs for which you wish to report ROH in units of cM.
+--map <string>: A scaffold genetic map. Sites not in the file are interpolated, and sites outside its bounds are dropped. Required by --weighted and --cm. Format: <chr> <snpid> <genetic pos> <physical pos>. Negative positions are an error.
 	Default: none
 
---tfam <string>: A tfam formatted file containing population and individual IDs.
+--tfam <string>: A TFAM file holding population and individual IDs.
 	Default: none
 
---tgls <string>: A tgls file containing one per-genotype likelihood value per individual, in the same row order as the tped.  See --gl-type for what the values must mean: for PL and GL this is NOT the VCF convention.
+--tgls <string>: A tgls file with one per-genotype value per individual, in the row order of the TPED. See --gl-type for what the values mean. For PL and GL this is not the VCF convention.
 	Default: none
 
---tped <string>: A tped formatted file containing map and genotype information.
+--tped <string>: A TPED file holding the map and the genotypes.
 	Default: none
 
---tped-missing <char>: Single character missing data code for TPED files.
+--tped-missing <char>: The one-character missing-data code in a TPED.
 	Default: 0
 
---vcf <string>: A VCF file (plain or gzipped) to read genotypes from, instead of --tped. Biallelic SNVs with a GT field are used; multiallelic sites, indels and symbolic ALTs are skipped and the counts reported. Sample names come from the #CHROM line, so --tfam is neither needed nor accepted; use --pop to supply population labels.
+--vcf <string>: A VCF file (plain, gzipped or BGZF) to read genotypes from instead of --tped. Biallelic SNVs with a GT field are used. Multiallelic sites, indels and symbolic ALTs are skipped, and the counts are reported. Sample names come from the #CHROM line, so --tfam is not accepted. Use --pop for population labels.
 Sites must be grouped by chromosome. Ploidy must be 2, except on a chromosome declared with --sex-system or --sex-chr, where a haploid call is read as hemizygous. With --phased every call must use '|'.
 	Default: none
 
---vcf-pass-only <bool>: Skip sites whose FILTER column is neither PASS nor '.'. Without this, such sites are KEPT and their number is reported, because a FILTER column reflects the caller's thresholds rather than garlic's.
+--vcf-pass-only <bool>: Skip sites whose FILTER is neither PASS nor '.'. Without this flag such sites are kept and their number is reported, because FILTER records the variant caller's thresholds rather than garlic's.
 	Default: false
 
 ----- Populations -----
 
---pool-populations <bool>: Analyse every individual together as one population, ignoring the population labels.  This is what garlic did before per-population analysis, and it restores the old output names as well: <out>.roh.bed rather than <out>.<POP>.roh.bed.
-Allele frequencies are then computed by pooling everyone, which inflates heterozygosity relative to any one population and biases the LOD scores for all of them.  Use it when the labels are not populations -- column 1 of a TFAM is the PLINK family ID, which is often one family or even one sample per value -- or to reproduce an earlier run.
+--pool-populations <bool>: Analyse every individual as one population, ignoring the labels, as garlic did before per-population analysis. Output names are then <out>.roh.bed rather than <out>.<POP>.roh.bed.
+Allele frequencies are pooled over everyone, which inflates heterozygosity relative to any one population and biases the LOD scores. Use it when the labels are not populations (column 1 of a TFAM is the PLINK family ID) or to reproduce an earlier run.
 	Default: false
 
---pop <string>: A file mapping sample ID to population, replacing the population labels that would otherwise come from the TFAM. Whitespace separated, '#' comments and blank lines ignored, .gz accepted:
+--pop <string>: A file mapping sample ID to population, in place of the labels in the TFAM. Whitespace separated, '#' comments and blank lines ignored, .gz accepted:
   <sample_id>  <population>  [sex]
-Two required columns in THAT order. Note this is the opposite order to a TFAM, whose first column is the population. The optional third column is sex in PLINK coding (1 male, 2 female, 0 or -9 unknown); unlike a TFAM, anything else is an error rather than being read as unknown.
-Rows are matched by sample ID, never by file order. Every sample in the data must have a row; extra rows are ignored and counted, so a cohort-wide file can be used against a subset.
+The column order is the reverse of a TFAM's first two columns. The optional third column is sex in PLINK coding (1 male, 2 female, 0 or -9 unknown). Unlike in a TFAM, any other value is an error.
+Rows are matched by sample ID, not by order. Every sample in the data needs a row. Extra rows are ignored and counted, so one file can be used for a subset of the cohort.
 	Default: none
 
 ----- Genome and chromosomes -----
 
---autosomes-only <bool>: Drop every chromosome that is not an autosome before calling: X, Y, Z, W and the mitochondrion, recognised by name, plus 23, 24, 25 and 26 when --build names a human assembly. A hemizygous genotype is written as a homozygous call and is indistinguishable from true autozygosity, so a hemizygous chromosome is otherwise called as one run spanning its whole length. Does not resolve bare 23-26 without a human --build: dropping them is right if they are PLINK's human codes and destroys real autosomes if they are not, so garlic refuses instead. See --sex-system.
+--autosomes-only <bool>: Drop every chromosome that is not an autosome before calling: X, Y, Z, W and the mitochondrion by name, and 23, 24, 25 and 26 when --build names a human assembly. A hemizygous chromosome analysed as an autosome is called as one run along its whole length. Without a human --build, bare 23-26 are refused rather than dropped, because they are autosomes in a species with that many chromosomes. See --sex-system.
 	Default: false
 
---build <string>: Choose which genome build to use for centromere locations: hg18, hg19, hg38 or t2t-chm13 (T2T-CHM13v2.0, UCSC hs1).
+--build <string>: The genome build: hg18, hg19, hg38 or t2t-chm13 (T2T-CHM13v2.0, UCSC hs1). It supplies the centromere locations, the chromosome lengths and the human pseudoautosomal regions.
 	Default: none
 
---centromere <string>: Provide custom centromere boundaries. Format <chr> <start> <end>.
+--centromere <string>: A file of custom centromere boundaries, <chr> <start> <end>. One of --build, --centromere or --no-centromere is required.
 	Default: none
 
---chr <string1> ... <stringN>: Analyse only these chromosomes, e.g. --chr chr1 chr2 chrX. Names are matched after normalisation, so '1' and 'chr1' are the same. It is an error to name a chromosome that is not in the data.
+--chr <string1> ... <stringN>: Analyse only these chromosomes, e.g. --chr chr1 chr2 chrX. Names are matched after normalisation, so '1' and 'chr1' are the same. Naming a chromosome that is not in the data is an error.
 	Default: all chromosomes in the input
 
---chr-lengths <string>: A file of chromosome lengths: two whitespace-separated columns, chromosome and length. A samtools faidx .fai is accepted unchanged -- its first two columns are already name and length and the rest is ignored -- so the index beside your reference can be passed as it is. The way to use --froh-denominator assembly on a non-human assembly, and on TPED input, where nothing in the data states a chromosome's length. Takes precedence over --build and over a VCF's ##contig header.
+--chr-lengths <string>: A file of chromosome lengths in two whitespace-separated columns, chromosome and length. A samtools faidx .fai is accepted as it is. Needed for --froh-denominator assembly on a non-human assembly or on TPED input, where nothing in the data states a length. Takes precedence over --build and a VCF's ##contig header.
 	Default: none
 
---haploid-chr <string1> ... <stringN>: Chromosomes haploid in every individual: mitochondrion, chloroplast. Dropped before calling, since a run of homozygosity on them is not a meaningful quantity.
+--exclude-regions <string>: A BED file of regions whose sites are dropped before anything is computed, such as a mappability or repeat mask or segmental duplications. Mapping bias in such regions turns heterozygotes into homozygotes, which looks like autozygosity. Standard BED (0-based half-open <chrom> <chromStart> <chromEnd>, further columns ignored, track/browser/# lines skipped), gzipped or not. Chromosomes not in the data are ignored. The dropped sites are removed from the frequency file and from every window, but the FROH denominator is not reduced (unlike --par). Applied on every chromosome. Use --par for pseudoautosomal regions.
+	Default: none
+
+--haploid-chr <string1> ... <stringN>: Chromosomes haploid in every individual (mitochondrion, chloroplast). Dropped before calling.
 	Default: names matching M or MT, plus 26 under a human --build
 
---no-centromere <bool>: Treat every chromosome as having no assembled gap, instead of requiring --build or --centromere. For organisms with no centromere gap in the assembly, and for references garlic has no built-in table for (only hg18, hg19 and hg38 are built in; T2T-CHM13 is not). Mutually exclusive with --build and --centromere.
+--no-centromere <bool>: Treat every chromosome as having no assembly gap, instead of requiring --build or --centromere. For assemblies with no centromere gap, and for references with no built-in table. Cannot be combined with --build or --centromere.
 	Default: false
 
---par <string1> ... <stringN>: Pseudoautosomal regions on the shared sex chromosome, as <chr>:<start>-<end>, comma or space separated. They are diploid in both sexes and too short to call at a useful window size, so the loci inside them are dropped. ANY NUMBER of regions per chromosome: humans have two, other species have more, and a system with several shared sex chromosomes can have them on each. Coordinates are read in the assembly the input uses; there is deliberately no way to name a pseudoautosomal region by chromosome code, because PLINK's 25 is an ordinary autosome in most species. --build supplies the human X regions on its own, from the Genome Reference Consortium's definition for that assembly; see centromeres/par_regions.txt. Naming any region here replaces them, and --par none keeps them all.
+--par <string1> ... <stringN>: Pseudoautosomal regions on the shared sex chromosome, as <chr>:<start>-<end>, comma or space separated. The loci inside are dropped, since the regions are diploid in both sexes and too short to call. Any number of regions per chromosome is allowed. Coordinates are in the input's assembly, and a region cannot be named by chromosome code, because PLINK's 25 is an ordinary autosome in most species. --build supplies the human X regions from the Genome Reference Consortium's definition (see centromeres/par_regions.txt). Naming any region here replaces them, and --par none turns them off.
 	Default: the regions for --build, or none without one
 
---par-file <string>: The same regions from a file, one per line, <chr> <start> <end>. '#' comments and blank lines are ignored and .gz is accepted. Unlike --centromere, repeated rows for a chromosome ADD a region rather than replacing one. May be given together with --par; the regions accumulate.
+--par-file <string>: The same regions read from a file, one per line as <chr> <start> <end>, with '#' comments and blank lines ignored and .gz accepted. Unlike --centromere, repeated rows for a chromosome add a region. May be combined with --par.
 	Default: none
 
---sex-chr <string1> ... <stringN>: The chromosome diploid in the homogametic sex and hemizygous in the heterogametic one: X under xy, Z under zw. Only needed when the name is not the conventional one, e.g. --sex-system zw --sex-chr LG12. Requires --sex-system.
+--sex-chr <string1> ... <stringN>: The chromosome that is diploid in the homogametic sex and hemizygous in the heterogametic one (X under xy, Z under zw). Needed only when it has another name, e.g. --sex-system zw --sex-chr LG12. Requires --sex-system.
 	Default: the conventional name for --sex-system
 
---sex-chr-degenerate <string1> ... <stringN>: The chromosome carried only by the heterogametic sex: Y under xy, W under zw. No individual can carry a run of homozygosity on it -- hemizygous in one sex and absent in the other -- so it is dropped before calling.
+--sex-chr-degenerate <string1> ... <stringN>: The chromosome carried only by the heterogametic sex (Y under xy, W under zw). It is dropped before calling, since no individual can carry a run of homozygosity on it.
 	Default: the conventional name for --sex-system
 
---sex-system <string>: Which sex is heterogametic, and therefore which individuals are hemizygous on the shared sex chromosome:   xy    individuals coded 1 (male) in the TFAM or --pop are heterogametic   zw    individuals coded 2 (female) are heterogametic   none  assert that every chromosome is diploid in every individual, and         stop reporting sex chromosomes entirely PLINK sex coding is 1 male and 2 female whatever the species' sex determination system is, so in a ZW species the HOMOGAMETIC sex is coded 1. This is the one thing no amount of genotype data can supply, which is why it is a flag. It is not an analysis path: it fills in a per-chromosome, per-individual expected ploidy that one code path then reads. Leaving it unset is NOT the same as 'none'. If a sex chromosome is present and this is unset, garlic stops rather than analysing it as an autosome.
+--sex-system <string>: Which sex is heterogametic, and so which individuals are hemizygous on the shared sex chromosome:   xy    individuals coded 1 (male) in the TFAM or --pop are heterogametic   zw    individuals coded 2 (female) are heterogametic   none  every chromosome is diploid in every individual, and sex         chromosomes are not reported PLINK codes 1 male and 2 female in every species, so in a ZW species the homogametic sex is coded 1. Leaving the flag unset is not the same as 'none'. If a sex chromosome is present and the flag is unset, garlic stops rather than analysing it as an autosome.
 	Default: unset
 
 ----- LOD scores and windows -----
 
---M <int>: The expected number of meioses since a recent common ancestor for --weighted calculation.
+--M <int>: The expected number of meioses since a recent common ancestor, for --weighted.
 	Default: 7
 
---auto-winsize <bool>: If --weighted is set, guesses the best window size based on SNP density, otherwise initiates an ad hoc method for automatically selecting the # of SNPs in which to calculate LOD scores. Starts at the value specified by --winsize and increases by <step size> SNPs until finished.
+--auto-winsize <bool>: Choose the window size automatically. With --weighted it is set from SNP density (see --auto-winsize-coef). Otherwise the search starts at --winsize, which must be given, and grows by --auto-winsize-step SNPs until the LOD score density meets --auto-winsize-threshold, up to --max-winsize.
 	Default: false
 
---auto-winsize-coef <double1> ... <doubleN>: <slope> <intercept>: coefficients of winsize = slope*log(density) + intercept, used by --auto-winsize with --weighted. The defaults (8.3235 138.0521) are an empirical fit to human SNP-array data; override them for other ascertainment schemes or species.
+--auto-winsize-coef <double1> ... <doubleN>: <slope> <intercept>: coefficients of winsize = slope*log(density) + intercept, used by --auto-winsize with --weighted. The defaults are an empirical fit to human SNP-array data. Change them for other ascertainment schemes or species.
 	Default: 8.3235 138.0521
 
---auto-winsize-step <int>: Step size for automatic window selection algorithm.
+--auto-winsize-step <int>: The step size, in SNPs, of the --auto-winsize search.
 	Default: 10
 
---auto-winsize-threshold <double>: Smoothness criterion at which the --auto-winsize search stops. Lower values demand a smoother LOD score density and therefore a larger window.
+--auto-winsize-threshold <double>: The smoothness criterion at which the --auto-winsize search stops. Lower values demand a smoother LOD score density, and so a larger window.
 	Default: 0.5
 
---error <double>: The assumed genotyping error rate.
+--error <double>: The assumed genotyping error rate. Required.
 	Default: -1
 
---max-gap <int>: A LOD score window is not calculated if the gap (in bps) between two loci is greater than this value.
+--max-gap <int>: No LOD score window is calculated across a gap between two loci larger than this many bp.
 	Default: 200000
 
---max-winsize <int>: Upper bound on the window size that --auto-winsize will try. The search previously had no bound and would grow past the number of loci if the smoothness criterion was never met.
+--max-winsize <int>: The largest window size that --auto-winsize will try.
 	Default: 1000
 
---mu <double>: Mutation rate per bp per generation for --weighted calculation.
+--mu <double>: The mutation rate per bp per generation, for --weighted.
 	Default: 1e-09
 
---phased <bool>: Set if data are phased and you want to calculate r2 instead of hr2 while --weighted is set. Uses extra RAM. Has no effect on computations without --weighted.
+--phased <bool>: The data are phased. Under --weighted, LD is then computed as r2 rather than hr2, which uses more memory. With --vcf every call must use '|'. Has no effect on the LOD scores without --weighted.
 	Default: false
 
---weighted <bool>: Compute LOD scores weighted by LD and probability of mutation.
+--weighted <bool>: Weight the LOD scores by LD and by the probabilities of no recombination and no mutation (wLOD). Requires --map.
 	Default: false
 
---winsize <int>: The window size in # of SNPs in which to calculate LOD scores.
+--winsize <int>: The window size, in SNPs, over which LOD scores are calculated. With --auto-winsize it is where the search starts.
 	Default: 0
 
---winsize-multi <int1> ... <intN>: Provide several window sizes (in # of SNPs) to calculate LOD scores. LOD score KDEs for each window size will be output for inspection.
+--winsize-multi <int1> ... <intN>: Several window sizes, in SNPs. garlic writes the LOD score KDE for each and calls no ROH. With --auto-winsize it chooses the best size from the list.
 	Default: -1
 
 ----- Calling runs of homozygosity -----
 
---auto-overlap-coef <double1> ... <doubleN>: <slope> <intercept>: coefficients of overlap% = slope*log(density) + intercept, used by --auto-overlap-frac. The defaults (6.375 63.888) are an empirical fit to human SNP-array data.
+--auto-overlap-coef <double1> ... <doubleN>: <slope> <intercept>: coefficients of overlap% = slope*log(density) + intercept, used by --auto-overlap-frac. The defaults are an empirical fit to human SNP-array data.
 	Default: 6.375 63.888
 
---auto-overlap-frac <bool>: If set, GARLIC attempts to guess based on marker density.
+--auto-overlap-frac <bool>: Choose --overlap-frac from marker density (see --auto-overlap-coef).
 	Default: false
 
---het-rate-bounds <double1> ... <doubleN>: <lo> <hi>: heterozygosity rates on the shared sex chromosome below which an individual reads as hemizygous and above which it reads as diploid. Between them it is ambiguous, and garlic neither calls ROH there for that individual nor counts its alleles. Used to check every recorded sex and to infer the ones that were not recorded. Fixed bounds rather than a two-component fit on purpose: a cohort that is entirely one sex has no bimodality to find, and a clustering rule would invent a split there. These fail the same way for every dataset.
+--het-rate-bounds <double1> ... <doubleN>: <lo> <hi>: heterozygosity on the shared sex chromosome below which an individual reads as hemizygous and above which it reads as diploid. In between it is ambiguous, and garlic neither calls ROH there for that individual nor counts its alleles. Used to check each recorded sex and to infer the missing ones. The bounds are fixed rather than fitted, because a cohort of one sex has no bimodality to fit.
 	Default: 0.020000
 
---ld-subsample <int>: The number of individuals to randomly sample for LD calculation during wLOD. If there are fewer individuals in the population all are used. Set <= 0 to use all individuals (will increase runtime).
+--ld-subsample <int>: The number of individuals sampled at random for the LD calculations of --weighted. If the population has fewer, all are used. 0 or less uses every individual, which takes longer.
 	Default: 0
 
---lod-cutoff <double>: For LOD based ROH calling, specify a single LOD score cutoff above which ROH are called in all populations.  By default, this is chosen automatically with KDE.
+--lod-cutoff <double>: A LOD score cutoff above which windows are called autozygous, applied to every population. By default it is chosen automatically from the KDE of the LOD scores.
 	Default: -999999
 
---overlap-frac <double>: The minimum fraction of overlapping windows above the LOD cutoff required to begin constructing a run. ROH will have a lower bound size threshold of WINSIZE*OVERLAP_FRAC. If set to 0, GARLIC sets the value to the lowest sensible value: 1/winsize.
+--overlap-frac <double>: The fraction of the windows covering a SNP that must be above the LOD cutoff for the SNP to be in a run. Runs are therefore at least WINSIZE*OVERLAP_FRAC SNPs long. If 0, garlic uses the smallest sensible value, 1/winsize.
 	Default: 0.25
 
---sexchr-lod-cutoff <double>: Call the shared sex chromosome at this LOD score cutoff instead of the one estimated on the autosomes. Every run logs what the sex chromosome's own windows would have given, which is where the value for this comes from. The autosomal cutoff is the default because one chromosome's windows from part of a cohort often cannot locate a second minimum in the density at all; that is also why this is a value you supply rather than a switch that asks garlic to re-estimate.
+--sexchr-lod-cutoff <double>: Call the shared sex chromosome at this LOD score cutoff instead of the autosomal one. Every run logs the cutoff that the sex chromosome's own windows would give, which is where a value for this comes from. The autosomal cutoff is the default because one chromosome's windows from part of a cohort often have no second minimum in the density.
 	Default: the autosomal cutoff
 
---sexchr-winsize <int>: Build windows of this many SNPs on the shared sex chromosome instead of the size used on the autosomes. The overlap FRACTION is unchanged, so the number of windows a SNP must fall in scales with the window. A LOD score cutoff belongs to the window size it was estimated at, so with this the autosomal cutoff no longer applies to the sex chromosome; give --sexchr-lod-cutoff as well.
+--sexchr-winsize <int>: Use windows of this many SNPs on the shared sex chromosome instead of the autosomal size. The overlap fraction is unchanged. A LOD score cutoff is specific to the window size it was estimated at, so --sexchr-lod-cutoff is required as well.
 	Default: the autosomal window size
 
 ----- Choosing the LOD cutoff automatically -----
@@ -642,107 +695,109 @@ Rows are matched by sample ID, never by file order. Every sample in the data mus
 --kde-cut <double>: Extend the density grid this many bandwidths beyond the range of the data.
 	Default: 3
 
---kde-points <int>: Number of grid points at which the LOD score density is evaluated. Also sets the resolution at which the between-mode minimum (the LOD cutoff) is located.
+--kde-points <int>: The number of grid points at which the LOD score density is evaluated. This also sets the resolution of the LOD cutoff.
 	Default: 512
 
---kde-subsample <int>: The number of individuals to randomly sample for LOD score KDE. If there are fewer individuals in the population all are used. The default, 0, uses every individual, which makes the selected LOD cutoff a deterministic function of the data alone. A positive value subsamples, which saves memory but makes the cutoff depend on --seed.
+--kde-subsample <int>: The number of individuals sampled at random for the LOD score KDE. If the population has fewer, all are used. The default, 0, uses every individual, so the cutoff depends on the data alone. A positive value saves memory but makes the cutoff depend on --seed.
 	Default: 0
 
---kde-thin-step <int>: Take every Nth LOD score window when building the KDE. 0 (the default) uses the window size, which keeps the sampled windows non-overlapping; 1 uses every window. Replaces --no-kde-thinning, which is equivalent to 1 and is kept as a deprecated alias.
+--kde-thin-step <int>: Send every Nth LOD score window to the KDE. 0, the default, uses the window size, so the windows used do not overlap. 1 uses every window. --no-kde-thinning is a deprecated alias for 1.
 	Default: 0
 
---mode-smooth-span <int>: Number of adjacent grid points used to smooth the density when locating its modes. Must be smaller than --kde-points.
+--mode-smooth-span <int>: The number of adjacent grid points used to smooth the density when finding its modes. Must be smaller than --kde-points.
 	Default: 20
 
---no-kde-thinning <bool>: Set this flag to send all LOD score data to KDE function. This may dramatically increase runtime.
+--no-kde-thinning <bool>: Deprecated. The same as --kde-thin-step 1, which sends every LOD score window to the KDE and can increase runtime considerably.
+	Default: false
+
+--stratify-cutoff <bool>: Choose the automatic LOD cutoff within strata of individuals that carry the same evidence per window, so that the shallow members of a cohort of mixed depth are not over-called. Individuals are sorted by the location of their non-autozygous LOD mode, neighbours whose modes differ by less than a quarter of the smaller spread share a stratum, and the pooled rule is applied within each stratum. A cohort of uniform depth is one stratum and gets exactly the pooled cutoff. The per-individual mode, spread, stratum and cutoff are written to <out>.ind.tsv. Needs the automatic cutoff.
 	Default: false
 
 ----- Size classification -----
 
---cm <bool>: Measure ROH lengths in genetic distance units. This requires a mapfile.
+--cm <bool>: Report ROH lengths and size classes in cM. ROH boundaries are still reported in bp. Requires --map.
 	Default: false
 
---gmm-max-iter <int>: Maximum EM iterations when fitting ROH size classes.
+--gmm-max-iter <int>: The maximum number of EM iterations when fitting ROH size classes.
 	Default: 1000
 
---gmm-tol <double>: Convergence tolerance for the ROH size-class EM fit.
+--gmm-tol <double>: The convergence tolerance of the ROH size-class EM fit.
 	Default: 1e-05
 
---nclust <int>: Set number of clusters for GMM classification of ROH lengths.
+--nclust <int>: The number of Gaussian mixture components used to classify ROH lengths.
 	Default: 3
 
---size-bounds <double1> ... <doubleN>: Specify the size class boundaries ROH boundaries.  By default, this is chosen automatically with a 3-component GMM.  Must provide numbers in increasing order.
+--size-bounds <double1> ... <doubleN>: The boundaries between ROH size classes, in increasing order. By default they are chosen automatically with a Gaussian mixture model (see --nclust).
 	Default: -1.000000
 
 ----- Counting classified genotypes -----
 
---features <string>: A file classifying sites, four whitespace-separated columns: <chr> <pos> <allele> <class>. Lines beginning '#' are comments.
-The class label is arbitrary text and there may be any number of them (deleterious/tolerated, synonymous/nonsynonymous, whatever the annotation gives). A site may appear more than once, so two annotation schemes can classify the same variant; the same class twice at one site is an error. Chromosome names are matched ignoring case and a 'chr' prefix.
-For each individual, garlic then counts the classified genotypes falling inside runs of homozygosity of each size class and outside them, and writes <out>.counts.tsv. Genotypes are read from the input the run was called from, or from --tped-counting if that is given.
+--features <string>: A file classifying sites, in four whitespace-separated columns:   <chr> <pos> <allele> <class> Lines beginning '#' are comments. Class labels are arbitrary text, and there may be any number of them. A site may appear more than once, so two annotation schemes can classify the same variant, but the same class twice at one site is an error. Chromosome names are matched ignoring case and a 'chr' prefix.
+For each individual garlic counts the classified genotypes inside runs of each size class and outside them, and writes <out>.counts.tsv. Genotypes are read from the input the run was called from, or from --tped-counting or --vcf-counting if given.
 	Default: none
 
---roh-file <string>: Count classified genotypes against calls in an existing garlic .roh.bed instead of calling them. No ROH are called, so --tped and --vcf are not used; give the genotypes with --tped-counting and --tfam-counting, or with --vcf-counting, and the classification with --features.
-A .roh.bed records where the runs are, not which chromosomes were analysed or what the size class letters mean, so the table cannot mark a site UNASSESSED and its size class boundaries are reported as unknown. Counting inside the run that makes the calls knows both.
-garlic 1.1.6a was released with two different chromStart conventions under the same version string, so the convention is recovered from the file itself and reported.
+--roh-file <string>: Count classified genotypes against the calls in an existing garlic .roh.bed instead of calling ROH. --tped and --vcf are not used. Give the genotypes with --tped-counting and --tfam-counting or with --vcf-counting, and the classification with --features.
+A .roh.bed does not record which chromosomes were analysed or what the size class letters mean, so no site can be marked UNASSESSED and the size class boundaries are reported as unknown. Counting inside the run that makes the calls knows both.
+garlic 1.1.6a was released with two chromStart conventions under one version string, so the convention is inferred from the file and reported.
 	Default: none
 
---tfam-counting <string>: The TFAM naming the samples in --tped-counting, in column order. Individuals are matched to the ROH calls by ID; one present in only one of the two files is reported and left out of the table.
+--tfam-counting <string>: The TFAM naming the samples in --tped-counting, in column order. Individuals are matched to the ROH calls by ID, and one present in only one of the two files is reported and left out of the table.
 	Default: none
 
---tped-counting <string>: A TPED to count classified genotypes from, instead of the file the run was called from. Use it when the calls come from array data and the classified variants are sequenced -- the two need not share a single site. Requires --tfam-counting and --features.
-These genotypes take no part in calling, and no site filter is applied to them: monomorphic and rare sites are exactly what this counts.
+--tped-counting <string>: A TPED to count classified genotypes from, instead of the file the run was called from, for example when the calls come from array data and the classified variants are sequenced. The two need not share a single site. Requires --tfam-counting and --features.
+These genotypes take no part in calling and are not filtered, since monomorphic and rare sites are what is being counted.
 	Default: none
 
 --vcf-counting <string>: A VCF to count classified genotypes from, instead of the file the run was called from. Sample names come from its #CHROM line. Requires --features.
-Unlike the VCF the run is CALLED from, indels and multiallelic sites are read here: the classified allele is matched against REF and every ALT, so a classification that is not a biallelic SNV still counts.
+Unlike the VCF a run is called from, indels and multiallelic sites are read here. The classified allele is matched against REF and every ALT, so a classification that is not a biallelic SNV still counts.
 	Default: none
 
 ----- Output -----
 
---force <bool>: Overwrite existing output files. Without this, garlic refuses to clobber an existing <out>.roh.bed.
+--force <bool>: Overwrite existing output files. Without it garlic will not overwrite an existing <out>.roh.bed.
 	Default: false
 
---freq-only <bool>: If set, calculates a freq file from provided data and then exits. Uses minimal RAM.
+--freq-only <bool>: Write the frequency file from the data and exit. Uses little memory.
 	Default: false
 
---froh <bool>: Also write <out>.froh.tsv: per-individual autozygous total and fraction, broken down by ROH size class. The denominator is stated in the file header.
+--froh <bool>: Also write <out>.froh.tsv, with each individual's autozygous total and fraction by ROH size class. The denominator is stated in the header.
 	Default: false
 
---froh-denominator <string>: What <out>.froh.tsv divides the autozygous total by. analyzed (default): the span the markers cover -- from the first to the last locus of each analysed chromosome, less the centromere and any region excluded with --par. This is what a marker set can support on its own, and it moves with the markers, so FROH from two different arrays are not directly comparable. assembly: the FULL length of each analysed chromosome, nothing subtracted. This is what published FROH denominators are, and it is reproducible from an external table rather than from the data. Lengths come from --chr-lengths, from --build, or from a VCF's ##contig header, in that order; a chromosome with no length available stops the run rather than falling back. Not available with --cm: a base pair length is not a genetic length.
+--froh-denominator <string>: What <out>.froh.tsv divides the autozygous total by. analyzed (default): the span the markers cover, from the first to the last locus of each analysed chromosome, less the centromere and any region excluded with --par. It moves with the marker set, so FROH from two different arrays are not directly comparable. assembly: the full length of each analysed chromosome, as published FROH denominators use. Lengths come from --chr-lengths, --build or a VCF's ##contig header, in that order, and a chromosome with no length stops the run. Not available with --cm.
 	Default: analyzed
 
 --out <string>: The base name for all output files.
 	Default: outfile
 
---outdir <string>: Write all output files into this directory, which is created if it does not exist. Equivalent to prefixing --out with the path.
+--outdir <string>: Write all output files to this directory, which is created if needed. The same as prefixing --out with the path.
 
---raw-lod <bool>: If set, LOD scores will be output to gzip compressed files.
+--raw-lod <bool>: Also write the LOD scores to gzip-compressed files.
 	Default: false
 
 ----- Run control -----
 
---dump-docs <string>: Write the command line reference to stdout in a documentation format and exit: txt for the README block, tex for a LaTeX description list. Used by 'make docs' so the documentation cannot drift from the program.
+--dump-docs <string>: Write the command line reference to stdout and exit: txt for the README block, tex for the manual's appendix. Used by 'make docs'.
 	Default: __none
 
 --help <bool>: Prints this help dialog.
 	Default: false
 
---load-params <string>: Read flag values from a <out>.params.json written by a previous run. Flags given on the command line take precedence over the file, so a run can be repeated with one parameter changed.
+--load-params <string>: Read flag values from a <out>.params.json written by an earlier run. Flags on the command line take precedence, so a run can be repeated with one parameter changed.
 	Default: __none
 
 --quiet <bool>: Suppress the progress bar and informational messages. Errors and warnings still go to stderr and to <out>.error.
 	Default: false
 
---resample <int>: Number of resamples for estimating allele frequencies. When set to 0 (default), garlic will use allele frequencies as calculated from the data.
+--resample <int>: The number of resamples for estimating allele frequencies. If 0, garlic uses the frequencies calculated from the data.
 	Default: 0
 
---seed <int>: Random seed, for reproducible runs. Affects --kde-subsample, --ld-subsample and --resample. If 0 (default), a nondeterministic seed is drawn and written to the log file so the run can be repeated exactly.
+--seed <int>: The random seed. Affects --kde-subsample, --ld-subsample and --resample. If 0 (the default), a seed is drawn and written to the log so that the run can be repeated exactly.
 	Default: 0
 
---threads <int>: The number of threads to use. Applies to LOD score calculation, the LD calculations under --weighted, the LOD score KDE, and ROH assembly.
+--threads <int>: The number of threads for the LOD scores, the LD calculations under --weighted, the LOD score KDE and ROH assembly.
 	Default: 1
 
---verbose <bool>: Show the progress bar even when stderr is not a terminal. By default it is drawn only on a terminal, because it works by emitting backspaces.
+--verbose <bool>: Show the progress bar even when stderr is not a terminal. By default it is shown only on a terminal, because it is drawn with backspaces.
 	Default: false
 
 --version <bool>: Print the version and exit.

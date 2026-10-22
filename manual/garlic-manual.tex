@@ -44,7 +44,7 @@
 
 \section{Introduction}
 
-Extended tracts of homozygosity in individual genomes manifest as a result of haplotypes inherited identical by descent (IBD) from both biological parents. These runs of homozygosity (ROH) are important genomic features, with their length distributions and genomic locations informative about population history and useful for the mapping of recessive loci contributing to Mendelian and complex diseases. However, precisely because the length distribution of ROH is affected by population history, a simple one-size-fits-all genotype-counting approach to inferring ROH in multiple populations is ill-advised. Here, we present a model-based method and accompanying software package for inferring ROH in microarray-derived SNP genotype that incorporates population-specific parameters and genotyping error rates as described in \cite{PembertonEtAl12:AJHG}. Version 1.1.0 added a method for reweighting LOD scores by gaps between SNPs, the option to report ROH lengths in cM, and the ability to provide per-genotype error rates.  Version 2.0.0 reads VCF input directly (Section~\ref{sec:vcf}), analyses each population in a file separately rather than pooling them (Section~\ref{sec:multipop}), calls runs on the shared sex chromosome instead of treating it as an autosome (Section~\ref{sec:sexchr}), and counts classified genotypes inside and outside the calls (Section~\ref{sec:features}).  It is not backward compatible with files written by v1.1.6a; the change log in Section~\ref{sec:changelog} says how.
+Extended tracts of homozygosity in individual genomes manifest as a result of haplotypes inherited identical by descent (IBD) from both biological parents. These runs of homozygosity (ROH) are important genomic features, with their length distributions and genomic locations informative about population history and useful for the mapping of recessive loci contributing to Mendelian and complex diseases. However, precisely because the length distribution of ROH is affected by population history, a simple one-size-fits-all genotype-counting approach to inferring ROH in multiple populations is ill-advised. Here, we present a model-based method and accompanying software package for inferring ROH in microarray-derived SNP genotype that incorporates population-specific parameters and genotyping error rates as described in \cite{PembertonEtAl12:AJHG}. Version 1.1.0 added a method for reweighting LOD scores by gaps between SNPs, the option to report ROH lengths in cM, and the ability to provide per-genotype error rates.  Version 2.0.0 reads VCF input directly (Section~\ref{sec:vcf}), analyses each population in a file separately rather than pooling them (Section~\ref{sec:multipop}), calls runs on the shared sex chromosome instead of treating it as an autosome (Section~\ref{sec:sexchr}), and counts classified genotypes inside and outside the calls (Section~\ref{sec:features}).  It also identifies the two modes of the LOD score density by their sign when it chooses the automatic cutoff, can choose that cutoff within strata of individuals of similar depth (Section~\ref{sec:stratify}), drops masked regions (Section~\ref{sec:refbias}), and reports the evidence available for each individual (Section~\ref{sec:ind}).  It is not backward compatible with files written by v1.1.6a, and the change log in Section~\ref{sec:changelog} describes the differences.
 
 If you use GARLIC please cite the following articles,
 
@@ -54,9 +54,9 @@ TJ Pemberton, et al. (2012) Genomic patterns of homozygosity in worldwide human 
 
 \section{Obtaining {\tt GARLIC}}
 
-{\bf NOTE TO WINDOWS USERS: {\tt ann\_figtree\_version.dll} and {\tt figtree.dll} are no longer needed.}  Earlier versions required both alongside {\tt garlic.exe}; {\tt GARLIC} no longer links FIGTree or ANN, so a copy of {\tt garlic.exe} built from this version runs without them.
+Windows users no longer need {\tt ann\_figtree\_version.dll} or {\tt figtree.dll} alongside {\tt garlic.exe}, because {\tt GARLIC} no longer links FIGTree or ANN.
 
-{\tt GARLIC} pre-built binaries and source code are available at {\tt https://github.com/szpiech/garlic}.  To compile from source, change directories to the {\tt src/} directory and type {\tt make}; the Makefile detects the platform from {\tt uname}, so no editing is needed.  {\tt GARLIC}'s only external dependency is the zlib library ({\tt http://www.zlib.net/}), provided by the system on Linux and macOS, where the Makefile simply links {\tt -lz}.  Threading uses {\tt std::thread} from the C++11 standard library rather than calling pthreads directly; libstdc++ implements it over pthreads on Linux, so {\tt -pthread} is still passed there, but no pthreads library is named or vendored on any platform.  GNU GSL and FIGTree were required by earlier versions and are no longer used: FIGTree was replaced by a direct Gaussian sum, and GSL by {\tt src/garlic-math.cpp}, which reproduces the routines {\tt GARLIC} used bit for bit.  On Windows, zlib likewise comes from the MinGW toolchain ({\tt mingw-w64-x86\_64-zlib} under MSYS2's MINGW64); the 32-bit zlib that earlier versions vendored under {\tt lib/win32} has been removed, since a 64-bit MinGW cannot link it.  The windows version of {\tt GARLIC} is built in an MSYS2/MinGW environment ({\tt https://www.msys2.org/}); since the move to {\tt std::thread} it requires a MinGW GCC configured with the POSIX threading model, which is what provides {\tt std::thread} on that platform.
+{\tt GARLIC} pre-built binaries and source code are available at {\tt https://github.com/szpiech/garlic}.  To compile from source, change to the {\tt src/} directory and type {\tt make}, which detects the platform from {\tt uname}, so no editing is needed.  The only external dependency is the zlib library ({\tt http://www.zlib.net/}), which the system provides on Linux and macOS.  Threading uses {\tt std::thread} from the C++11 standard library, for which the Makefile passes {\tt -pthread} on Linux, and GNU GSL and FIGTree are no longer used.  On Windows, {\tt GARLIC} is built in an MSYS2/MinGW environment ({\tt https://www.msys2.org/}) with zlib from the MinGW toolchain ({\tt mingw-w64-x86\_64-zlib} under MSYS2's MINGW64), and the MinGW GCC must be configured with the POSIX threading model, which is what provides {\tt std::thread} on that platform.
 
 \section{Basic Usage}
 
@@ -67,20 +67,20 @@ output.  The bundled example is human SNP-array data on hg18 coordinates:
 ~\\\\
 \noindent A priori we do not know how large to make the window, so this uses
 the built-in search ({\tt --auto-winsize}).  The search begins at the
-{\tt --winsize} value and increases, so a starting size is required --- giving
-{\tt --auto-winsize} alone is an error rather than a default.  All output is
-named starting with {\tt example} ({\tt --out example}), and on this data the
-search settles on 50 SNPs, producing:
+{\tt --winsize} value and increases, so a starting size is required, and
+{\tt --auto-winsize} alone is an error.  All output is named starting with
+{\tt example} ({\tt --out example}).  On this data the search settles on 50
+SNPs, and the run writes:
 
 \begin{itemize}
-\item {\tt example.log} --- the run's parameters and progress;
-\item {\tt example.params.json} --- every flag's effective value together with
+\item {\tt example.log}, the run's parameters and progress;
+\item {\tt example.params.json}, every flag's effective value together with
       the window size, LOD cutoff, size-class boundaries and random seed the
-      run resolved, replayable with {\tt --load-params};
-\item {\tt example.freq.gz} --- the allele frequencies used;
-\item {\tt example.50SNPs.kde} --- the LOD score density at the selected window
+      run resolved, which can be replayed with {\tt --load-params};
+\item {\tt example.freq.gz}, the allele frequencies used;
+\item {\tt example.50SNPs.kde}, the LOD score density at the selected window
       size, which is part of the file name;
-\item {\tt example.roh.bed} --- the calls.
+\item {\tt example.roh.bed}, the calls.
 \end{itemize}
 
 \noindent An {\tt example.error} file appears beside these only if something is
@@ -96,14 +96,14 @@ but it does need {\tt --pop} if the samples are not all one population:
 \noindent Both readers accept gzipped input directly, and a VCF may also be
 BGZF.  See Section~\ref{sec:vcf} for what {\tt garlic} reads from a VCF and
 Section~\ref{sec:multipop} for what happens when a file holds more than one
-population --- each is analysed separately, and the output names carry the
-population label.
+population.  In that case each population is analysed separately, and the
+output names carry the population label.
 
-Two things stop a run that used to proceed, both because the old behaviour was
-silently wrong.  A chromosome that looks sex-linked is not analysed until
-{\tt --sex-system} says what to do with it (Section~\ref{sec:sexchr}), and an
-assembly must be named: {\tt --build}, a {\tt --centromere} file, or
-{\tt --no-centromere} if the assembly has no gap to avoid.
+Two settings that earlier versions did not require are now needed.  A
+chromosome that looks sex-linked is not analysed until {\tt --sex-system} says
+what to do with it (Section~\ref{sec:sexchr}).  An assembly must also be
+named, with {\tt --build}, a {\tt --centromere} file, or {\tt --no-centromere}
+if the assembly has no gap to avoid.
 
 \noindent If the automatic window size selection algorithm fails, you can
 output the KDEs of the LOD score distribution for multiple window sizes
@@ -117,6 +117,8 @@ choose a window size of 60 SNPs, then you would run
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --out example}
 ~\\\\
+\noindent The automatic cutoff is the minimum of the window LOD score density, pooled over the cohort, between its two modes.  The non-autozygous mode is the tallest peak below zero and the autozygous mode is the tallest peak above zero ({\tt manual/lod-mode-rule.tex} gives the derivation).  A cohort without long runs still has a small mode above zero from short runs of background autozygosity, and gets a cutoff that calls only short runs (a simulated cohort whose chromosomes were built from independent 1-Mb blocks at an effective size of $200\,000$ was called at $1.2\%$ of the genome, in runs of at most 261\,kb).  A density with no peak above zero therefore means that the windows carry too little evidence, not that the cohort carries no autozygosity.  Examples are genotypes called from one or two reads under a population prior and a cohort of mixed depth pooled without {\tt --stratify-cutoff}.  Such a run completes with no calls and a warning, and {\tt .params.json} records the verdict with {\tt lod\_cutoff} null.  A density with no peak below zero stops and asks for {\tt --lod-cutoff}.  A cohort of a handful of individuals is still a case for a cutoff carried over from a comparable, larger cohort rather than for the automatic rule.
+
 \noindent If you already know what LOD score cutoff to use (say you are
 analyzing more individuals from a previously studied population), you can use
 the {\tt --lod-cutoff} argument, i.e. if your LOD score cutoff is known to be
@@ -133,17 +135,17 @@ short/med and med/long, respectively, then you would run
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --out example --lod-cutoff 2.5 --size-bounds 500000 1000000}
 ~\\\\
 \noindent Supplying both is also how to reproduce an analysis made with an
-earlier version, whose automatic cutoff selection differed; the values to pass
-are in that run's log.
+earlier version, whose automatic cutoff selection differed.  The values to
+pass are in that run's log.
 ~\\\\
 \noindent To run the wLOD, you must provide a map file and give the
 {\tt --weighted} flag:
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --map example.map.gz --weighted --build hg18 --winsize 60 --out example --error 0.001}
 ~\\\\
-\noindent To count classified genotypes --- deleterious against tolerated, say
---- inside and outside the calls, add {\tt --features} with a file classifying
-the sites (Section~\ref{sec:features}):
+\noindent To count classified genotypes (deleterious against tolerated, for
+example) inside and outside the calls, add {\tt --features} with a file
+classifying the sites (Section~\ref{sec:features}):
 ~\\\\
 {\tt garlic --tped example.tped.gz --tfam example.tfam --build hg18 --error 0.001 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --features classes.txt --out example}
 ~\\\\
@@ -151,6 +153,7 @@ the sites (Section~\ref{sec:features}):
 listed with their types and defaults in Appendix~\ref{app:flags}.
 
 \section{Statistics implemented}
+\label{sec:lod}
 
 We previously advocated the application of a logarithm of the odds (LOD) score measure of autozygosity applied in a sliding-window framework to infer ROH in high-density SNP genotype data \cite[]{PembertonEtAl12:AJHG}. Fundamentally, for SNP $k$ in individual $i$, this method calculates the log-likelihood ratio of observed genotype $G_{i,k}$ under the hypotheses of autozygosity and non-autozygosity, incorporating an assumed genotype error rate $\epsilon$ and population-specific allele frequencies. The LOD score of window $w$ in individual $i$ is then calculated as the sum of the log-likelihood ratios of the $K$ SNPs in the window: 
 \begin{equation}
@@ -197,30 +200,57 @@ Missing & $1$ & $1$\\
 
 \section{Program Options}
 
-Using the command line flag {\tt --help}, will print a help dialog with a summary of each command line option.  The full reference is reproduced in Appendix~\ref{app:flags}, which is generated from those same help strings by {\tt make docs} so that it cannot drift from the program.
+Using the command line flag {\tt --help}, will print a help dialog with a summary of each command line option.  The full reference is reproduced in Appendix~\ref{app:flags}, which {\tt make docs} generates from the same help strings.
 
 \subsection{Input Files}
 
-Genotypes are read from either a VCF ({\tt --vcf}) or a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}).  The two are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Consecutive loci are assumed to be in order with respect to their physical position, and all records for a chromosome must be contiguous --- what {\tt bcftools sort} produces.  If the file contains more than one population, each is analysed separately; see Section~\ref{sec:multipop}.  {\tt --pop} overrides the labels, which for a TPED/TFAM pair are otherwise taken from column 1 of the TFAM.
+Genotypes are read from a VCF ({\tt --vcf}), a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}).  The two are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Loci are assumed to be in order of physical position, and all records for a chromosome must be contiguous, as {\tt bcftools sort} produces.  If the file contains more than one population, each is analysed separately (Section~\ref{sec:multipop}).  {\tt --pop} overrides the labels, which for a TPED/TFAM pair are otherwise taken from column 1 of the TFAM.
 
 \subsubsection{VCF input}
 \label{sec:vcf}
 
-Biallelic SNVs carrying a {\tt GT} field are used.  Multiallelic sites, indels, symbolic ALT alleles ({\tt *}, {\tt <NON\_REF>}) and records with no {\tt GT} in {\tt FORMAT} are skipped, and the counts are written to the log rather than passed over silently.  The {\tt FILTER} column is reported either way and only acted on under {\tt --vcf-pass-only}, since it records the variant caller's thresholds rather than {\tt garlic}'s.
+Biallelic SNVs carrying a {\tt GT} field are used.  Multiallelic sites, indels, symbolic ALT alleles ({\tt *}, {\tt <NON\_REF>}) and records with no {\tt GT} in {\tt FORMAT} are skipped, and the number of each is written to the log.  The {\tt FILTER} column is reported but acted on only under {\tt --vcf-pass-only}, since it records the variant caller's thresholds rather than {\tt garlic}'s.
 
-A VCF states things a TPED cannot, and {\tt garlic} checks them: ploidy is per call, so anything other than a diploid genotype is an error naming the site and the sample; phase is per call, so {\tt --phased} requires {\tt |} everywhere rather than silently mis-reading a {\tt /}; and samples are named in the {\tt \#CHROM} line, so {\tt --tfam} is not accepted alongside {\tt --vcf} --- it could only disagree.  Use {\tt --pop} for population labels; omitting it labels every sample {\tt unknown} and warns, because the allele frequencies really are pooled over all of them.  With {\tt --pop}, each population is analysed separately; see Section~\ref{sec:multipop}.
+A VCF states things that a TPED cannot, and {\tt garlic} checks them.  Ploidy is given per call, so anything other than a diploid genotype is an error that names the site and the sample, except on a declared sex chromosome (Section~\ref{sec:sexchr}).  Phase is also given per call, so {\tt --phased} requires {\tt |} in every call.  Samples are named in the {\tt \#CHROM} line, so {\tt --tfam} is not accepted with {\tt --vcf}.  Use {\tt --pop} for population labels.  Without it every sample is labelled {\tt unknown} and {\tt garlic} warns, because the allele frequencies are then pooled over all samples.  With {\tt --pop}, each population is analysed separately (Section~\ref{sec:multipop}).
 
-The counted allele is ALT.  For the same genotypes a TPED counts whichever allele it saw first, so the frequency column may come out as $1-f$ relative to a TPED run.  This changes no ROH call, and a {\tt .freq.gz} file remains interchangeable between the two readers: {\tt readFreqData} compares the {\tt ALLELE} column against the reader's own coding and flips the frequency when they differ.
+The counted allele is ALT.  For the same genotypes a TPED counts whichever allele it saw first, so the frequency column may come out as $1-f$ relative to a TPED run.  This changes no ROH call, and a {\tt .freq.gz} file can be used with either reader, because {\tt garlic} compares the file's {\tt ALLELE} column against its own coding and flips the frequency when they differ.
 
 Genetic map positions are not part of a VCF, so {\tt --weighted} and {\tt --cm} still require {\tt --map}.
 
-Per-genotype genotype qualities are read from the {\tt FORMAT} column with {\tt --gl-type}.  This is the only correct way to use a VCF's {\tt PL} or {\tt GL}: a VCF normalises both so the called genotype's value is exactly $0$, so that single value is $0$ for every call, confident or not, and the information is in how much worse the alternatives are.  {\tt garlic} therefore reads the whole array and computes
+Per-genotype qualities are read from the {\tt FORMAT} column with {\tt --gl-type}.  This is the only correct way to use a VCF's {\tt PL} or {\tt GL}.  A VCF normalises both so that the called genotype's value is exactly $0$ for every call, confident or not, and the information is in how much worse the alternatives are.  {\tt garlic} therefore reads the whole array and computes
 \[ P(g) \propto 10^{-\mathrm{PL}_g/10}, \qquad \mathrm{error} = 1 - \frac{P(\mathrm{called})}{\sum_g P(g)}, \]
-with {\tt GL} entering the same expression as $\mathrm{PL} = -10\,\mathrm{GL}$.  This reproduces the {\tt GQ} that encodes the same confidence: a {\tt PL} of $(0,30,60)$ gives $0.001$, exactly {\tt GQ} $30$.  If the requested field is absent the run stops and the message names whichever of {\tt GQ}, {\tt PL} and {\tt GL} the record does carry.
+with {\tt GL} entering the same expression as $\mathrm{PL} = -10\,\mathrm{GL}$.  This reproduces the {\tt GQ} that encodes the same confidence (a {\tt PL} of $(0,30,60)$ gives $0.001$, exactly {\tt GQ} $30$).  If the requested field is absent the run stops, and the message names whichever of {\tt GQ}, {\tt PL} and {\tt GL} the record does carry.
 
-\paragraph{Low-coverage sequence data.}  None of the per-genotype quality forms above is suitable for low-coverage sequencing (below roughly $4\times$).  Each reduces to a single, symmetric error rate per genotype --- the probability that the call is wrong, with the wrong call drawn as if at random --- and the dominant error at low depth is not symmetric.  Allelic dropout, where only one of a heterozygote's two alleles is sampled by the reads, turns heterozygotes into homozygotes, and a run of such calls is exactly what autozygosity looks like to the LOD score.  In simulation at $0.5$--$1\times$, a per-genotype error taken from a caller's {\tt GQ} called essentially the whole genome autozygous.  Hard calls with a run-wide {\tt --error} degrade more gracefully, but by about $2\times$ the pooled LOD score density no longer has two modes and the automatic cutoff cannot be located.  The intended route for such data is a genotype-likelihood input that keeps all three genotype probabilities per site, so that an uncertain site contributes little evidence rather than confident wrong evidence; see the change log for its status.
+\paragraph{Low-coverage sequence data.}  None of the per-genotype quality forms above is suitable for low-coverage sequencing (below roughly $4\times$).  Each of them gives one error rate per genotype and is evaluated at the called genotype, so an uncertain homozygous call still counts as evidence for autozygosity, only with a smaller weight.  At low depth the dominant error is allelic dropout, in which the reads sample only one of a heterozygote's two alleles.  Dropout turns heterozygotes into homozygotes, and a run of such calls is what autozygosity looks like to the LOD score.  In a simulation of independent sites with reads drawn at $0.5$--$1\times$ (60-SNP windows, 10\% of the genome autozygous), a per-genotype error taken from {\tt GQ} called essentially the whole genome autozygous.  In the same simulation, hard calls made under a Hardy-Weinberg prior with a run-wide {\tt --error} degraded more gracefully but lost the automatic cutoff at $2\times$.
 
-The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED plus a {\tt tgls} file, and a {\tt tgls} file holds one value per genotype, which cannot represent a normalised {\tt PL} or {\tt GL}; {\tt garlic} now rejects such a file rather than computing with it.
+The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED and a {\tt tgls} file, and a {\tt tgls} file holds one value per genotype, which cannot represent a normalised {\tt PL} or {\tt GL}.  {\tt garlic} rejects such a file.
+\subsubsection{Cohorts of mixed depth: {\tt --stratify-cutoff}}
+\label{sec:stratify}
+
+The automatic LOD score cutoff is the valley between the two modes of the window LOD density pooled over every individual.  This is appropriate when every individual carries the same evidence per window.  However, an individual at low depth, or with many missing genotypes, has both of its modes compressed toward zero, so a cutoff placed for the cohort calls most of its genome autozygous.
+
+The location of an individual's non-autozygous LOD mode is a precise measure of the evidence its windows carry.  On the bundled cohort it varies by $1.3$ LOD between individuals.  {\tt --stratify-cutoff} sorts the individuals by that mode, joins neighbours whose modes differ by less than a quarter of the smaller spread into a stratum, and applies the pooled rule within each stratum.  A cohort of uniform evidence is one stratum and gets exactly the pooled cutoff (the test suite checks that the calls are byte-identical).  A mixed cohort splits by depth, and each stratum's valley rests on tens of thousands of windows rather than on one individual's.
+
+The per-individual mode, spread, stratum and applied cutoff are written to {\tt <out>.ind.tsv}.  The {\tt .kde} file is the largest stratum's density, and {\tt .params.json} records {\tt lod\_cutoff} as the number of strata and flags it as such.  A stratum of fewer than three individuals does not get a valley of its own and takes the largest stratum's cutoff, with a warning.  One or two individuals' windows are too few for the rule, and such a stratum is as likely to be an individual whose lowest substantial mode is its autozygous one (more than half autozygous on the analysed chromosomes, as is one of the 45 individuals on chromosome 21 of the bundled data).  A stratum whose density has no valley borrows the median standardised valley of the other strata, through its own mode and spread.  The flag needs the automatic cutoff and does not subsample.
+
+Without the flag, {\tt garlic} still locates the modes and warns when the cohort would form more than one stratum.  The warning names the strata, so a mixed cohort analysed with one cutoff is a visible choice.
+
+\subsubsection{Reference and mapping bias: {\tt --exclude-regions}}
+\label{sec:refbias}
+
+Reads carrying the non-reference allele map less often and with lower quality, so at a true heterozygote the fraction of ALT reads is below one half.  In this model that is a {\em directional} error (a heterozygote observed as a reference homozygote), and a run of such calls is what autozygosity looks like.  The bias has two parts, and they are handled differently.
+
+\paragraph{Regional bias} (repeats, segmental duplications, structurally divergent segments) mis-maps reads wholesale, and no per-site model recovers from it.  {\tt --exclude-regions <bed>} drops every site inside the regions of a BED file before anything is computed.  The file may be a mappability mask, a repeat annotation, segmental duplications, or any set of regions in which calls are not to be trusted.  It is standard BED (0-based half-open, further columns ignored, {\tt track}, {\tt browser} and {\tt \#} lines skipped), gzipped or not.  The mask applies on every chromosome, autosomes included.  Chromosomes in the file that are not in the data are ignored, since a genome-wide mask names them all.  A file that covers no site at all draws a warning, since that usually means the wrong assembly or chromosome naming.  The dropped sites are removed from the frequency file and from every window.  The $F_{ROH}$ denominator is not reduced by them, unlike with {\tt --par}, because a run of homozygosity can span a short masked region.  {\tt --freq-only} does not apply the mask and refuses the combination.
+
+\paragraph{Read-level bias}, an ALT read fraction below one half at heterozygotes everywhere, is not corrected by {\tt garlic}.  It is best reduced before the data reach {\tt garlic}.
+\begin{itemize}
+\item Map to a reference that carries the alternative alleles (an alt-aware or pangenome mapper, or a population-matched reference).
+\item Use ANGSD's {\tt -baq 1 -C 50} to down-weight mis-aligned bases, and its {\tt -minMapQ} and {\tt -minQ} filters.
+\item Filter short reads, whose mapping is the most reference-biased.
+\item For ancient DNA, rescale damaged bases ({\tt mapDamage}) or drop transitions ({\tt -rmTrans 1}), which also removes the deamination signal that mimics heterozygosity.
+\item Take allele frequencies from a source that is not itself biased (ANGSD's {\tt -doMaf}, or {\tt --freq-file} from the high-coverage members of the cohort).
+\end{itemize}
+
 \subsubsection{File formats}
 \noindent tped/tfam (required):\\
 \begin{verbatim}
@@ -232,26 +262,33 @@ The companion script {\tt vcf2tped.pl} is deprecated.  It writes a TPED plus a {
 	http://zzz.bwh.harvard.edu/plink/data.shtml#map 
 	(negative positions will cause errors)
 \end{verbatim}
-\noindent tgls (optional; legacy --- see the note on {\tt vcf2tped.pl} above):
+\noindent tgls (optional and legacy, see the note on {\tt vcf2tped.pl} above):
 \begin{verbatim}
 	<chr> <snpid> <unused> <physical pos> <GL ind1> <GL ind2> ... <GL indN>
 \end{verbatim}
-\noindent One value per genotype.  Under {\tt --gl-type PL} or {\tt GL} these are read as the probability that the genotype is {\em correct}, which is {\em not} what a VCF's {\tt PL} and {\tt GL} fields hold; a file of VCF-derived values is rejected with an error.  {\tt --gl-type GQ} is the one form whose VCF values can be used here directly.
+\noindent One value per genotype.  Under {\tt --gl-type PL} or {\tt GL} these are read as the probability that the genotype is {\em correct}, which is not what a VCF's {\tt PL} and {\tt GL} fields hold, and a file of VCF-derived values is rejected with an error.  {\tt --gl-type GQ} is the one form whose VCF values can be used here directly.
 
-\noindent pop (optional; with {\tt --vcf}, the only way to set population labels):
+\noindent exclude-regions (optional; see \S\ref{sec:refbias}):
+\begin{verbatim}
+	<chrom> <chromStart> <chromEnd> [ignored ...]
+\end{verbatim}
+\noindent Standard BED, 0-based half-open.  {\tt track}, {\tt browser} and {\tt \#} lines are skipped.
+
+\noindent pop (optional, and with {\tt --vcf} the only way to set population labels):
 \begin{verbatim}
 	<sample id> <population> [sex]
 \end{verbatim}
-\noindent Matched by sample ID, never by position.  Note the column order is the opposite of a TFAM's first two columns; a TFAM-ordered file is diagnosed as such.  The optional third column uses PLINK sex coding.  On a declared sex chromosome it is not merely cosmetic: a recorded sex is checked against the heterozygosity {\tt garlic} measures there, and the run stops if more than half the individuals contradict it (Section~\ref{sec:sexchr}).
+\noindent Matched by sample ID, never by position.  Note that the column order is the opposite of a TFAM's first two columns, and a TFAM-ordered file is diagnosed as such.  The optional third column uses PLINK sex coding.  On a declared sex chromosome a recorded sex is checked against the heterozygosity {\tt garlic} measures there, and the run stops if more than half the individuals contradict it (Section~\ref{sec:sexchr}).
+
 \noindent freq (optional; written by every run, or on its own with {\tt --freq-only}):
 \begin{verbatim}
 	CHR SNP POS ALLELE FREQ
 	<chr> <locus ID> <pos> <allele> <freq>
 \end{verbatim}
 \noindent With more than one population there is one frequency column per
-population headed by its label, in place of the single {\tt FREQ} column; a
-file carrying just one such column is applied to every population whatever
-that column is called.  See Section~\ref{sec:multipop}.
+population, headed by its label, in place of the single {\tt FREQ} column.  A
+file carrying just one such column is applied to every population, whatever
+that column is called (Section~\ref{sec:multipop}).
 
 \noindent centromere file (one of {\tt --build}, this file, or {\tt --no-centromere} is required):
 \begin{verbatim}
@@ -296,17 +333,17 @@ CHR	SNP	POS	ALLELE	FREQ
 
 \subsubsection{{\tt --map}}
 
-{\tt --map <string>} Provide a scaffold genetic map, sites that aren't present within this file are interpolated.  Sites outside the bounds are filtered. This is required for wLOD calculations and any runs for which you wish to report ROH in units of cM. 
-Formatted: <chr> <snpid> <genetic pos> <physical pos>. http://zzz.bwh.harvard.edu/plink/data.shtml\#map (negative positions will cause errors)
+{\tt --map <string>} gives a scaffold genetic map.  Sites that are not in the file are interpolated, and sites outside its bounds are filtered.  The map is required for wLOD calculations and for reporting ROH in units of cM.  Its format is given under File formats above, and negative positions cause errors.
 
 \subsection{Output Files}
 
-{\tt garlic} produces several files as output.  The {\tt .log} file will record the runtime parameters and {\tt .error} will
-record any errors that occur; {\tt .error} is created only if something is
-actually written to it.  A {\tt .params.json} file records the effective value
-of every flag together with the values resolved during the run (selected window
-size, LOD cutoff, size class boundaries and random seed), and can be replayed
-with {\tt --load-params}.  
+{\tt garlic} produces several files as output.  The {\tt .log} file records
+the runtime parameters, and {\tt .error} records any errors that occur.
+{\tt .error} is created only if something is written to it.  A
+{\tt .params.json} file records the effective value of every flag together
+with the values resolved during the run (selected window size, LOD cutoff, size
+class boundaries and random seed), and it can be replayed with
+{\tt --load-params}.
 
 A gzipped {\tt .freq} file will be output giving the allele frequencies for each locus in the dataset.  Formatted as
 \begin{lstlisting}
@@ -320,7 +357,7 @@ CHR	SNP	POS	ALLELE	POPA	POPB
 <chr>	<locus ID>	<pos>	<allele>	<freq>	<freq>
 \end{lstlisting}
 ~\\
-This is the format {\tt --freq-file} reads, so a run's own frequency file can be given back to {\tt garlic} to reproduce that run.  A file with a single frequency column is applied to every population, whatever the column is called, so a frequency file from an earlier version keeps working.  {\tt --freq-only} writes the same file without performing the analysis.
+This is the format {\tt --freq-file} reads, so a run's own frequency file can be given back to {\tt garlic} to reproduce that run.  A file with a single frequency column is applied to every population, whatever the column is called, so a frequency file from an earlier version can still be used.  {\tt --freq-only} writes the same file without performing the analysis.
 ~\\
 With {\tt --froh}, a {\tt .froh.tsv} table gives each individual's autozygous
 total and the fraction of the genome it covers, one row per individual with the
@@ -328,49 +365,48 @@ size classes across the columns.  The denominator is stated in the header, as
 are the size-class boundaries actually used, so the fractions can be recomputed
 or compared across runs.
 
-There are two things that fraction can be taken of, and {\tt
---froh-denominator} chooses between them.  {\tt analyzed}, the default and what
-{\tt garlic} has always done, is the span the markers cover: from the first to
-the last locus of each analysed chromosome, less the centromere and any region
-excluded with {\tt --par}.  It is what a marker set can support on its own, and
-it moves with the marker set, so F$_{\mathrm{ROH}}$ from two different arrays
-are not directly comparable.  {\tt assembly} is the full length of each
-analysed chromosome with nothing subtracted --- not the centromere, not the
-pseudoautosomal regions, not the part beyond the outermost marker.  That is
-what published F$_{\mathrm{ROH}}$ denominators are: the hg19 autosomes sum to
+{\tt --froh-denominator} chooses what that fraction is taken of.
+{\tt analyzed}, the default and what {\tt garlic} has always done, is the span
+the markers cover, from the first to the last locus of each analysed
+chromosome, less the centromere and any region excluded with {\tt --par}.  This
+is what a marker set can support on its own, but it moves with the marker set,
+so F$_{\mathrm{ROH}}$ values from two different arrays are not directly
+comparable.  {\tt assembly} is the full length of each analysed chromosome,
+with nothing subtracted (not the centromere, the pseudoautosomal regions or the
+part beyond the outermost marker).  Published F$_{\mathrm{ROH}}$ denominators
+are of this kind.  For example, the hg19 autosomes sum to
 2,881,033,286\,bp and chrX is 155,270,560\,bp, which are the 2881.03\,Mb and
-155.27\,Mb of \citet{CotterEtAl24}.  On the bundled example data the two differ
-by about 5\%.
+155.27\,Mb of \citet{CotterEtAl24}.  On the bundled example data the two
+denominators differ by about 5\%.
 
 The sum is over the chromosomes that were {\em analysed}, and the assembly
-supplies each one's length --- it is not a sum over the assembly.  A run
-restricted with {\tt --chr} is divided by those chromosomes alone, and a
-contig that carries no data is never looked up, which is why a VCF full of
-decoys, unplaced scaffolds and alternate haplotypes needs no filtering here.
-A chromosome that was analysed and has no length available stops the run rather
-than falling back to its marker span, since mixing the two conventions across
-chromosomes gives a denominator that is neither.
+supplies each one's length.  A run restricted with {\tt --chr} is divided by
+those chromosomes alone, and a contig that carries no data is never looked up,
+so a VCF full of decoys, unplaced scaffolds and alternate haplotypes needs no
+filtering here.  A chromosome that was analysed and has no length available
+stops the run rather than falling back to its marker span, since mixing the
+two conventions across chromosomes gives a denominator that is neither.
 
 Lengths come from {\tt --chr-lengths}, from {\tt --build}, or from a VCF's
 {\tt \#\#contig} header, in that order of precedence.  {\tt --chr-lengths} takes
 two whitespace-separated columns, chromosome and length, and also accepts a
-{\tt samtools faidx} {\tt .fai} unchanged --- its first two columns are
+{\tt samtools faidx} {\tt .fai} unchanged, since its first two columns are
 already name and length.  It is the way to use this mode on a non-human
 assembly and on TPED input, where nothing in the data states a length.  The
 built-in tables are the GRC assembly reports' own numbers, recorded with their
 source in {\tt centromeres/chr\_lengths.txt}.  {\tt assembly} is refused with
-{\tt --cm}: a chromosome's length in base pairs is not its length in
+{\tt --cm}, because a chromosome's length in base pairs is not its length in
 centimorgans.
 
 Whenever lengths are available, {\tt garlic} checks that no marker lies beyond
-the end of the chromosome it is on.  This is how a wrong {\tt --build}
-announces itself, which nothing else in the program can detect --- and it
-matters in either mode, because the centromere and pseudoautosomal coordinates
-in use came from that same assembly.  Under {\tt assembly} a violation stops
-the run, since those lengths are the denominator; under {\tt analyzed} they
-feed nothing, so it is a warning.  Where a VCF header and {\tt --build} both
-state a length and disagree, one of them is not this assembly and {\tt garlic}
-says so rather than picking.
+the end of its chromosome.  This is how a wrong {\tt --build} shows itself, and
+nothing else in the program can detect it.  The check matters in either mode,
+because the centromere and pseudoautosomal coordinates in use came from the
+same assembly.  Under {\tt assembly} a violation stops the run, since those
+lengths are the denominator.  Under {\tt analyzed} they feed nothing, so it is
+a warning.  Where a VCF header and {\tt --build} both state a length and
+disagree, one of them is not this assembly, and {\tt garlic} reports the
+conflict rather than choosing one.
 
 Kernel density estimation of the LOD score distribution is output to {\tt .<winsize>SNPs.kde} formatted as
 \begin{lstlisting}
@@ -385,16 +421,28 @@ ROH calls are output to {\tt .roh.bed}, which are formatted as UCSC BED files. T
 \noindent Following the BED specification, {\tt <ROH start>} is 0-based and
 {\tt <ROH end>} is exclusive, so {\tt <ROH end>} minus {\tt <ROH start>}
 equals {\tt <ROH length>}.  Note that under {\tt --cm} the boundaries remain
-physical positions while {\tt <ROH length>} is reported in cM, so that identity
-does not hold in that mode.  Versions before this one wrote {\tt <ROH start>}
-as a 1-based position, making every tract appear one base short in a genome
-browser; coordinates from those versions are shifted by one relative to these.
+physical positions while {\tt <ROH length>} is reported in cM, so the identity
+does not hold in that mode.  Versions before 2.0.0 wrote {\tt <ROH start>} as
+a 1-based position, so coordinates from those versions are shifted by one
+relative to these.
 ~\\
 When requested, raw LOD scores are also output.  This file contains one row per individual (corresponding to the order in the {\tt .tfam} file), and LOD scores for each window are given on the columns.
 \begin{lstlisting}
 <LOD score window 1> <LOD score window 2> ... <LOD score window N>
 \end{lstlisting}
 ~\\
+
+\paragraph{The per-individual information report.}\label{sec:ind}  Every run also writes {\tt <out>.ind.tsv} (per population when there are several), with one row per individual.  A window's LOD is a sum over the sites in it, and a site that carries no information for an individual (a missing genotype) contributes exactly 0.  Two individuals with the same window size can therefore be summing very different amounts of evidence.  The report records, per individual:
+\begin{itemize}
+\item {\tt n\_sites}, the analysed sites on chromosomes where the individual is diploid;
+\item {\tt frac\_informative}, the fraction of them with a called genotype;
+\item {\tt snps\_per\_window\_median} and {\tt \_p05}, the median and 5th percentile of informative sites per window;
+\item {\tt n\_het\_expected}, the sum of $2p(1-p)$ over the sites used for {\tt het\_obs\_exp};
+\item {\tt het\_obs\_exp}, observed over expected heterozygotes from called genotypes.
+\end{itemize}
+\noindent The last two are computed over the sites in windows whose LOD is below 0, which stand in for non-autozygous windows without needing the cutoff, so they are not confounded by the individual's own autozygosity.  {\tt garlic} warns when an individual's 5th percentile falls below half the window size.
+
+{\tt het\_obs\_exp} is the ordinary sample-quality statistic for called data, and it is not a low-depth estimator.  At low depth it reads well below 1 even without any bias, because the maximum-likelihood call at one or two reads is a homozygote.  Its sampling noise is roughly $1/\sqrt{\tt n\_het\_expected}$, a few hundredths on one chromosome and a few thousandths genome-wide, so it should be read against the cohort rather than as an absolute.  It corrects nothing, and the report is there so that an individual whose data differ from the rest of the cohort can be seen.
 
 \subsubsection{{\tt --out}}
 
@@ -423,22 +471,21 @@ and in turn.  Each receives
 {\tt --winsize}, {\tt --overlap-frac}, {\tt --lod-cutoff} and
 {\tt --size-bounds} apply to every population.
 
-The consequence worth stating plainly is that analysing several populations
-together gives each of them exactly what analysing it alone would give.  The
-populations do not interact; running them in one command is a convenience, not
-a joint model.
+Analysing several populations together therefore gives each of them exactly
+what analysing it alone would give.  The populations do not interact, so
+running them in one command is only a convenience.
 
-Populations are processed one at a time rather than together, so peak memory
-is bounded by the largest population rather than by their sum.
+Populations are processed one at a time, so peak memory is bounded by the
+largest population rather than by their sum.
 
 \subsubsection{Where the labels come from}
 
-For a TPED/TFAM pair the label is column 1 of the TFAM.  {\bf PLINK calls that
-column the family ID}, and in many files it is one family --- sometimes one
-sample --- per value.  Such a file will produce one analysis per family, which
-is almost certainly not what was intended.  {\tt garlic} warns when the
-smallest population has fewer than five individuals, and again when there are
-more than two populations per individual on average, but it cannot tell the two
+For a TPED/TFAM pair the label is column 1 of the TFAM.  PLINK calls that
+column the family ID, and in many files it holds one family, or even one
+sample, per value.  Such a file produces one analysis per family, which is
+almost certainly not what was intended.  {\tt garlic} warns when the smallest
+population has fewer than five individuals, and again when there are fewer
+than two individuals per population on average, but it cannot tell the two
 situations apart with certainty.  Use {\tt --pop} to supply real population
 labels, or {\tt --pool-populations} to ignore them.
 
@@ -449,7 +496,7 @@ without it every sample is labelled {\tt unknown} and the analysis is pooled.
 
 With one population the output file names are unchanged.  With more than one,
 the population label is inserted before the extension:
-{\tt <out>.<POP>.roh.bed}, {\tt <out>.<POP>.froh.tsv},
+{\tt <out>.<POP>.roh.bed}, {\tt <out>.<POP>.froh.tsv}, {\tt <out>.<POP>.ind.tsv},
 {\tt <out>.<POP>.params.json} and {\tt <out>.<POP>.<winsize>SNPs.kde}.  The
 {\tt .log}, {\tt .error} and {\tt .freq.gz} files are written once for the
 whole run.
@@ -457,12 +504,12 @@ whole run.
 \subsubsection{{\tt --pool-populations}}
 
 This flag makes {\tt garlic} ignore the labels and analyse every individual
-together, which is what it did before per-population analysis existed.  Allele
-frequencies, the LOD score cutoff, the window size and the size classes are
-then computed over every sample at once, and the unlabelled output names are
-restored.  Use it when the labels are not populations, or to reproduce a run
-from an earlier version.  The {\tt .froh.tsv} header records that pooling
-happened, and so does {\tt .params.json}.
+together, as it did before per-population analysis.  Allele frequencies, the
+LOD score cutoff, the window size and the size classes are then computed over
+every sample at once, and the unlabelled output names are restored.  Use it
+when the labels are not populations, or to reproduce a run from an earlier
+version.  The {\tt .froh.tsv} header and {\tt .params.json} both record that
+the populations were pooled.
 
 \subsubsection{When a population cannot be analysed}
 
@@ -484,27 +531,27 @@ sex-linked until it is told what to do with it.
 \subsubsection{Declaring the system}
 
 {\tt --sex-system} takes {\tt xy}, {\tt zw} or {\tt none}.  It supplies the one
-thing no amount of genotype data can: which sex \emph{code} is heterogametic.
-PLINK codes 1 male and 2 female whatever the species' sex determination system
-is, so in a ZW species the \emph{homogametic} sex is the one coded 1.  Leaving
-the flag unset is not the same as {\tt none}: unset means nothing has been said
-and the run stops, while {\tt none} asserts that every chromosome is diploid in
-every individual.
+thing that genotype data cannot, which is the sex \emph{code} that is
+heterogametic.  PLINK codes 1 male and 2 female whatever the species' sex
+determination system is, so in a ZW species the \emph{homogametic} sex is the
+one coded 1.  Leaving the flag unset is not the same as {\tt none}, because
+unset means nothing has been said and the run stops, while {\tt none} asserts
+that every chromosome is diploid in every individual.
 
-The conventional names follow from the system --- X and Y under {\tt xy}, Z and
-W under {\tt zw}, plus M or MT for the mitochondrion.  A chromosome named
-anything else is declared explicitly with {\tt --sex-chr} (diploid in the
+The conventional names follow from the system (X and Y under {\tt xy}, Z and
+W under {\tt zw}, plus M or MT for the mitochondrion).  A chromosome with any
+other name is declared explicitly with {\tt --sex-chr} (diploid in the
 homogametic sex), {\tt --sex-chr-degenerate} (carried only by the heterogametic
-sex) or {\tt --haploid-chr}.  A chromosome's role does not depend on the system:
-X and Z are both the shared chromosome, Y and W both the degenerate one.  Only
-the shared chromosome is analysed; the others cannot carry a run of homozygosity
-in anybody and are dropped with a log line.
+sex) or {\tt --haploid-chr}.  A chromosome's role does not depend on the
+system, so X and Z are both the shared chromosome and Y and W are both the
+degenerate one.  Only the shared chromosome is analysed.  The others cannot
+carry a run of homozygosity in anybody, and they are dropped with a log line.
 
 The numbers 23, 24, 25 and 26 are X, Y, the pseudoautosomal region and the
 mitochondrion under PLINK's coding of \emph{human} data, and ordinary autosomes
-in any species with that many chromosomes.  {\tt garlic} resolves them only when
-{\tt --build} names a human assembly, which is already the user asserting human
-coordinates; without one it refuses rather than picking a reading.
+in any species with that many chromosomes.  {\tt garlic} resolves them only
+when {\tt --build} names a human assembly, since that already asserts human
+coordinates.  Without one it refuses rather than picking a reading.
 
 \subsubsection{What the analysis does}
 
@@ -513,106 +560,102 @@ Allele frequencies on the shared sex chromosome are computed over
 homogametic sex two.  Runs of homozygosity are then called only in the
 individuals who are diploid there.  The LOD score cutoff, the window size and
 the size-class boundaries are estimated on the autosomes and applied to the sex
-chromosome; {\tt garlic} reports what the sex chromosome's own windows would
-have given, so the assumption is visible.  This follows
-\citet{CotterEtAl24} and, for the cutoff, the reason they give: one chromosome's
-windows from part of a cohort usually cannot locate a second minimum in the
-density.
+chromosome, and {\tt garlic} reports what the sex chromosome's own windows
+would have given.  This follows \citet{CotterEtAl24}, who give the reason for
+the cutoff: one chromosome's windows from part of a cohort usually cannot
+locate a second minimum in the density.
 
-That is the default rather than the only option.  A cohort where the reported
-diagnostic shows the autosomal cutoff is badly placed on the sex chromosome can
-be given another with {\tt --sexchr-lod-cutoff}, and a different window size
-with {\tt --sexchr-winsize}; both apply to the shared sex chromosome alone and
-leave every autosomal call exactly where it was.  They are values you supply
-rather than a switch asking {\tt garlic} to re-estimate, because the reason the
-autosomal cutoff is the default is that the estimate on that chromosome usually
-fails --- the diagnostic is where the value comes from.  A LOD score cutoff
-belongs to the window size it was estimated at, so {\tt --sexchr-winsize}
-requires {\tt --sexchr-lod-cutoff}: the autosomal cutoff no longer describes
-windows of another size.  Both are recorded in {\tt <out>.params.json} as
-{\tt sexchr\_winsize} and {\tt sexchr\_lod\_cutoff}, which hold the values that
-were applied whether or not the flags were given, so the record says what
-happened without a reader having to reconstruct it from the command line.
+This is the default rather than the only option.  When the reported diagnostic
+shows that the autosomal cutoff is badly placed on the sex chromosome, another
+cutoff can be given with {\tt --sexchr-lod-cutoff}, and a different window
+size with {\tt --sexchr-winsize}.  Both apply to the shared sex chromosome
+alone and leave every autosomal call where it was.  Because the estimate on
+that chromosome usually fails, these flags take values rather than asking
+{\tt garlic} to re-estimate, and the diagnostic is where the values come from.
+A LOD score cutoff is specific to the window size it was estimated at, so
+{\tt --sexchr-winsize} requires {\tt --sexchr-lod-cutoff}.  The values that
+were applied, whether or not the flags were given, are recorded in
+{\tt <out>.params.json} as {\tt sexchr\_winsize} and {\tt sexchr\_lod\_cutoff}.
 
-A half call carries no genotype, which is what the rest of the pipeline needs
-to know about it.  The LOD score takes its default branch for one, so
-{\tt --tgls} and a VCF's {\tt GQ}, {\tt PL} or {\tt GL} need no special
-handling --- the per-genotype error rate is never read there.  That last point
-is load-bearing for a hemizygous VCF: a haploid {\tt PL} array holds one value
-per allele, two at a biallelic site rather than the three a diploid site has,
-and it is never parsed.  Both LD statistics behind {\tt --weighted} skip an
-uncalled genotype too, so the LD matrix on the shared sex chromosome is
-estimated among the individuals who are diploid there; under
-{\tt --ld-subsample} the subsample for that chromosome is drawn from those
-individuals, so the number requested is the number that informs it.
+A half call carries no genotype.  The LOD score takes its default branch for
+one, so {\tt --tgls} and a VCF's {\tt GQ}, {\tt PL} or {\tt GL} need no special
+handling, since the per-genotype error rate is never read there.  This matters
+for a hemizygous VCF, where a haploid {\tt PL} array holds one value per allele
+(two at a biallelic site rather than three), because the array is never
+parsed.  Both LD statistics behind {\tt --weighted} also skip an uncalled
+genotype, so the LD matrix on the shared sex chromosome is estimated among the
+individuals who are diploid there.  Under {\tt --ld-subsample} the subsample
+for that chromosome is drawn from those individuals, so the number requested is
+the number that informs it.
 
 Who is diploid there is established by a check that always runs.  Each
 individual's heterozygosity on that chromosome is compared against
-{\tt --het-rate-bounds} (0.02 and 0.10 by default): below the first it reads as
-hemizygous, above the second as diploid, and between them as ambiguous, in which
-case the individual is neither called there nor counted towards the allele
-frequency.  A recorded sex is checked against this and an unrecorded one is
-inferred from it.  The per-individual result is written to
+{\tt --het-rate-bounds} (0.02 and 0.10 by default).  Below the first bound the
+individual reads as hemizygous, above the second as diploid, and between them
+as ambiguous, in which case it is neither called there nor counted towards the
+allele frequency.  A recorded sex is checked against this, and an unrecorded
+one is inferred from it.  The per-individual result is written to
 {\tt <out>.sexcheck.tsv}.  Heterozygous calls in an individual with one copy of
-the chromosome are impossible by construction, so they are counted and
-discarded; if more than half the individuals with a recorded sex contradict it,
-{\tt garlic} stops, because that means either {\tt --sex-system} is inverted or
-the chromosome was called as diploid --- and the alternative is discarding every
-one of those calls silently.
+the chromosome are impossible, so they are counted and discarded.  If more
+than half the individuals with a recorded sex contradict it, {\tt garlic}
+stops, because either {\tt --sex-system} is inverted or the chromosome was
+called as diploid, and continuing would discard every one of those calls.
 
 $F_{ROH}$ is reported separately for the autosomes and for the sex chromosome,
 each with its own denominator, and is {\tt NA} rather than zero for an
-individual that cannot be autozygous there.  The two are not summed: the X
+individual that cannot be autozygous there.  The two are not summed.  The X
 coalesces faster than the autosomes and carries more homozygosity at the same
-level of consanguinity, so they are quantities to compare rather than to pool.
+level of consanguinity, so the two quantities should be compared rather than
+pooled.
 
 \subsubsection{Pseudoautosomal regions}
 
 A pseudoautosomal region is diploid in both sexes.  {\tt --par} takes one or
-more {\tt <chr>:<start>-<end>} intervals and {\tt --par-file} reads them from a
-file; both accept any number of regions per chromosome --- humans have two ---
+more {\tt <chr>:<start>-<end>} intervals, and {\tt --par-file} reads them from
+a file.  Both accept any number of regions per chromosome (humans have two),
 and the two flags accumulate.  Unlike {\tt --centromere}, repeated rows for one
-chromosome add a region rather than replacing one.  The loci inside are dropped,
-each region's count is reported separately, and a region that matches no locus
-warns by name.
+chromosome add a region rather than replacing one.  The loci inside are
+dropped, each region's count is reported separately, and a region that matches
+no locus draws a warning that names it.
 
 They are identified by coordinates on a declared sex chromosome and never by a
 chromosome code, because PLINK's 25 is an ordinary autosome in most species.
 
-For the human X, {\tt --build} supplies them: the coordinates are the Genome
-Reference Consortium's own definition for that assembly, recorded with their
-source in {\tt centromeres/par\_regions.txt}, and they are filed under whatever
-the data calls that chromosome --- {\tt chrX} in one file and {\tt 23} in the
-next.  Naming any region with {\tt --par} replaces them, and {\tt --par none}
-keeps them all.  No table is supplied for a shared sex chromosome that is not
-the human X, since a species' own coordinates are not the assembly's.
+For the human X, {\tt --build} supplies the regions.  The coordinates are the
+Genome Reference Consortium's own definition for that assembly, recorded with
+their source in {\tt centromeres/par\_regions.txt}, and they are filed under
+whatever name the data gives that chromosome ({\tt chrX} in one file and
+{\tt 23} in the next).  Naming any region with {\tt --par} replaces them, and
+{\tt --par none} turns them off.  No table is supplied for any other shared sex
+chromosome.
 
-Running without them --- on a non-human assembly, or under {\tt --par none} ---
-has a bounded cost, which is worth knowing rather than discovering.  The heterogametic sex's genotypes in the pseudoautosomal region
-are recoded as hemizygous along with the rest of the chromosome, so their real
-heterozygous calls there are counted as impossible and discarded --- inflating
-{\tt n\_het\_recoded} by roughly that region's share of the markers, about 1--2\%
-of the human X --- and their contribution to the allele frequency in it is
-biased, because dropping heterozygotes while keeping homozygotes is not a random
-thinning.  Both are bounded by the total pseudoautosomal share of the
-chromosome, which is the quantity that grows in a species that has several.
+Running without the regions, on a non-human assembly or under {\tt --par none},
+has a bounded cost.  The heterogametic sex's genotypes in a pseudoautosomal
+region are recoded as hemizygous along with the rest of the chromosome.  Their
+real heterozygous calls there are therefore counted as impossible and
+discarded, which inflates {\tt n\_het\_recoded} by roughly that region's share
+of the markers (about 1--2\% of the human X).  Their contribution to the allele
+frequency in the region is also biased, because dropping heterozygotes while
+keeping homozygotes is not a random thinning.  Both effects are bounded by the
+total pseudoautosomal share of the chromosome, which is larger in a species
+that has several such regions.
 
 \subsubsection{Chromosome names}
 
 Names are matched case-insensitively and ignoring a leading {\tt chr}, so
 {\tt chrX}, {\tt chrx}, {\tt CHRX}, {\tt X} and {\tt x} are one chromosome, and
 so are {\tt 1}, {\tt 01} and {\tt chr1}.  Output keeps whatever the input said.
-Two chromosomes in one file whose names differ only that way are an error, and
-so is the same name appearing twice, which means one chromosome whose rows are
-not contiguous --- {\tt garlic} starts a new chromosome whenever the chromosome
+Two chromosomes in one file whose names differ only in this way are an error.
+So is the same name appearing twice, which means that one chromosome's rows are
+not contiguous.  {\tt garlic} starts a new chromosome whenever the chromosome
 column changes and would otherwise analyse it as two.
 
 \subsection{Counting classified genotypes}
 \label{sec:features}
 
 \noindent A common use of a set of runs of homozygosity is to ask whether
-genotypes of some class --- deleterious, non-synonymous, whatever an annotation
-supplies --- are found inside them more often than outside. {\tt --features}
+genotypes of some class (deleterious, non-synonymous, or whatever an annotation
+supplies) are found inside them more often than outside.  {\tt --features}
 does that counting as part of the run that makes the calls, and writes
 {\tt <out>.counts.tsv}.
 
@@ -627,47 +670,47 @@ chr21  15481365   T       nonsynonymous
 21     15502312   A       benign
 \end{lstlisting}
 
-\noindent The label is arbitrary text and there may be any number of distinct
-labels. A site may appear more than once, as the first two rows above do, so
-two annotation schemes can classify the same variant; the categories are not
-required to be mutually exclusive. The same class twice at one site is an
-error rather than a silent overwrite. Chromosome names are matched ignoring
-case and a {\tt chr} prefix, and the allele is compared as a string, so an
-indel allele from a sequenced call set works as well as a single base.
+\noindent The label is arbitrary text, and there may be any number of distinct
+labels.  A site may appear more than once, as the first two rows above do, so
+two annotation schemes can classify the same variant, and the categories need
+not be mutually exclusive.  The same class twice at one site is an error.
+Chromosome names are matched ignoring case and a {\tt chr} prefix, and the
+allele is compared as a string, so an indel allele from a sequenced call set
+works as well as a single base.
 
 For every individual and every class, the table gives three numbers in each
-bucket: {\tt hom}, homozygous for the classified allele; {\tt het}, carrying
-one copy; and {\tt n}, the classified sites at which that individual has a
-genotype at all. The last is the denominator, and it is what separates ``more
-deleterious homozygotes inside runs'' from ``more sites inside runs''. The
-buckets are the size classes the population was analysed with, then
-{\tt NONE}, then {\tt UNASSESSED}, then {\tt ALL}; the count inside runs of
-homozygosity is {\tt ALL} less {\tt NONE} less {\tt UNASSESSED}.
+bucket.  {\tt hom} is the number of genotypes homozygous for the classified
+allele, {\tt het} the number carrying one copy, and {\tt n} the number of
+classified sites at which that individual has a genotype at all.  The last is
+the denominator, and it separates ``more deleterious homozygotes inside runs''
+from ``more sites inside runs''.  The buckets are the size classes the
+population was analysed with, then {\tt NONE}, then {\tt UNASSESSED}, then
+{\tt ALL}.  The count inside runs of homozygosity is {\tt ALL} less
+{\tt NONE} less {\tt UNASSESSED}.
 
-{\tt UNASSESSED} is a site where no run could have been called for anybody: a
-chromosome that was not analysed, one carrying fewer than two loci, an
+{\tt UNASSESSED} counts sites where no run could have been called for anybody:
+a chromosome that was not analysed, one carrying fewer than two loci, an
 assembly gap, a region excluded by {\tt --par}, or a position outside the span
-the markers cover. It is kept apart from {\tt NONE} because folding the two
+the markers cover.  It is kept apart from {\tt NONE} because folding the two
 together inflates the outside-runs count by however much of the genome the
-analysis left out. Two further columns account for the rest of each
-individual's classified sites: {\tt n\_hemi}, sites on a chromosome where that
-individual is not diploid, and {\tt n\_missing}, sites it has no call for.
-Every classified row lands in exactly one of those places, so
+analysis left out.  Two further columns account for the rest of each
+individual's classified sites.  {\tt n\_hemi} counts sites on a chromosome
+where that individual is not diploid, and {\tt n\_missing} counts sites it has
+no call for.  Every classified row lands in exactly one of these places, so
 $\sum {\tt ALL\_n} + {\tt n\_missing} + {\tt n\_hemi}$ is the same for every
 individual the genotypes covered.
 
-The genotypes are read from the file, raw. They are deliberately not the
-filtered matrix {\tt garlic} calls from: that has had monomorphic sites
-dropped population by population, has been pruned by {\tt --chr} and
-{\tt --autosomes-only} and has had excluded regions removed, and counting from
-it would discard exactly the rare functional sites the question is about. By
-default the input the run was called from is read a second time. When the
-classified variants live elsewhere --- calls from a genotyping array,
-classifications from sequencing --- give that file with
-{\tt --tped-counting} and {\tt --tfam-counting}, or with {\tt --vcf-counting};
-the two files need not share a single site. Individuals are matched by
-identifier, and one present in only one of the two files is reported rather
-than counted as having no runs.
+The genotypes are read from the file without filtering.  The filtered matrix
+that {\tt garlic} calls from has had monomorphic sites dropped population by
+population, has been pruned by {\tt --chr} and {\tt --autosomes-only}, and has
+had excluded regions removed, and counting from it would discard exactly the
+rare functional sites the question is about.  By default the input the run was
+called from is read a second time.  When the classified variants are in
+another file (calls from a genotyping array and classifications from
+sequencing, for example), give that file with {\tt --tped-counting} and
+{\tt --tfam-counting}, or with {\tt --vcf-counting}.  The two files need not
+share a single site.  Individuals are matched by identifier, and one present in
+only one of the two files is reported rather than counted as having no runs.
 
 \subsubsection{Counting against calls that already exist}
 
@@ -675,39 +718,38 @@ than counted as having no runs.
 published, instead of calling anything. It needs {\tt --features} and one of
 the counting genotype flags, and it accepts no calling input.
 
-Less is knowable this way, and the table says so rather than leaving it to be
-inferred. A {\tt .roh.bed} records where the runs are; it does not record which
-chromosomes were analysed, how far the markers reached, or what the size class
-letters mean. So nothing can be marked {\tt UNASSESSED}, every site outside a
-run is {\tt NONE}, and the size class boundaries are reported as unknown.
-Counting inside the run that makes the calls knows all three, which is the
-reason to prefer it where there is a choice.
+Less can be known this way, and the table records it.  A {\tt .roh.bed}
+records where the runs are, but not which chromosomes were analysed, how far
+the markers reached, or what the size class letters mean.  So nothing can be
+marked {\tt UNASSESSED}, every site outside a run is {\tt NONE}, and the size
+class boundaries are reported as unknown.  Counting inside the run that makes
+the calls knows all three, so it is preferable where there is a choice.
 
-One wrinkle is worth knowing about. Version 1.1.6a was released with two
-different {\tt chromStart} conventions under the same version string, so the
-version in a file's track line does not say which one it uses. {\tt garlic}
-works it out from the file instead: a conforming BED has
-${\tt chromEnd} - {\tt chromStart}$ equal to the length column, and the older
-convention has it one less. The answer is counted over every call rather than
-taken from the first, a file that is half each is refused as two files
-concatenated, and the convention that was used is recorded in the output
-header. Under {\tt --cm} the length column is a genetic distance and settles
-nothing; that case warns and names its assumption.
+Note that version 1.1.6a was released with two different {\tt chromStart}
+conventions under the same version string, so the version in a file's track
+line does not say which one it uses.  {\tt garlic} works it out from the file
+instead.  A conforming BED has ${\tt chromEnd} - {\tt chromStart}$ equal to the
+length column, and the older convention has it one less.  The convention is
+determined from every call rather than from the first, a file that is half
+each is refused as two files concatenated, and the convention used is recorded
+in the output header.  Under {\tt --cm} the length column is a genetic distance
+and settles nothing, so that case draws a warning that names its
+assumption.
 
 \subsection{Controlling GARLIC}
 
 \noindent The remaining flags control window construction, LOD score
 calculation, cutoff selection, size classification, reproducibility and
-output. They are listed with their types and defaults in
+output.  They are listed with their types and defaults in
 Appendix~\ref{app:flags}, which {\tt make docs} generates from {\tt garlic}'s
-own help strings.  This section previously restated them by hand, which is how
-it came to document {\tt --auto-winsize-size} -- a flag the program has never
-accepted -- and to miss every flag added since.
+own help strings.
 
 \section{Change Log}
 \label{sec:changelog}
 
 \begin{lstlisting}
+2.0.0 - Correctness, performance, and command line work.
+
 --features counts classified genotypes inside and outside the calls, replacing the
 count_features_in_roh.pl and count_damaging_genotypes_in_roh.pl scripts, which are removed.
 See "Counting classified genotypes" under Program Options. Any number of arbitrary class
@@ -715,7 +757,7 @@ labels, a site may carry several, and the table reports hom, het and a denominat
 (class, size class) with a separate UNASSESSED bucket for sites where no run could have been
 called. --roh-file counts against a .roh.bed that already exists.
 
-A sex chromosome is no longer analysed as an autosome; a run containing one stops until
+A sex chromosome is no longer analysed as an autosome. A run containing one stops until
 --sex-system says which sex code is heterogametic. See "Sex chromosomes" under Program Options.
 Frequencies there come from everyone with the heterogametic sex contributing one allele, calling
 is restricted to the individuals who are diploid, the cutoff and size classes are estimated on
@@ -726,8 +768,8 @@ non-autosomal role rather than four names, and 23-26 are resolved only under a h
 readable on a declared sex chromosome. Chromosome names match case-insensitively and ignoring a
 chr prefix.
 
-UNRELEASED - Input with more than one population label is now analysed one population at a
-time; see "Multiple populations" under Program Options. Each population gets allele frequencies from its own individuals, its
+Input with more than one population label is now analysed one population at a time (see
+"Multiple populations" under Program Options). Each population gets allele frequencies from its
 own site filtering, its own automatically selected window size, LOD cutoff and size-class
 boundaries, and its own random stream. A value given on the command line is not re-derived
 and applies to every population. Analysing several populations together gives each of them
@@ -741,14 +783,37 @@ Column 1 of a TFAM is garlic's population label but PLINK's FAMILY ID, so a file
 per family will now produce one analysis per family. garlic warns, but use --pop or
 --pool-populations.
 
---freq-file accepts one frequency column per population, matched by header; a single-column
-file still applies to everything. The .freq.gz garlic writes, from the analysis or from
---freq-only, can be given straight back with --freq-file.
+--freq-file accepts one frequency column per population, matched by header, and a
+single-column file still applies to every population. The .freq.gz that garlic writes, from
+the analysis or from --freq-only, can be given straight back with --freq-file.
 
-The automatic LOD cutoff now warns when it discards an implausible valley (|cutoff| >= winsize)
-and applies 0, naming the value; the applied value is unchanged. --gl-type documents that no
-per-genotype quality form suits low-coverage data (below roughly 4x); see "Low-coverage
-sequence data" under Input Files.
+The automatic LOD cutoff identifies the two modes of the window LOD density by their sign.
+The non-autozygous mode is the tallest peak below zero and the autozygous mode is the tallest
+peak above zero, and the cutoff is the minimum between them. The previous rule could take two
+peaks of the non-autozygous component (on the bundled chr21 example its cutoff was -55.7; it
+is now -0.33). A density with no peak above zero gives no calls and a warning, with
+lod_cutoff null in .params.json. A density with no peak below zero stops and asks for
+--lod-cutoff. The substitution of 0 for a valley more than winsize from zero is gone. See
+manual/lod-mode-rule.tex.
+
+--gl-type documents that none of its forms suits low-coverage sequence data (below roughly
+4x). See "Low-coverage sequence data" under Input Files.
+
+Every run writes <out>.ind.tsv: per individual, the fraction of informative sites, the
+median and 5th percentile of informative sites per window, and the observed/expected
+heterozygote ratio in non-autozygous windows. Diagnostic only. See "The per-individual
+information report" under Output Files.
+
+--stratify-cutoff chooses the automatic LOD cutoff within strata of individuals that carry
+the same evidence per window (grouped by the location of their non-autozygous LOD mode), so a
+cohort of mixed depth is not over-called in its shallow members. A uniform cohort gets the
+pooled cutoff exactly. Without the flag, garlic warns when the cohort would form more than
+one stratum. See "Cohorts of mixed depth" under Input Files.
+
+--exclude-regions <bed> drops the sites inside a mappability or repeat mask before anything is
+computed, on every chromosome. This corrects the regional part of mapping bias, and it is the
+only correction for mapping bias that garlic applies. See "Reference and mapping bias" under
+Input Files.
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 
