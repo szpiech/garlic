@@ -18,7 +18,7 @@
 \maketitle
 
 \begin{abstract}
-GARLIC calls runs of homozygosity by thresholding window LOD scores, and by default it chooses the threshold itself from the density of LOD scores across the cohort. Both the previous rule and the new one place the threshold at the \emph{valley} of that density between its two modes; the two rules differ in how the two modes are identified and in what happens when the density does not have two. The new rule identifies the modes by \emph{sign}: the non-autozygous mode is the dominant peak at $\lod<0$, the autozygous mode the dominant peak at $\lod>0$, because the expected LOD of a window is negative in one state and positive in the other at any depth. The previous rule took the two most ``persistent'' maxima of a smoothed density, with no reference to sign, no minimum height, and a fallback to 0 when the valley lay far from zero. On every density where the previous rule was sound, the new one returns the identical cutoff: 26 of the 40 benchmark cohorts, including the genome-wide bundled example, agree to machine precision, of the 14 that differ, 13 are cases where the previous rule placed the cutoff inside the non-autozygous component, on a tail bump, or at its fallback of 0, and in one (hard genotype calls at 4$\times$ in a low-diversity population) its cutoff happened to be useful and the new rule declines (\S\ref{sec:validation}). Where it was not, the previous rule placed the cutoff inside the non-autozygous component (chromosome 21 of the bundled example: cutoff $-55.7$, 22 Mb of ROH per individual on a 47 Mb chromosome; now $-0.33$ and 3.6 Mb) or on a density-$10^{-4}$ tail bump (a simulated Ne 2\,000 cohort at 2$\times$: cutoff $-57.8$, $F_{\rm ROH}=0.997$). Densities with no autozygous mode now end the run with no calls and a warning rather than with an invented threshold. Rebuilt and re-run on all 47 automatic-cutoff arms of the benchmark, the compiled rule reproduces these predictions exactly. The hard-call arms that the new rule declines at 1--2$\times$ are recovered once the genotypes are the maximum-likelihood calls from PL rather than bcftools' prior-based calls (\S\ref{sec:validation}).
+GARLIC calls runs of homozygosity by thresholding window LOD scores, and by default it chooses the threshold itself from the density of LOD scores across the cohort. Both the previous rule and the new one place the threshold at the \emph{valley} of that density between its two modes; the two rules differ in how the two modes are identified and in what happens when the density does not have two. The new rule identifies the modes by \emph{sign}: the non-autozygous mode is the dominant peak at $\lod<0$, the autozygous mode the dominant peak at $\lod>0$, because the expected LOD of a window is negative in one state and positive in the other at any depth. The previous rule took the two most ``persistent'' maxima of a smoothed density, with no reference to sign, no minimum height, and a fallback to 0 when the valley lay far from zero. On every density where the previous rule was sound, the new one returns the identical cutoff: 26 of the 40 benchmark cohorts, including the genome-wide bundled example, agree to machine precision, of the 14 that differ, 13 are cases where the previous rule placed the cutoff inside the non-autozygous component, on a tail bump, or at its fallback of 0, and in one (hard genotype calls at 4$\times$ in a low-diversity population) its cutoff happened to be useful and the new rule declines (Table~\ref{tab:cases}). Where it was not, the previous rule placed the cutoff inside the non-autozygous component (chromosome 21 of the bundled example: cutoff $-55.7$, 22 Mb of ROH per individual on a 47 Mb chromosome; now $-0.33$ and 3.6 Mb) or on a density-$10^{-4}$ tail bump (a simulated Ne 2\,000 cohort at 2$\times$: cutoff $-57.8$, $F_{\rm ROH}=0.997$). Densities with no autozygous mode now end the run with no calls and a warning rather than with an invented threshold.
 \end{abstract}
 
 \section{What both rules share}
@@ -46,7 +46,7 @@ With genotype likelihoods the per-site LOD is a ratio of \emph{marginal} likelih
 \item The two divergences are very unequal (a heterozygote is nearly impossible under A, so $\KL(P_N\|P_A)\gg\KL(P_A\|P_N)$: for $p=0.3$, $\varepsilon=10^{-3}$, about 2.6 vs 0.6 nats per site). The non-autozygous mode therefore sits far from zero ($-46$ predicted for a 60-site window averaged over a neutral frequency spectrum; $-61$ observed) and the autozygous mode close to it ($+12$ predicted, $+8$ observed). This is why the valley, and hence the automatic cutoff, is normally \emph{negative}.
 \item Loss of signal appears as a \emph{unimodal} density, never as two modes on the same side of zero. Two peaks on the same side are two bumps of one component.
 \end{enumerate}
-The anchor fails only when the data violate the model. The one case found in practice is hard genotype calls made under a population prior at low depth. \code{bcftools call -m} multiplies each sample's genotype likelihoods by a prior derived from the cohort's allele frequency; with one or two reads the likelihoods barely separate a homozygote from a heterozygote, so the prior decides, and at intermediate frequency it decides ``heterozygous''. In the benchmark's 1$\times$ calls 70\% of heterozygote calls are of this kind (the sample's own PL favours a homozygote; most come from single-read samples, which cannot show a heterozygote at all), 44\% at 2$\times$, 14\% at 4$\times$ and 1\% at 8$\times$. Inside a run each such call costs a $\log_{10}\varepsilon$-scale penalty, and at 1--2$\times$ the autozygous mode moves below zero (samples with no reads at all are written as missing and are not the problem). This is a pipeline defect, not a mode-finding one: use the maximum-likelihood genotype from PL (\code{bench/scripts/ml\_genotypes.py}), or give GARLIC the likelihoods themselves (\code{--gl-type PL}, \code{--gl-beagle}).
+The anchor fails only when the data violate the model. The one case found in practice is hard genotype calls made under a population prior at low depth. \code{bcftools call -m} multiplies each sample's genotype likelihoods by a prior derived from the cohort's allele frequency; with one or two reads the likelihoods barely separate a homozygote from a heterozygote, so the prior decides, and at intermediate frequency it decides ``heterozygous''. In the benchmark's 1$\times$ calls 70\% of heterozygote calls are of this kind (the sample's own PL favours a homozygote; most come from single-read samples, which cannot show a heterozygote at all), 44\% at 2$\times$, 14\% at 4$\times$ and 1\% at 8$\times$. Inside a run each such call costs a $\log_{10}\varepsilon$-scale penalty, and at 1--2$\times$ the autozygous mode moves below zero (samples with no reads at all are written as missing and are not the problem). This is a pipeline defect, not a mode-finding one.
 
 \section{The previous rule}
 \label{sec:old}
@@ -135,49 +135,10 @@ pedigree, bottleneck, Ne 2\,000 at 1--2$\times$ & hard calls & 0 (guard) & none 
 \label{fig:modes}
 \end{figure}
 
-
-\section{End-to-end validation on the benchmark}
-\label{sec:validation}
-
-GARLIC was rebuilt with the new rule and every automatic-cutoff arm of the benchmark was re-run from its stored inputs: the pedigree cohort (21 arms: true genotypes; ANGSD likelihoods at 1, 2, 4, 8$\times$ with three error rates; bcftools PL and hard calls at 1--8$\times$), the bottleneck population and the Ne 2\,000 population (13 arms each). The compiled rule reproduces the Python prototype on every arm. In 36 of the 47 the cutoff is identical to the previous one, and so are the calls and every score: pedigree 19 of 21, bottleneck 11 of 13, Ne 2\,000 6 of 13. Table~\ref{tab:validation} lists the 11 that change, scored against the simulated truth by run-length class. For the pedigree, precision is against the attainable set (pedigree autozygosity plus background runs called on true genotypes) and recall against pedigree autozygosity. For the population cohorts, precision is the fraction of called bases inside within-individual IBD tracts $\ge$100 kb, and recall is against tracts with TMRCA $\le$1000 generations.
-
-\begin{table}[h]\centering\footnotesize
-\caption{The benchmark arms whose cutoff changes, scored on runs $>$1 Mb as precision / recall / Mb called per individual (``no calls'': the run completed with the unimodal-null verdict). The last column re-runs the hard-call arms with the maximum-likelihood genotype from PL in place of bcftools' prior-based call.}
-\label{tab:validation}
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{>{\raggedright\arraybackslash}p{0.085\textwidth}>{\raggedright\arraybackslash}p{0.12\textwidth}rr>{\raggedright\arraybackslash}p{0.17\textwidth}>{\raggedright\arraybackslash}p{0.14\textwidth}>{\raggedright\arraybackslash}p{0.15\textwidth}}
-\toprule
-cohort & data & previous & new & previous rule & new rule & new rule, \\
- & & cutoff & cutoff & & & ML genotypes \\
-\midrule
-pedigree & hard calls 1$\times$ & $0$ & none & -- / 0.04 / 0.0 & no calls & 1.00 / 1.00 / 14.6 \\
-pedigree & hard calls 2$\times$ & $0$ & none & -- / 0.15 / 0.0 & no calls & 1.00 / 1.00 / 14.7 \\
-bottleneck & hard calls 1$\times$ & $0$ & none & -- / 0.06 / 0.0 & no calls & 0.95 / 1.00 / 4.1 \\
-bottleneck & hard calls 2$\times$ & $0$ & none & -- / 0.21 / 0.0 & no calls & 0.96 / 1.00 / 4.1 \\
-Ne 2\,000 & true geno\-types & $-48.32$ & $-0.83$ & 0.38 / 1.00 / 29.0 & 0.90 / 0.86 / 3.1 & n/a \\
-Ne 2\,000 & GL 2$\times$ & $-57.85$ & $+0.99$ & 0.20 / 1.00 / 130.0 & 0.90 / 0.90 / 3.1 & n/a \\
-Ne 2\,000 & GL 1$\times$ & $-5.61$ & none & 0.28 / 1.00 / 49.1 & no calls & n/a \\
-Ne 2\,000 & PL 1$\times$ & $-54.69$ & none & 0.20 / 1.00 / 130.0 & no calls & n/a \\
-Ne 2\,000 & hard calls 1$\times$ & $0$ & none & -- / 0.00 / 0.0 & no calls & no calls \\
-Ne 2\,000 & hard calls 2$\times$ & $0$ & none & -- / 0.07 / 0.0 & no calls & no calls \\
-Ne 2\,000 & hard calls 4$\times$ & $-6.99$ & none & 0.90 / 0.83 / 2.7 & no calls & 0.90 / 0.86 / 3.1 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Three groups of changes:
-\begin{enumerate}[nosep]
-\item \textbf{Cutoffs inside the non-autozygous component, now corrected} (Ne 2\,000 true genotypes and GL 2$\times$). The previous rule called 29 and 130 Mb of ``runs $>$1 Mb'' per individual at precision 0.38 and 0.20; the new rule calls 3.1 Mb at precision 0.90 with recall 0.86--0.90, the same as the arms where the previous rule happened to work.
-\item \textbf{Cutoffs on noise, now declined} (Ne 2\,000 GL 1$\times$ and PL 1$\times$, previous cutoffs $-5.6$ and $-54.7$, 49--130 Mb per individual at precision 0.20--0.28; hard calls at 1--2$\times$ in all three cohorts, previous fallback 0 with recall $\le$0.21). These now complete with no calls and the unimodal-null warning.
-\item \textbf{One useful cutoff lost} (Ne 2\,000 hard calls at 4$\times$). The previous rule's two ``modes'' were the null peak at $-42.3$ and an autozygous peak displaced to $-3.9$ by prior-driven heterozygote calls, and its valley at $-7.0$ gave precision 0.90 and recall 0.83. The new rule reads a density with no peak above zero and declines. This is the cost of refusing to treat two peaks on the same side of zero as the two modes. On the data the model describes the refusal is correct, but here the cause is the genotype caller. With maximum-likelihood genotypes the density becomes bimodal again and the arm returns to precision 0.90, recall 0.86.
-\end{enumerate}
-Maximum-likelihood genotypes also recover the hard-call arms at 1--2$\times$ in the pedigree and bottleneck cohorts (recall 1.00 for runs $>$1 Mb, precision 0.95--1.00), where the previous rule had fallen back to 0 and found almost nothing. The two arms that stay unimodal-null are the Ne 2\,000 hard calls at 1--2$\times$; the likelihood arm of that cohort is also unimodal-null at 1$\times$. At 10-fold lower diversity a 60-SNP window there spans about 200 kb, and at 1$\times$ there is too little information to separate the states. That is the verdict the warning gives.
-
 \section{Practical notes}
 \sloppy
 \begin{itemize}[nosep]
 \item Runs that supply \code{--lod-cutoff} are unaffected and remain byte-identical.
-\item Low-coverage hard calls should be maximum-likelihood genotypes, not calls made under a population prior; better still, give GARLIC the likelihoods (\code{--gl-beagle}, or \code{--vcf --gl-type PL}), which were bimodal on every pedigree and bottleneck arm at every depth.
 \item Two constants are new: the 2\% height floor and the $s/2$ persistence requirement in \code{identifyLODModes} (\code{setModeFilters}), and the 10\% floor for per-individual modes. The height floor must stay well below 5\%, the relative height of the background short-IBD mode in the no-run control.
 \item Unit tests cover synthetic densities for each case in Table~\ref{tab:cases} (clean bimodal, modes compressed toward zero, autozygous mode taller than the null mode, two negative bumps, a lone positive bump, a sub-floor tail bump, a trough at $-70$, flank ripples); a suite stage checks the verdicts and \code{params.json} fields end to end. Two goldens moved: \code{c21\_autocutoff.roh.bed} (the $-55.7\to-0.33$ change) and \code{c21\_beagle\_stratified.ind.tsv} (header text and \code{cutoff\_source} labels only; its calls are unchanged).
 \end{itemize}
