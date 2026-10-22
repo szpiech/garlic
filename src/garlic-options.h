@@ -57,6 +57,7 @@ struct GarlicOptions
     int             M;
     int             NCLUST;
     int             KDE_SUBSAMPLE;
+    bool            STRATIFY_CUTOFF;
     int             LD_SUBSAMPLE;
     bool            RAW_LOD;
     bool            PHASED;

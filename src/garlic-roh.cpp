@@ -597,7 +597,8 @@ vector<IndReportRow> computeIndReport(vector< HapData * > *hapDataByChr,
 }
 
 void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *indData,
-                    int winsize, double lodCutoff)
+                    int winsize, double lodCutoff,
+                    const vector<IndStandardization> *perInd)
 {
     ofstream out;
     out.open(outfile.c_str(), ios::binary);
@@ -608,11 +609,19 @@ void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *i
     }
     out << "## garlic per-individual information report\n";
     out << "## winsize\t" << winsize << "\n";
-    out << "## lod_cutoff\t" << lodCutoff << "\n";
+    if (perInd != NULL)
+    {
+        out << "## lod_cutoff_strata\t" << int(lodCutoff + 0.5) << "\tthe cutoff applied to each individual is its lod_cutoff column: the valley of its stratum's pooled LOD density (stratum_valley), or borrowed from the other strata through its own mode and spread when that density has no valley\n";
+        out << "## lod_mode\tlocation of the individual's non-autozygous LOD mode (tallest peak of a smooth KDE of its windows); individuals whose modes differ by less than a quarter of the smaller spread share a stratum\n";
+        out << "## lod_spread\t1.4826 * median |LOD - lod_mode| over windows at or below the mode\n";
+    }
+    else out << "## lod_cutoff\t" << lodCutoff << "\n";
     out << "## nonautozygous_rule\twindows with LOD < 0 (cutoff-free; used for het_obs_exp)\n";
     out << "## het_obs_exp\tobserved/expected heterozygotes from called genotypes in those windows; a sample-quality statistic for called data, NOT a low-depth estimator\n";
     out << "## n_het_expected\tsum of 2p(1-p) over the sites behind het_obs_exp; its sampling noise is about 1/sqrt(n_het_expected), so read it against the cohort, not as an absolute\n";
-    out << "ind\tpop\tn_sites\tfrac_informative\tsnps_per_window_median\tsnps_per_window_p05\tn_het_expected\thet_obs_exp\n";
+    out << "ind\tpop\tn_sites\tfrac_informative\tsnps_per_window_median\tsnps_per_window_p05\tn_het_expected\thet_obs_exp";
+    if (perInd != NULL) out << "\tlod_mode\tlod_spread\tlod_cutoff\tstratum\tstratum_size\tcutoff_source";
+    out << "\n";
     for (unsigned int i = 0; i < rows.size(); i++)
     {
         const IndReportRow &r = rows[i];
@@ -621,6 +630,12 @@ void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *i
         out << r.snpsPerWindowMedian << "\t" << r.snpsPerWindowP05 << "\t";
         out << (long long)(r.hetExpected + 0.5) << "\t";
         if (r.hetObsExp == r.hetObsExp) out << r.hetObsExp; else out << "NA";
+        if (perInd != NULL)
+        {
+            const IndStandardization &st = perInd->at(i);
+            out << "\t" << st.mode << "\t" << st.spread << "\t" << st.cutoff << "\t" << (st.stratum + 1) << "\t" << st.stratumSize
+                << "\t" << (st.own ? "stratum_valley" : st.small ? "largest_stratum" : "borrowed_z");
+        }
         out << "\n";
     }
     out.close();
@@ -662,6 +677,7 @@ struct ROH_work_order_t
     double sexCutoff;
     bool haveSexCutoff;
     int sexWinsize;
+    const vector<double> *indCutoff;
     vector< ROHData * > *rohDataByInd;
     //Per-thread so there is no shared push_back; concatenated in thread order
     //below, which reproduces the serial order exactly because each thread owns
@@ -706,9 +722,10 @@ static void parallelAssembleROH(ROH_work_order_t *p)
             double OVERLAP_THRESHOLD = OVERLAP_FRAC * winSize;
             OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD >= 1) ? OVERLAP_THRESHOLD : 1;
             OVERLAP_THRESHOLD = (OVERLAP_THRESHOLD <= winSize) ? OVERLAP_THRESHOLD : winSize;
+            const double autosomalCutoff = (p->indCutoff != NULL) ? p->indCutoff->at(ind) : p->lodScoreCutoff;
             const double lodScoreCutoff =
                 (p->haveSexCutoff && role != NULL && chr < role->size() &&
-                 role->at(chr) == CHR_SEX_SHARED) ? p->sexCutoff : p->lodScoreCutoff;
+                 role->at(chr) == CHR_SEX_SHARED) ? p->sexCutoff : autosomalCutoff;
 
             WinData *winData = winDataByChr->at(chr);
             MapData *mapData = mapDataByChr->at(chr);
@@ -846,7 +863,8 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         double OVERLAP_FRAC, bool CM,
                                         const vector<ChrRole> *role,
                                         double sexCutoff, bool haveSexCutoff,
-                                        int sexWinsize)
+                                        int sexWinsize,
+                                        const vector<double> *indCutoff)
 {
     vector< ROHData * > *rohDataByInd = initROHData(indData);
 
@@ -872,6 +890,7 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
         orders[i].sexCutoff = sexCutoff;
         orders[i].haveSexCutoff = haveSexCutoff;
         orders[i].sexWinsize = sexWinsize;
+        orders[i].indCutoff = indCutoff;
         orders[i].CM = CM;
         orders[i].role = role;
         orders[i].rohDataByInd = rohDataByInd;
@@ -1397,6 +1416,262 @@ bool reportSexChrLODCutoff(vector< WinData * > *winDataByChr, IndData *indData,
     else LOG.log("; the autosomal cutoff", appliedCutoff, false);
     LOG.log(" is the one applied.");
     return true;
+}
+
+//One individual's windows on the chromosomes of the given role, thinned by
+//step, missing dropped.
+static void gatherIndWindows(vector< WinData * > *winDataByChr, int ind, int step,
+                             const vector<ChrRole> *role, ChrRole keep, vector<double> &out)
+{
+    out.clear();
+    for (unsigned int chr = 0; chr < winDataByChr->size(); chr++)
+    {
+        if (role != NULL && chr < role->size() && role->at(chr) != keep) continue;
+        WinData *w = winDataByChr->at(chr);
+        for (int locus = 0; locus < w->nloci; locus += step)
+        {
+            double x = w->data[ind][locus];
+            if (x != MISSING && !(std::isnan(x))) out.push_back(x);
+        }
+    }
+}
+
+static double medianOf(vector<double> v)
+{
+    if (v.empty()) return 0.0 / 0.0;
+    sort(v.begin(), v.end());
+    size_t n = v.size();
+    return (n % 2) ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
+}
+
+//Per-individual non-autozygous mode and spread, and the single-linkage
+//strata along the sorted modes.  Shared by the stratified selector and by
+//the heterogeneity warning the pooled selector emits.
+static int assignEvidenceStrata(vector< WinData * > *winDataByChr, IndData *indData,
+                                int step, const vector<ChrRole> *role, ChrRole keep,
+                                vector<IndStandardization> &perInd,
+                                vector< vector<int> > &strata)
+{
+    const int nind = indData->nind;
+    const long MIN_WINDOWS = 100;    //below this a density is not worth reading
+    const double LINK_FRAC = 0.25;   //neighbours join a stratum when their modes differ by less than this times the smaller spread
+    perInd.assign(nind, IndStandardization());
+    strata.clear();
+
+    //Per-individual mode and spread.  The mode is the LOWEST substantial peak
+    //of a deliberately smooth KDE (twice nrd0): at nrd0 a few hundred windows
+    //give a bumpy density whose bumps would compete, and at twice that the
+    //two real modes stand tens of LOD apart.  Lowest rather than tallest,
+    //because an individual more than half autozygous on the analysed
+    //chromosomes -- three of the 45 on the bundled chr21 fixture -- has the
+    //autozygous mode as its tallest peak, and taking that as "non-autozygous"
+    //puts it in a stratum of its own with a cutoff below everything.
+    //Substantial means at least a quarter of the tallest peak.  The spread is
+    //the left-half MAD, which the autozygous tail cannot inflate.
+    vector<double> win;
+    for (int ind = 0; ind < nind; ind++)
+    {
+        IndStandardization &st = perInd[ind];
+        gatherIndWindows(winDataByChr, ind, step, role, keep, win);
+        if (long(win.size()) < MIN_WINDOWS) continue;
+        vector<double> sorted(win);
+        const double h = 2.0 * nrd0(sorted.data(), int(sorted.size()));
+        const int M = 512;
+        const double lo = sorted.front() - 3 * h, hi = sorted.back() + 3 * h;
+        vector<double> grid(M), dens(M);
+        for (int i = 0; i < M; i++) grid[i] = lo + (hi - lo) * double(i) / double(M - 1);
+        kdeGaussian(sorted.data(), int(sorted.size()), h, grid.data(), M, dens.data());
+        int tallest = 0;
+        for (int i = 1; i < M; i++) if (dens[i] > dens[tallest]) tallest = i;
+        int best = tallest;
+        for (int i = 1; i + 1 < M; i++)
+        {
+            if (!(dens[i] >= dens[i - 1] && dens[i] >= dens[i + 1])) continue;
+            if (dens[i] < 0.25 * dens[tallest]) continue;
+            best = i;       //the first (lowest x) qualifying maximum
+            break;
+        }
+        st.mode = grid[best];
+        vector<double> dev;
+        for (size_t i = 0; i < win.size(); i++)
+            if (win[i] <= st.mode) dev.push_back(st.mode - win[i]);
+        const double mad = medianOf(dev);
+        if (!(mad > 0)) continue;
+        st.spread = 1.4826 * mad;
+        st.hasScale = true;
+    }
+
+    //Strata: single linkage along the sorted modes.
+    vector<int> order;
+    for (int ind = 0; ind < nind; ind++) if (perInd[ind].hasScale) order.push_back(ind);
+    if (order.empty()) return 0;
+    for (size_t i = 1; i < order.size(); i++)           //insertion sort by mode: nind is small
+        for (size_t j = i; j > 0 && perInd[order[j]].mode < perInd[order[j - 1]].mode; j--)
+        { int t = order[j]; order[j] = order[j - 1]; order[j - 1] = t; }
+    for (size_t i = 0; i < order.size(); i++)
+    {
+        bool join = false;
+        if (!strata.empty())
+        {
+            const IndStandardization &prev = perInd[strata.back().back()];
+            const IndStandardization &cur  = perInd[order[i]];
+            const double sp = prev.spread < cur.spread ? prev.spread : cur.spread;
+            join = (cur.mode - prev.mode) < LINK_FRAC * sp;
+        }
+        if (join) strata.back().push_back(order[i]);
+        else strata.push_back(vector<int>(1, order[i]));
+    }
+    for (size_t k = 0; k < strata.size(); k++)
+        for (size_t i = 0; i < strata[k].size(); i++)
+        { perInd[strata[k][i]].stratum = int(k); perInd[strata[k][i]].stratumSize = int(strata[k].size()); }
+    return int(strata.size());
+}
+
+int countEvidenceStrata(vector< WinData * > *winDataByChr, IndData *indData, int step,
+                        const vector<ChrRole> *role, ChrRole keep, vector<double> &stratumModes,
+                        vector<int> &stratumSizes)
+{
+    vector<IndStandardization> perInd;
+    vector< vector<int> > strata;
+    int n = assignEvidenceStrata(winDataByChr, indData, step, role, keep, perInd, strata);
+    stratumModes.clear(); stratumSizes.clear();
+    for (int k = 0; k < n; k++)
+    {
+        vector<double> m;
+        for (size_t i = 0; i < strata[k].size(); i++) m.push_back(perInd[strata[k][i]].mode);
+        stratumModes.push_back(medianOf(m));
+        stratumSizes.push_back(int(strata[k].size()));
+    }
+    return n;
+}
+
+int selectLODCutoffStratified(vector< WinData * > *winDataByChr, IndData *indData,
+                              string kdeoutfile, int step, int wsize, bool &ok,
+                              const vector<ChrRole> *role, ChrRole keep,
+                              vector<IndStandardization> &perInd)
+{
+    ok = true;
+    const int nind = indData->nind;
+    if (!LOG.isQuiet()) cerr << "Locating each individual's non-autozygous LOD mode:\n";
+    vector< vector<int> > strata;
+    const int nStrata = assignEvidenceStrata(winDataByChr, indData, step, role, keep, perInd, strata);
+    if (nStrata == 0)
+    {
+        LOG.err("ERROR: No individual has enough LOD windows (100) to locate its non-autozygous mode;");
+        LOG.err("\tthe stratified cutoff cannot be chosen.");
+        ok = false;
+        return 0;
+    }
+    vector<double> win;
+
+    //The pooled rule within each stratum.  A stratum of fewer than
+    //MIN_STRATUM_IND individuals does not get a valley of its own: one or two
+    //individuals' windows are too few for the rule, and such a stratum is as
+    //likely an individual whose "non-autozygous" mode is really its
+    //autozygous one (more than half autozygous on the analysed chromosomes)
+    //as a depth class.  It takes the largest stratum's cutoff instead.
+    const size_t MIN_STRATUM_IND = 3;
+    vector<double> stratumCut(nStrata, 0.0), stratumMode(nStrata), stratumSpread(nStrata);
+    vector<bool> stratumOK(nStrata, false), stratumSmall(nStrata, false);
+    vector<double> zOwn;
+    int largest = 0;
+    for (int k = 0; k < nStrata; k++) if (strata[k].size() > strata[largest].size()) largest = k;
+    for (int k = 0; k < nStrata; k++)
+    {
+        vector<double> pool, modes, spreads;
+        for (size_t i = 0; i < strata[k].size(); i++)
+        {
+            gatherIndWindows(winDataByChr, strata[k][i], step, role, keep, win);
+            pool.insert(pool.end(), win.begin(), win.end());
+            modes.push_back(perInd[strata[k][i]].mode);
+            spreads.push_back(perInd[strata[k][i]].spread);
+        }
+        stratumMode[k] = medianOf(modes);
+        stratumSpread[k] = medianOf(spreads);
+        if (strata[k].size() < MIN_STRATUM_IND && k != largest) { stratumSmall[k] = true; continue; }
+        if (pool.size() < 10) continue;
+        KDEResult *kde = computeKDE(pool.data(), int(pool.size()));
+        if (k == largest || nStrata == 1)
+        {
+            try { writeKDEResult(kde, kdeoutfile); }
+            catch (...) { logCurrentException("writing the KDE"); releaseKDEResult(kde); ok = false; return 0; }
+        }
+        try
+        {
+            stratumCut[k] = get_min_btw_modes(kde->x.data(), kde->y.data(), kde->size, wsize);
+            stratumOK[k] = true;
+            zOwn.push_back((stratumCut[k] - stratumMode[k]) / stratumSpread[k]);
+        }
+        catch (...) { /* no two modes in this stratum: borrows below */ }
+        releaseKDEResult(kde);
+    }
+    //The largest stratum's density is the one on file; if it was not the
+    //last written (a later, larger stratum overwrote nothing: only the
+    //largest is written), fine.  A single stratum is the pooled run exactly.
+
+    if (zOwn.empty())
+    {
+        LOG.err("ERROR: No stratum's LOD score density has two modes, so no cutoff could be chosen.");
+        LOG.err("\tThe cohort shows no autozygous excess, or the windows carry too little evidence");
+        LOG.err("\tto separate it (below roughly 2x depth).  A cutoff can be given with", ARG_LOD_CUTOFF);
+        ok = false;
+        return 0;
+    }
+    const double zMed = medianOf(zOwn);
+    const double largestCut = stratumOK[largest] ? stratumCut[largest]
+                                                 : stratumMode[largest] + zMed * stratumSpread[largest];
+    int nBorrowed = 0, nSmall = 0;
+    for (int k = 0; k < nStrata; k++)
+    {
+        for (size_t i = 0; i < strata[k].size(); i++)
+        {
+            IndStandardization &st = perInd[strata[k][i]];
+            if (stratumOK[k]) { st.cutoff = stratumCut[k]; st.own = true; }
+            else if (stratumSmall[k]) { st.cutoff = largestCut; st.small = true; nSmall++; }
+            else { st.cutoff = st.mode + zMed * st.spread; nBorrowed++; }
+        }
+    }
+    //Individuals with too few windows for a mode of their own: the largest
+    //stratum's cutoff, which is the pooled answer.
+    int nNoScale = 0;
+    for (int ind = 0; ind < nind; ind++)
+        if (!perInd[ind].hasScale)
+        {
+            perInd[ind].cutoff = stratumOK[largest] ? stratumCut[largest] : stratumMode[largest] + zMed * stratumSpread[largest];
+            perInd[ind].stratum = largest; perInd[ind].stratumSize = int(strata[largest].size());
+            nNoScale++;
+        }
+
+    LOG.log("LOD cutoff strata:", nStrata);
+    for (int k = 0; k < nStrata; k++)
+    {
+        LOG.log("  stratum", k + 1, false);
+        LOG.log(":", int(strata[k].size()), false);
+        LOG.log(" individual(s), median non-autozygous mode", stratumMode[k], false);
+        if (stratumOK[k]) { LOG.log(", cutoff", stratumCut[k], false); LOG.log(" (own valley)"); }
+        else if (stratumSmall[k]) { LOG.log(", too small for a valley of its own; uses the largest stratum's cutoff", largestCut); }
+        else { LOG.log(", cutoff borrowed (median standardised valley z =", zMed, false); LOG.log(")"); }
+    }
+    if (nBorrowed > 0)
+    {
+        LOG.err("WARNING:", nBorrowed, false);
+        LOG.err(" individual(s) are in a stratum whose LOD density has no valley; their cutoff is");
+        LOG.err("\tborrowed from the other strata (see <out>.ind.tsv).");
+    }
+    if (nSmall > 0)
+    {
+        LOG.err("WARNING:", nSmall, false);
+        LOG.err(" individual(s) fall in a stratum of fewer than", int(MIN_STRATUM_IND), false);
+        LOG.err(" and use the largest stratum's cutoff; an individual whose");
+        LOG.err("\tnon-autozygous mode stands apart from everyone else's may be more than half autozygous");
+        LOG.err("\ton the analysed chromosomes (see <out>.ind.tsv).");
+    }
+    if (nNoScale > 0)
+    {
+        LOG.err("WARNING:", nNoScale, false);
+        LOG.err(" individual(s) had too few windows to place in a stratum and use the largest stratum's cutoff.");
+    }
+    return nStrata;
 }
 
 double selectLODCutoff(vector< WinData * > *winDataByChr, IndData *indData, int KDE_SUBSAMPLE, string kdeoutfile, int step, int wsize, bool &ok,

@@ -60,6 +60,25 @@ mk_tgls_one() {
         printf "\n"
     }' | gzip > "$1"
 }
+# Builds a cohort of mixed evidence from a tracked .tped by setting genotypes
+# missing: the first third of the individuals keep one genotype in six, the
+# second third one in two, and the last third keep all of them.  A missing
+# genotype contributes 0 to a window LOD, so the first two thirds have their
+# LOD modes compressed toward zero, as low depth would.  The pattern is
+# (NR*7 + k*3) mod n, so the fixture does not depend on any awk's rand().
+# $1 = output (.tped.gz), $2 = source TPED (default chr21).
+mk_mixed_tped() {
+    gz "${2:-$EX/chr21.tped.gz}" | awk '{
+        n = (NF - 4) / 2
+        printf "%s %s %s %s", $1, $2, $3, $4
+        for (k = 0; k < n; k++) {
+            a = $(5 + 2 * k); b = $(6 + 2 * k); h = NR * 7 + k * 3
+            if (k < n / 3) keep = (h % 6 == 0); else if (k < 2 * n / 3) keep = (h % 2 == 0); else keep = 1
+            if (keep) printf " %s %s", a, b; else printf " 0 0"
+        }
+        printf "\n"
+    }' | gzip > "$1"
+}
 # Compare gzipped output by content, not by bytes: gzip embeds an mtime.
 sumgz() { gzip -cd "$1" | { if command -v md5sum >/dev/null 2>&1; then md5sum; else md5 -q; fi; } | cut -d' ' -f1; }
 
@@ -161,6 +180,7 @@ c21_rawlod|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --wins
 c21_freqonly|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --error 0.001 --freq-only|freq.gz
 c21_tgls_gq30|--tped $EX/chr21.tped.gz --tfam $EX/chr21.tfam.gz --tgls $WORK/gq30.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000 --raw-lod|chr21.raw.lod.windows.gz
 tgls_gq|--tped $EX/example.tped.gz --tfam $EX/example.tfam --tgls $WORK/gq30_genome.tgls.gz --gl-type GQ --build hg18 --winsize 60 --lod-cutoff 2.5 --size-bounds 500000 1000000|roh.bed
+c21_stratified|--tped $WORK/c21.mixed.tped.gz --tfam $EX/chr21.tfam.gz --build hg18 --winsize 60 --error 0.001 --size-bounds 500000 1000000 --stratify-cutoff|roh.bed ind.tsv
 "
 
 golden() {
@@ -2817,6 +2837,62 @@ bed_format() {
 
 mkdir -p "$WORK" "$GOLDEN"; : >"$WORK/failures"
 echo "garlic test suite"
+
+# ---------------------------------------------------------------------------
+# --stratify-cutoff.
+#
+# On a cohort of uniform evidence it must be the pooled cutoff exactly: one
+# stratum, same valley, byte-identical calls.  On the mixed-evidence fixture it
+# must find more than one stratum, and the pooled run on that fixture must
+# warn that it would.
+stratified_cutoff() {
+    echo "== --stratify-cutoff =="
+    [ -f "$EX/chr21.tped.gz" ] || { echo "  SKIP  chr21 fixture not present"; return; }
+    common="--build hg18 --winsize 60 --error 0.001 --size-bounds 500000 1000000 --quiet --force"
+    # Uniform evidence: the genome-wide example.  (chr21 alone is not uniform
+    # in this sense: one of its 45 individuals is mostly autozygous on that
+    # chromosome, which is the small-stratum case checked below.)
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" $common --out "$WORK/st_pooled" >/dev/null 2>"$WORK/st_pooled.err"
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/example.tped.gz" --tfam "$EX/example.tfam" $common --stratify-cutoff --out "$WORK/st_strat" >/dev/null 2>"$WORK/st_strat.err"
+    if [ $? -ne 0 ]; then bad "--stratify-cutoff failed on the uniform example"; sed -n '1,3p' "$WORK/st_strat.err" | sed 's/^/        /'
+    else
+        if grep -q "LOD cutoff strata: 1$" "$WORK/st_strat.log"; then ok; else bad "uniform cohort should form exactly one stratum"; fi
+        if [ "$(sum "$WORK/st_pooled.roh.bed")" = "$(sum "$WORK/st_strat.roh.bed")" ]; then ok
+        else bad "one stratum must reproduce the pooled calls byte for byte"; fi
+        if grep -q "strata" "$WORK/st_pooled.err"; then bad "pooled run on a uniform cohort must not warn about strata"; else ok; fi
+    fi
+    # One individual apart from the rest: a stratum too small for its own
+    # valley, which must take the largest stratum's cutoff and say so.
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --stratify-cutoff --out "$WORK/st_c21" >/dev/null 2>"$WORK/st_c21.err"
+    if [ $? -ne 0 ]; then bad "--stratify-cutoff failed on chr21"; sed -n '1,3p' "$WORK/st_c21.err" | sed 's/^/        /'
+    elif grep -v '^##' "$WORK/st_c21.ind.tsv" | awk -F'\t' 'NR>1 && $NF=="largest_stratum" {n++} END {exit n>0 ? 0 : 1}'; then ok
+    else bad "chr21: expected at least one individual in a too-small stratum taking the largest stratum's cutoff"; fi
+    # Mixed evidence: several strata, and the pooled run says so.
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$WORK/c21.mixed.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --out "$WORK/st_mixp" >/dev/null 2>"$WORK/st_mixp.err"
+    if grep -q "WARNING: the individuals do not all carry the same evidence" "$WORK/st_mixp.err"; then ok
+    else bad "pooled run on the mixed-evidence fixture did not warn about evidence strata"; fi
+    # shellcheck disable=SC2086
+    $GARLIC --tped "$WORK/c21.mixed.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --stratify-cutoff --out "$WORK/st_mixs" >/dev/null 2>"$WORK/st_mixs.err"
+    if [ $? -ne 0 ]; then bad "--stratify-cutoff failed on the mixed-evidence fixture"; sed -n '1,3p' "$WORK/st_mixs.err" | sed 's/^/        /'
+    else
+        n=$(sed -n 's/^LOD cutoff strata: \([0-9]*\)$/\1/p' "$WORK/st_mixs.log")
+        if [ -n "$n" ] && [ "$n" -ge 2 ]; then ok; else bad "mixed-evidence fixture should form at least two strata (got '$n')"; fi
+        # The report carries the stratum columns and every row has a cutoff.
+        if grep -v '^##' "$WORK/st_mixs.ind.tsv" | head -1 | grep -q "lod_cutoff.*stratum.*cutoff_source"; then ok
+        else bad "ind.tsv lacks the stratum columns under --stratify-cutoff"; fi
+        if grep -q '"lod_cutoff_is_stratum_count": *true' "$WORK/st_mixs.params.json" 2>/dev/null \
+           || grep -q 'lod_cutoff_is_stratum_count' "$WORK/st_mixs.params.json" 2>/dev/null; then ok
+        else bad "params.json does not flag lod_cutoff as a stratum count"; fi
+    fi
+    # Refusals.
+    expect_exit 1 "--stratify-cutoff with --lod-cutoff" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --lod-cutoff 2.5 --stratify-cutoff --out "$WORK/st_e1"
+    expect_exit 1 "--stratify-cutoff with --kde-subsample" "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" $common --kde-subsample 10 --stratify-cutoff --out "$WORK/st_e2"
+}
+
 echo "  binary: $GARLIC"
 [ -x "$GARLIC" ] || { echo "ERROR: $GARLIC is not executable. Run make in src/ first."; exit 1; }
 echo "  version: $("$GARLIC" --version 2>&1 | head -1)"
@@ -2831,11 +2907,13 @@ mk_tgls "$WORK/gq30.tgls.gz" 30
 # is NOT tracked, so on a fresh clone it skipped permanently; generated here
 # instead.  GQ 30 is an error rate of 0.001.
 mk_tgls "$WORK/gq30_genome.tgls.gz" 30 "$EX/example.tped.gz"
+mk_mixed_tped "$WORK/c21.mixed.tped.gz"
 
 unit_tests
 golden
 determinism
 likelihood_guards
+stratified_cutoff
 ind_metadata
 vcf_input
 vcf_likelihoods

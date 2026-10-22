@@ -99,6 +99,62 @@ struct IndReportRow
     double    hetObsExp;     //NaN when no expected hets
 };
 
+//Stratified LOD cutoff (--stratify-cutoff).
+//
+//The automatic cutoff is the valley between the two modes of the window-LOD
+//density POOLED over individuals.  That is self-calibrating when every
+//individual carries the same amount of evidence per window, and wrong when
+//they do not: an individual at low depth has both modes compressed toward
+//zero, so a cutoff placed for the cohort calls most of that individual's
+//genome.  Two things were tried and rejected before this: standardising each
+//individual's windows by (mode, spread) and pooling -- the non-autozygous
+//spread is set by allele-frequency heterogeneity across windows while the
+//autozygous mode is set by information per site, so the two do not scale
+//together and the standardised density has no common autozygous mode -- and
+//a valley per individual, which is too noisy on one individual's windows
+//(10-26% more genome called on the bundled uniform-depth example, and worse
+//with a shared bandwidth).
+//
+//What works is to notice that the location of an individual's
+//non-autozygous mode is a precise statistic of how much evidence its windows
+//carry (sd 1.3 LOD across the bundled cohort, against 18 and 29 LOD between
+//2x, 4x and 30x), and to apply the POOLED rule within strata of individuals
+//whose modes agree: sorted by mode, two neighbours join a stratum when their
+//modes differ by less than a quarter of the smaller spread.  A uniform cohort
+//is one stratum and reproduces the pooled cutoff exactly; a mixed cohort
+//splits by depth and each stratum gets the valley of its own pooled density,
+//with tens of thousands of windows behind it.  A stratum whose density has
+//no valley borrows the others' median standardised valley through its own
+//median mode and spread.
+struct IndStandardization
+{
+    double mode;        //location of the individual's non-autozygous mode, LOD units
+    double spread;      //1.4826 * median |w - mode| over windows <= mode
+    double cutoff;      //the cutoff applied to this individual
+    int    stratum;     //0-based, in order of increasing mode; -1 = too few windows
+    int    stratumSize; //individuals in it
+    bool   own;         //the stratum's cutoff is its own valley (else borrowed)
+    bool   small;       //stratum too small for a valley; took the largest stratum's cutoff
+    bool   hasScale;    //mode and spread were estimated
+    IndStandardization() : mode(0), spread(1), cutoff(0), stratum(-1), stratumSize(0), own(false), small(false), hasScale(false) {}
+};
+
+//How many evidence strata the cohort falls into, with each stratum's median
+//non-autozygous mode and size -- for the pooled selector to warn when it is
+//about to place one cutoff for individuals that do not carry the same
+//evidence per window.
+int countEvidenceStrata(vector< WinData * > *winDataByChr, IndData *indData, int step,
+                        const vector<ChrRole> *role, ChrRole keep, vector<double> &stratumModes,
+                        vector<int> &stratumSizes);
+
+//Returns the number of strata; perInd receives one entry per individual with
+//the cutoff actually applied.  The KDE written to kdeoutfile is of the
+//largest stratum's pooled windows.
+int selectLODCutoffStratified(vector< WinData * > *winDataByChr, IndData *indData,
+                              string kdeoutfile, int step, int wsize, bool &ok,
+                              const vector<ChrRole> *role, ChrRole keep,
+                              vector<IndStandardization> &perInd);
+
 vector<IndReportRow> computeIndReport(vector< HapData * > *hapDataByChr,
                                       vector< FreqData * > *freqDataByChr,
                                       vector< WinData * > *winDataByChr,
@@ -106,8 +162,11 @@ vector<IndReportRow> computeIndReport(vector< HapData * > *hapDataByChr,
                                       int winsize,
                                       const vector<ChrRole> *role);
 
+//perInd may be NULL; when given, more columns record the stratum and the
+//cutoff each individual was called with.
 void writeIndReport(string outfile, const vector<IndReportRow> &rows, IndData *indData,
-                    int winsize, double lodCutoff);
+                    int winsize, double lodCutoff,
+                    const vector<IndStandardization> *perInd = NULL);
 
 void writeFROH(string outfile,
                vector< ROHData * > *rohDataByInd,
@@ -205,7 +264,11 @@ vector< ROHData * > *assembleROHWindows(vector< WinData * > *winDataByChr,
                                         //window size it was estimated at, so
                                         //these travel together.
                                         double sexCutoff = 0, bool haveSexCutoff = false,
-                                        int sexWinsize = 0);
+                                        int sexWinsize = 0,
+                                        //--stratify-cutoff: one cutoff per
+                                        //individual, replacing lodScoreCutoff
+                                        //wherever the autosomal cutoff applies.
+                                        const vector<double> *indCutoff = NULL);
 
 ROHLength *initROHLength(int size);
 void releaseROHLength(ROHLength *rohLength);

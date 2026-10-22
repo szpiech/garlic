@@ -325,6 +325,23 @@ int configureFromCommandLine(param_t *params, GarlicOptions &opt, int argc, char
     LOG.log("# GMM clusters:", opt.NCLUST);
     warnBoundsOverridesNclust(params->isFlagSet(ARG_BOUND_SIZE), params->isFlagSet(ARG_NCLUST));
 
+    opt.STRATIFY_CUTOFF = params->getBoolFlag(ARG_STRATIFY_CUTOFF);
+    if (opt.STRATIFY_CUTOFF && !opt.AUTO_CUTOFF)
+    {
+        LOG.err("ERROR:", ARG_STRATIFY_CUTOFF, false);
+        LOG.err(" chooses the cutoff per stratum from the data, so it cannot be combined with");
+        LOG.err("\t", ARG_LOD_CUTOFF, false);
+        LOG.err(".");
+        argerr = true;
+    }
+    if (opt.STRATIFY_CUTOFF && params->getIntFlag(ARG_KDE_SUBSAMPLE) > 0)
+    {
+        LOG.err("ERROR:", ARG_STRATIFY_CUTOFF, false);
+        LOG.err(" uses every individual and does not subsample; drop", ARG_KDE_SUBSAMPLE, false);
+        LOG.err(".");
+        argerr = true;
+    }
+    LOG.log("Choose the LOD cutoff within evidence strata:", opt.STRATIFY_CUTOFF);
     opt.KDE_SUBSAMPLE = params->getIntFlag(ARG_KDE_SUBSAMPLE);
     if (opt.KDE_SUBSAMPLE <= 0) LOG.log("# of rand individuals for KDE: ALL");
     else LOG.log("# of rand individuals for KDE:", opt.KDE_SUBSAMPLE);
