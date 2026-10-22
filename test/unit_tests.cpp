@@ -967,6 +967,29 @@ static void test_kde_helpers()
     }
     double cut = get_min_btw_modes(x, y, N, 20);
     ckd(cut, 0.0, 0.25, "get_min_btw_modes finds the trough of a symmetric bimodal density");
+
+    // The same two bumps shifted so their trough sits at x = -70: more than
+    // one LOD-per-SNP from zero at wsize 20, so the function discards it and
+    // applies 0.  That substitution used to be silent; it must now be named
+    // on stderr, with the discarded value in the message.
+    for (int i = 0; i < N; i++) x[i] -= 70.0;
+    quietErrors(true);
+    double far = get_min_btw_modes(x, y, N, 20);
+    string said = cerrSink.str();
+    quietErrors(false);
+    ckd(far, 0.0, 1e-12, "a trough outside +/- wsize is replaced by 0, as before");
+    ck(said.find("WARNING") != string::npos && said.find("-70") != string::npos,
+       "the out-of-range substitution is reported, naming the discarded valley");
+    ck(said.find("--lod-cutoff") != string::npos,
+       "the warning points at the flag that overrides the automatic cutoff");
+
+    // Within range the warning must stay silent.
+    for (int i = 0; i < N; i++) x[i] += 70.0;
+    quietErrors(true);
+    get_min_btw_modes(x, y, N, 20);
+    bool quiet = cerrSink.str().find("WARNING") == string::npos;
+    quietErrors(false);
+    ck(quiet, "an in-range trough produces no warning");
 }
 
 // ----------------------------------------------------- getMapInfo() -------

@@ -146,7 +146,17 @@ const string HELP_GL_TYPE = "Which genotype-quality field to use.  With --vcf it
 	  	error of 0, and the integers map to 0, 0.21, 0.37, 0.50, ... --\n\
 	  	none a realistic error rate (0.001 would be PL=0.00435).  Feeding\n\
 	  	VCF PLs here is rejected.  Use --vcf --gl-type PL instead.\n\
-	GL	error = 1 - 10^GL, with the same caveat.";
+	GL	error = 1 - 10^GL, with the same caveat.\n\
+	\n\
+	Not for low-coverage sequence data (below roughly 4x).  Every form\n\
+	above reduces to one symmetric error rate per genotype, and the\n\
+	dominant error at low depth is not symmetric: allelic dropout turns\n\
+	heterozygotes into homozygotes, which is what autozygosity looks\n\
+	like.  In simulation at 0.5-1x this called essentially the whole\n\
+	genome autozygous.  Hard calls with --error behave better there but\n\
+	still lose the automatic cutoff by about 2x; a genotype-likelihood\n\
+	input that keeps all three genotype probabilities is the intended\n\
+	route for such data.";
 
 const string ARG_MAP = "--map";
 const string DEFAULT_MAP = "none";
