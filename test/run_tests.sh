@@ -36,6 +36,14 @@ fi
 # gzip -cd is spelled the same on macOS and Linux; gzcat/zcat are not.
 gz() { gzip -cd "$1"; }
 
+# grep -q for the end of a pipeline from garlic.  grep -q exits at the first
+# match and closes the pipe, and garlic's next write to the console then kills
+# it with SIGPIPE: the run stops part way, its .log and .error lose their last
+# lines (nondeterministically, depending on which process gets there first),
+# and nothing after that point is written.  Read the whole stream first so the
+# program under test always runs to completion.  Not via >/dev/null: GNU grep
+# treats output to /dev/null like -q and stops reading at the first match.
+gq() { _gq_in=$(cat); printf '%s\n' "$_gq_in" | grep -q "$@"; }
 
 # Builds a .tgls fixture from a tracked .tped: same four leading columns, the
 # same number of genotype columns, every value set to $2.  Derived rather than
@@ -479,7 +487,7 @@ ind_metadata() {
         --size-bounds 500000 1000000 --out "$WORK/i1" --force
     if "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$WORK/dup.tfam" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/i1" --force \
-            2>&1 | grep -q "Found duplicate individual ID"; then ok
+            2>&1 | gq "Found duplicate individual ID"; then ok
     else bad "the duplicate-ID error message is missing"; fi
 
     # Two populations in one file: allowed, but it must say so, because
@@ -493,7 +501,7 @@ ind_metadata() {
     # the run REPORTS the split instead of warning about it.
     if "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$WORK/twopop.tfam" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/i2" --force \
-            2>&1 | grep -q "Populations found: 2"; then ok
+            2>&1 | gq "Populations found: 2"; then ok
     else bad "a two-population TFAM did not report the populations it found"; fi
     if [ -f "$WORK/i2.OTHERPOP.roh.bed" ] && [ ! -f "$WORK/i2.roh.bed" ]; then ok
     else bad "a two-population TFAM did not produce per-population output files"; fi
@@ -501,7 +509,7 @@ ind_metadata() {
     # A single-population TFAM must NOT warn.
     if "$GARLIC" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/i3" --force \
-            2>&1 | grep -q "Found multiple population IDs"; then
+            2>&1 | gq "Found multiple population IDs"; then
         bad "a single-population TFAM produced the pooled-population warning"
     else ok; fi
     # An undeclared sex chromosome stops the run, and the message reports what
@@ -522,7 +530,7 @@ ind_metadata() {
         st=$?
         if [ "$st" -ne 1 ]; then
             bad "undeclared chrX on $(basename "$1") exited $st, expected 1"
-        elif printf '%s\n' "$out" | grep -q "$2"; then ok
+        elif printf '%s\n' "$out" | gq "$2"; then ok
         else bad "sex report on $(basename "$1"): expected /$2/"; fi
     }
     sexwarn "$WORK/nosex.tfam"  "Sex is not recorded for any of the 45"
@@ -534,7 +542,7 @@ ind_metadata() {
     # are affected while any of them has no recorded sex.
     if "$GARLIC" --tped "$WORK/chrX.tped.gz" --tfam "$WORK/partial.tfam" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --out "$WORK/sx" --force 2>&1 \
-            | grep -q "affected individuals:"; then
+            | gq "affected individuals:"; then
         bad "a partial-coverage run stated a bare affected count"
     else ok; fi
     # --- --pop -------------------------------------------------------------
@@ -570,7 +578,7 @@ ind_metadata() {
     # mistake.  These two are easy to conflate, which is why this is asserted.
     # shellcheck disable=SC2086
     if "$GARLIC" $POPBASE --pop "$WORK/swapped.pop" --out "$WORK/p2" --force 2>&1 \
-            | grep -q "looks like its columns are swapped"; then ok
+            | gq "looks like its columns are swapped"; then ok
     else bad "--pop swapped columns did not produce the swap diagnostic"; fi
 
     # The override must reach the outputs: the FROH pop column and the BED
@@ -592,7 +600,7 @@ ind_metadata() {
     # populations by --pop must be ANALYSED as two.
     # shellcheck disable=SC2086
     if "$GARLIC" $POPBASE --pop "$WORK/twopop.pop" --out "$WORK/p3" --force 2>&1 \
-            | grep -q "Populations found: 2"; then ok
+            | gq "Populations found: 2"; then ok
     else bad "--pop introducing two populations was not split"; fi
 
     # --pop's sex column must feed the sex-chromosome warning, which is the
@@ -600,7 +608,7 @@ ind_metadata() {
     gz "$EX/chr21.tfam.gz" | awk '{print $1"\t"$2}' > "$WORK/nosex2.tfam"
     if "$GARLIC" --tped "$WORK/chrX.tped.gz" --tfam "$WORK/nosex2.tfam" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 2.5 --size-bounds 500000 1000000 --pop "$WORK/withsex.pop" \
-            --out "$WORK/p4" --force 2>&1 | grep -q "26 male, 19 female"; then ok
+            --out "$WORK/p4" --force 2>&1 | gq "26 male, 19 female"; then ok
     else bad "--pop sex column did not reach the sex-chromosome warning"; fi
 }
 
@@ -702,7 +710,7 @@ vcf_input() {
     mutex() {  # $1 = pattern, $2 = label, rest = args
         pat=$1; lbl=$2; shift 2
         # shellcheck disable=SC2086
-        if "$GARLIC" "$@" 2>&1 | grep -q "$pat"; then ok; else bad "$lbl"; fi
+        if "$GARLIC" "$@" 2>&1 | gq "$pat"; then ok; else bad "$lbl"; fi
     }
     mutex "alternative sources of the same data" "--vcf with --tped not diagnosed" \
         --vcf "$WORK/chr21.vcf.gz" --tped "$EX/chr21.tped.gz" --tfam "$EX/chr21.tfam.gz" \
@@ -760,7 +768,7 @@ vcf_input() {
     # ---- omitting --pop is allowed but must say so ----
     # shellcheck disable=SC2086
     if $GARLIC --vcf "$WORK/chr21.vcf.gz" $VB --out "$WORK/vnp" --force 2>&1 \
-            | grep -q "no --pop given"; then ok
+            | gq "no --pop given"; then ok
     else bad "--vcf without --pop did not warn"; fi
     # ---- BGZF ----
     # A VCF from bcftools or GATK is BGZF, not plain gzip: multi-member gzip
@@ -873,7 +881,7 @@ vcf_likelihoods() {
         pat=$1; lbl=$2; shift 2
         # shellcheck disable=SC2086
         if "$GARLIC" "$@" --pop "$WORK/vcf.pop" $LB --out "$WORK/qe" --force 2>&1 \
-                | grep -q "$pat"; then ok
+                | gq "$pat"; then ok
         else bad "$lbl"; fi
     }
     # no quality field at all
@@ -1395,7 +1403,7 @@ multi_population() {
         {print $1,$2,$3,$4,1-$5,$5}' > "$MP/miss.freq"
     # shellcheck disable=SC2086
     if "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --freq-file "$MP/miss.freq" \
-            --out "$MP/msf" --quiet --force 2>&1 | grep -q "no frequency column for population POPB"; then ok
+            --out "$MP/msf" --quiet --force 2>&1 | gq "no frequency column for population POPB"; then ok
     else bad "a frequency file missing one population's column did not name it"; fi
     # shellcheck disable=SC2086
     expect_exit 2 "a frequency file missing a population's column exits 2" \
@@ -1455,7 +1463,7 @@ multi_population() {
     # pooling several populations biases the frequencies, and says so
     # shellcheck disable=SC2086
     if "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --pool-populations \
-            --out "$MP/pw" --force 2>&1 | grep -q "pools allele frequencies across 2 populations"; then ok
+            --out "$MP/pw" --force 2>&1 | gq "pools allele frequencies across 2 populations"; then ok
     else bad "--pool-populations did not warn that frequencies are pooled"; fi
 
     # on a file that really has one population the flag is a no-op
@@ -1468,7 +1476,7 @@ multi_population() {
     # The run's own frequency file is written in the format --freq-file reads,
     # one column per population, so feeding it back reproduces the run.  A
     # single pooled column would describe an analysis that did not happen.
-    if gz "$MP/both.freq.gz" | head -1 | grep -q 'ALLELE.*POPA.*POPB'; then ok
+    if gz "$MP/both.freq.gz" | head -1 | gq 'ALLELE.*POPA.*POPB'; then ok
     else bad "a multi-population run did not write a per-population frequency file"; fi
     # shellcheck disable=SC2086
     "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" $A --froh \
@@ -1491,7 +1499,7 @@ multi_population() {
     # shellcheck disable=SC2086
     if "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 99999 --out "$MP/fail" --force 2>&1 \
-            | grep -q '\[population POPA\] Cannot fit'; then ok
+            | gq '\[population POPA\] Cannot fit'; then ok
     else bad "a population that failed size-class fitting was not named"; fi
     if [ ! -f "$MP/fail.POPB.roh.bed" ]; then ok
     else bad "a failed population did not stop the run"; fi
@@ -1503,7 +1511,7 @@ multi_population() {
     # shellcheck disable=SC2086
     if "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" --build hg18 --winsize 60 \
             --error 0.001 --lod-cutoff 99999 --out "$MP/fail3" --force 2>&1 \
-            | grep -q 'ERROR: Cannot fit a'; then ok
+            | gq 'ERROR: Cannot fit a'; then ok
     else bad "the single-population failure message changed"; fi
 
     # --freq-only streams the input rather than loading it, so it is a SECOND
@@ -1513,7 +1521,7 @@ multi_population() {
     # shellcheck disable=SC2086
     "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" --build hg18 --error 0.001 \
         --freq-only --out "$MP/fo" --quiet --force >/dev/null 2>&1
-    if gz "$MP/fo.freq.gz" | head -1 | grep -q 'ALLELE.*POPA.*POPB'; then ok
+    if gz "$MP/fo.freq.gz" | head -1 | gq 'ALLELE.*POPA.*POPB'; then ok
     else bad "--freq-only did not write a per-population frequency file"; fi
     if cmp -s "$(gz "$MP/fo.freq.gz" > "$MP/fo.txt"; echo "$MP/fo.txt")" \
               "$(gz "$MP/both.freq.gz" > "$MP/bo.txt"; echo "$MP/bo.txt")"; then ok
@@ -1531,7 +1539,7 @@ multi_population() {
     # shellcheck disable=SC2086
     "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/two.tfam" --build hg18 --error 0.001 \
         --freq-only --pool-populations --out "$MP/fop" --quiet --force >/dev/null 2>&1
-    if gz "$MP/fop.freq.gz" | head -1 | grep -q 'ALLELE.FREQ$'; then ok
+    if gz "$MP/fop.freq.gz" | head -1 | gq 'ALLELE.FREQ$'; then ok
     else bad "--freq-only --pool-populations did not write a single pooled column"; fi
     # shellcheck disable=SC2086
     "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" --build hg18 --error 0.001 \
@@ -1545,12 +1553,12 @@ multi_population() {
     # shellcheck disable=SC2086
     "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" --pop "$MP/lab.pop" --build hg18 \
         --error 0.001 --freq-only --out "$MP/fpop" --quiet --force >/dev/null 2>&1
-    if gz "$MP/fpop.freq.gz" | head -1 | grep -q 'ALLELE.*PX.*PY'; then ok
+    if gz "$MP/fpop.freq.gz" | head -1 | gq 'ALLELE.*PX.*PY'; then ok
     else bad "--pop did not reach --freq-only"; fi
     # shellcheck disable=SC2086
     "$GARLIC" --tped "$MP/two.tped" --tfam "$MP/one.tfam" --pop "$MP/lab.pop" --build hg18 \
         --error 0.001 --freq-only --pool-populations --out "$MP/fpopp" --quiet --force >/dev/null 2>&1
-    if gz "$MP/fpopp.freq.gz" | head -1 | grep -q 'ALLELE.FREQ$'; then ok
+    if gz "$MP/fpopp.freq.gz" | head -1 | gq 'ALLELE.FREQ$'; then ok
     else bad "--pool-populations did not override --pop under --freq-only"; fi
 
     # one population keeps the unlabelled names, so nothing existing changes
@@ -2903,10 +2911,10 @@ stratified_cutoff() {
         n=$(sed -n 's/^LOD cutoff strata: \([0-9]*\)$/\1/p' "$WORK/st_mixs.log")
         if [ -n "$n" ] && [ "$n" -ge 2 ]; then ok; else bad "mixed-evidence fixture should form at least two strata (got '$n')"; fi
         # The report carries the stratum columns and every row has a cutoff.
-        if grep -v '^##' "$WORK/st_mixs.ind.tsv" | head -1 | grep -q "lod_cutoff.*stratum.*cutoff_source"; then ok
+        if grep -v '^##' "$WORK/st_mixs.ind.tsv" | head -1 | gq "lod_cutoff.*stratum.*cutoff_source"; then ok
         else bad "ind.tsv lacks the stratum columns under --stratify-cutoff"; fi
         if grep -q '"lod_cutoff_is_stratum_count": *true' "$WORK/st_mixs.params.json" 2>/dev/null \
-           || grep -q 'lod_cutoff_is_stratum_count' "$WORK/st_mixs.params.json" 2>/dev/null; then ok
+           || gq 'lod_cutoff_is_stratum_count' "$WORK/st_mixs.params.json" 2>/dev/null; then ok
         else bad "params.json does not flag lod_cutoff as a stratum count"; fi
     fi
     # Refusals.
