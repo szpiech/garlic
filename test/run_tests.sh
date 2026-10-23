@@ -3043,8 +3043,8 @@ lod_modes() {
     if [ $? -ne 0 ]; then bad "pooled run on the mixed-depth fixture must complete (unimodal-null is not an error)"; sed -n '1,3p' "$WORK/lm_mix.err" | sed 's/^/        /'
     else
         if grep -q "unimodal-null" "$WORK/lm_mix.err"; then ok; else bad "mixed-depth pooled run should warn that the density is unimodal-null"; fi
-        if grep -q -- "--stratify-cutoff" "$WORK/lm_mix.err" && grep -q -- "--lod-cutoff" "$WORK/lm_mix.err"; then ok
-        else bad "the unimodal-null warning should name --stratify-cutoff and --lod-cutoff"; fi
+        if grep -q -- "use --gl-beagle" "$WORK/lm_mix.err" && grep -q -- "--stratify-cutoff" "$WORK/lm_mix.err" && grep -q -- "--lod-cutoff" "$WORK/lm_mix.err"; then ok
+        else bad "the unimodal-null warning should name --gl-beagle, --stratify-cutoff and --lod-cutoff"; fi
         n=$(grep -vc '^track' "$WORK/lm_mix.roh.bed")
         if [ "$n" -eq 0 ]; then ok; else bad "unimodal-null run must call no ROH (called $n segments)"; fi
         if grep -q '"lod_cutoff": *null' "$WORK/lm_mix.params.json" && grep -q '"lod_density_verdict": *"unimodal-null"' "$WORK/lm_mix.params.json"; then ok

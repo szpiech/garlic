@@ -412,11 +412,11 @@ static PopResult analyzePopulation(const GarlicOptions &opt,
             LOG.err("\tNo ROH are called.  This means the windows carry too little evidence to separate autozygous");
             LOG.err("\tfrom non-autozygous stretches -- too little depth or too few sites per window for these samples");
             LOG.err("\t(the small-population case needs more sites, not more depth), hard genotype calls made with a");
-            LOG.err("\tpopulation prior at low depth (bcftools call -m calls most 1-read samples heterozygous), or");
-            LOG.err("\tindividuals of very different depth pooled together (see", ARG_STRATIFY_CUTOFF, false);
-            LOG.err(").");
-            LOG.err("\tIt does NOT mean the samples carry no ROH: a cohort without long runs still shows a small");
-            LOG.err("\tautozygous mode from short background IBD.");
+            LOG.err("\tpopulation prior at low depth (bcftools call -m calls most 1-read samples heterozygous; below");
+            LOG.err("\troughly 4x, use", ARG_BEAGLE, false);
+            LOG.err("), or individuals of very different depth pooled together (see");
+            LOG.err("\t" + ARG_STRATIFY_CUTOFF + ").  It does NOT mean the samples carry no ROH: a cohort without long runs");
+            LOG.err("\tstill shows a small autozygous mode from short background IBD.");
             LOG.err("\tThe density is in <out>.<winsize>SNPs.kde; a cutoff can be imposed with", ARG_LOD_CUTOFF);
         }
 
