@@ -77,7 +77,8 @@ const string HELP_RESAMPLE = "The number of resamples for estimating allele freq
 
 const string ARG_TPED = "--tped";
 const string DEFAULT_TPED = "none";
-const string HELP_TPED = "A TPED file holding the map and the genotypes.";
+const string HELP_TPED = "A TPED file holding the map and the genotypes. A locus with\n\
+\tmore than two alleles is an error.";
 
 const string ARG_TFAM = "--tfam";
 const string DEFAULT_TFAM = "none";
@@ -88,8 +89,9 @@ const string DEFAULT_VCF = "none";
 const string HELP_VCF = "A VCF file (plain, gzipped or BGZF) to read genotypes from\n\
 \tinstead of --tped. Biallelic SNVs with a GT field are used. Multiallelic\n\
 \tsites, indels and symbolic ALTs are skipped, and the counts are\n\
-\treported. Sample names come from the #CHROM line, so --tfam is not\n\
-\taccepted. Use --pop for population labels.\n\
+\treported. A position on more than one record, which is what splitting\n\
+\tmultiallelic sites produces, is an error. Sample names come from the\n\
+\t#CHROM line, so --tfam is not accepted. Use --pop for population labels.\n\
 \t\n\
 \tSites must be grouped by chromosome. Ploidy must be 2, except on a\n\
 \tchromosome declared with --sex-system or --sex-chr, where a haploid call\n\

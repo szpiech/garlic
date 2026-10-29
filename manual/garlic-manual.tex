@@ -204,12 +204,14 @@ Using the command line flag {\tt --help}, will print a help dialog with a summar
 
 \subsection{Input Files}
 
-Genotypes are read from a VCF ({\tt --vcf}), a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}).  The two are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Loci are assumed to be in order of physical position, and all records for a chromosome must be contiguous, as {\tt bcftools sort} produces.  If the file contains more than one population, each is analysed separately (Section~\ref{sec:multipop}).  {\tt --pop} overrides the labels, which for a TPED/TFAM pair are otherwise taken from column 1 of the TFAM.
+Genotypes are read from a VCF ({\tt --vcf}), a TPED/TFAM pair ({\tt --tped}/{\tt --tfam}, see \\{\tt http://pngu.mgh.harvard.edu/\textasciitilde purcell/plink/data.shtml\#tr}).  The two are mutually exclusive.  Either may be read gzipped ({\tt http://www.gzip.org/}) without decompressing first, and a VCF may also be BGZF, as written by {\tt bgzip} or {\tt bcftools}.  Loci are assumed to be in order of physical position, and all records for a chromosome must be contiguous, as {\tt bcftools sort} produces.  A locus may carry at most two alleles: a TPED line with three distinct alleles, or a VCF position on more than one record, stops the run with an error that names the site.  If the file contains more than one population, each is analysed separately (Section~\ref{sec:multipop}).  {\tt --pop} overrides the labels, which for a TPED/TFAM pair are otherwise taken from column 1 of the TFAM.
 
 \subsubsection{VCF input}
 \label{sec:vcf}
 
 Biallelic SNVs carrying a {\tt GT} field are used.  Multiallelic sites, indels, symbolic ALT alleles ({\tt *}, {\tt <NON\_REF>}) and records with no {\tt GT} in {\tt FORMAT} are skipped, and the number of each is written to the log.  The {\tt FILTER} column is reported but acted on only under {\tt --vcf-pass-only}, since it records the variant caller's thresholds rather than {\tt garlic}'s.
+
+A position on more than one record is an error.  Splitting multiallelic sites ({\tt bcftools norm -m-}) produces this, and {\tt garlic} would otherwise score each record as a separate SNP in the same window: a heterozygote carrying both ALT alleles would be counted twice when the other ALT is written as {\tt 0}, and not at all when it is written as {\tt .}, because each record then holds a half call.  Every record counts towards the check, indels and filtered records included, because the SNV left over from splitting {\tt A}$\to${\tt C,AT} is scored with the indel's carriers coded as REF or missing.  Rejoin split records with {\tt bcftools norm -m+any}.  {\tt garlic} then skips the multiallelic site and counts it in the log.
 
 A VCF states things that a TPED cannot, and {\tt garlic} checks them.  Ploidy is given per call, so anything other than a diploid genotype is an error that names the site and the sample, except on a declared sex chromosome (Section~\ref{sec:sexchr}).  Phase is also given per call, so {\tt --phased} requires {\tt |} in every call.  Samples are named in the {\tt \#CHROM} line, so {\tt --tfam} is not accepted with {\tt --vcf}.  Use {\tt --pop} for population labels.  Without it every sample is labelled {\tt unknown} and {\tt garlic} warns, because the allele frequencies are then pooled over all samples.  With {\tt --pop}, each population is analysed separately (Section~\ref{sec:multipop}).
 
@@ -297,7 +299,7 @@ that column is called (Section~\ref{sec:multipop}).
 
 \subsubsection{{\tt --tped}}
 
-Use {\tt --tped <string>} to specify a .tped (transposed PLINK; \cite{PurcellEtAl07}) file (see \\{\tt http://zzz.bwh.harvard.edu/plink/data.shtml\#tr} for exact specifications) containing genetic variant information.  
+Use {\tt --tped <string>} to specify a .tped (transposed PLINK; \cite{PurcellEtAl07}) file (see \\{\tt http://zzz.bwh.harvard.edu/plink/data.shtml\#tr} for exact specifications) containing genetic variant information.  A locus with more than two distinct alleles, not counting the missing-data code, is an error.  {\tt garlic} counts one allele against the rest, so a third would be merged with the second and some heterozygotes scored as homozygotes.
 
 \subsubsection{{\tt --tped-missing}}
 
@@ -814,6 +816,14 @@ one stratum. See "Cohorts of mixed depth" under Input Files.
 computed, on every chromosome. This corrects the regional part of mapping bias, and it is the
 only correction for mapping bias that garlic applies. See "Reference and mapping bias" under
 Input Files.
+
+A locus with more than two alleles is an error from either reader. A TPED line with three
+distinct alleles was read as the first allele against the rest, so some heterozygotes were
+scored as homozygotes. A VCF position on several records, which is how bcftools norm -m-
+writes split multiallelic sites, was read as that many separate SNPs. Every record counts
+towards a repeated position, indels and filtered records included. bcftools norm -m+any
+rejoins the records, and garlic then skips the multiallelic site as before. --freq-only
+applies the same rules. See "VCF input" under Input Files.
 
 24AUG2017 - v1.1.6 Modified behavior of --cm flag based on user feedback. When this flag is set ROH lengths and length classifications will be reported in cM but ROH boundaries will be reported in bps.
 

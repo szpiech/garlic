@@ -1288,6 +1288,100 @@ half_calls() {
 }
 
 # ---------------------------------------------------------------------------
+# 4i2. More than two alleles at a locus
+# ---------------------------------------------------------------------------
+# garlic scores a site as two alleles.  A third used to pass silently by two
+# routes, and both are now runtime errors (exit 2), on the full path and on
+# --freq-only, which shares the helpers:
+#   - a TPED line with three distinct non-missing alleles (the reader counted
+#     the first against the rest, so a C/G het at an A/C/G locus scored as a
+#     homozygote);
+#   - one VCF position on several records, as bcftools norm -m- writes, each
+#     record read as a separate SNP.  Every record counts, before any site
+#     filter, so neither an indel nor a FILTERed twin exempts the SNV.
+# Each positive case has a negative control beside it, so a guard that fired
+# on everything would fail here too.
+allele_guards() {
+    echo "== allele guards =="
+    AG=$WORK/ag; mkdir -p "$AG"
+    printf 'P\ti1\t0\t0\t0\t0\nP\ti2\t0\t0\t0\t0\nP\ti3\t0\t0\t0\t0\nP\ti4\t0\t0\t0\t0\n' > "$AG/a.tfam"
+    printf 'i1\tP\ni2\tP\ni3\tP\ni4\tP\n' > "$AG/a.pop"
+    AGB="--build hg18 --winsize 2 --error 0.001 --lod-cutoff 2.5 --size-bounds 100 200 --quiet --force"
+
+    # ---- TPED ----
+    # rs3 carries A, C and G.  The control replaces the G with the missing
+    # code, which must not count as an allele.
+    tped_rows() {
+      printf 'chr21\trs1\t0\t9411000\tA\tA\tA\tG\tG\tG\tA\tA\n'
+      printf 'chr21\trs2\t0\t9412000\tC\tC\tC\tT\tT\tT\tC\tC\n'
+      printf 'chr21\trs3\t0\t9413000\tA\tA\tA\tC\t%s\tC\tA\tA\n' "$1"
+      printf 'chr21\trs4\t0\t9414000\tT\tT\tT\tC\tC\tC\tT\tT\n'
+    }
+    tped_rows G > "$AG/three.tped"
+    tped_rows 0 > "$AG/two.tped"
+    # shellcheck disable=SC2086
+    expect_exit 2 "TPED locus with three alleles" "$GARLIC" --tped "$AG/three.tped" --tfam "$AG/a.tfam" $AGB --out "$AG/t3"
+    if grep -q 'locus rs3 .*more than two alleles: A, C and G' "$WORK/.expect_exit.err"; then ok
+    else bad "TPED third-allele error does not name rs3 and its three alleles"; fi
+    # shellcheck disable=SC2086
+    expect_exit 2 "TPED locus with three alleles, --freq-only" "$GARLIC" --tped "$AG/three.tped" --tfam "$AG/a.tfam" $AGB --freq-only --out "$AG/t3f"
+    # shellcheck disable=SC2086
+    expect_exit 0 "TPED control: two alleles plus the missing code" "$GARLIC" --tped "$AG/two.tped" --tfam "$AG/a.tfam" $AGB --out "$AG/t2"
+    # shellcheck disable=SC2086
+    expect_exit 0 "TPED control, --freq-only" "$GARLIC" --tped "$AG/two.tped" --tfam "$AG/a.tfam" $AGB --freq-only --out "$AG/t2f"
+    # A non-default --tped-missing code must be excluded too, not only '0'.
+    # awk, not sed: BSD sed does not expand \t.  Column 9 is i3's first allele.
+    awk 'BEGIN{OFS="\t"} $2=="rs3"{$9="N"} {print}' "$AG/two.tped" > "$AG/twoN.tped"
+    # shellcheck disable=SC2086
+    expect_exit 0 "TPED control: --tped-missing N is not an allele" "$GARLIC" --tped "$AG/twoN.tped" --tfam "$AG/a.tfam" --tped-missing N $AGB --out "$AG/t2n"
+
+    # ---- VCF ----
+    vhead() {
+      printf '##fileformat=VCFv4.2\n'
+      printf '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+      printf '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ti1\ti2\ti3\ti4\n'
+    }
+    r1='chr21\t9411000\trs1\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t0/0\n'
+    r2='chr21\t9412000\trs2\tC\tT\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t0/0\n'
+    r3='chr21\t9413000\trs3\tA\tC\t.\tPASS\t.\tGT\t0/0\t0/1\t1/0\t0/0\n'
+    r4='chr21\t9414000\trs4\tT\tC\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t0/0\n'
+    # the second half of rs3 split from A->C,G, the other ALT written as 0
+    r3g='chr21\t9413000\trs3\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/0\n'
+    r3i='chr21\t9413000\trs3\tA\tAT\t.\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/0\n'
+    r3f='chr21\t9413000\trs3\tA\tG\t.\tLowQual\t.\tGT\t0/0\t0/0\t0/1\t0/0\n'
+    r3x='chr22\t9413000\trs3x\tA\tG\t.\tPASS\t.\tGT\t0/0\t0/1\t1/1\t0/0\n'
+    # printf, not echo: the rows carry \t and \n escapes
+    { vhead; printf "$r1$r2$r3$r3g$r4"; }  > "$AG/split.vcf"
+    { vhead; printf "$r1$r2$r3$r3i$r4"; }  > "$AG/indel.vcf"
+    { vhead; printf "$r1$r2$r3$r3f$r4"; }  > "$AG/filt.vcf"
+    { vhead; printf "$r1$r3g$r2$r3$r4"; }  > "$AG/unsorted.vcf"
+    { vhead; printf "$r1$r3$r2$r4"; }      > "$AG/unsorted_ok.vcf"
+    { vhead; printf "$r1$r2$r3$r4$r3x"; }  > "$AG/otherchr.vcf"
+
+    for c in split indel filt unsorted; do
+        # shellcheck disable=SC2086
+        expect_exit 2 "VCF position on two records ($c)" "$GARLIC" --vcf "$AG/$c.vcf" --pop "$AG/a.pop" --vcf-pass-only $AGB --out "$AG/v$c"
+        if grep -q 'position chr21:9413000 is on more than one record' "$WORK/.expect_exit.err"; then ok
+        else bad "VCF repeated-position error ($c) does not name chr21:9413000"; fi
+        if [ "$c" = unsorted ]; then
+            if grep -q 'not sorted by position' "$WORK/.expect_exit.err"; then ok
+            else bad "an unsorted repeat is not reported as unsorted"; fi
+        fi
+        # shellcheck disable=SC2086
+        expect_exit 2 "VCF position on two records ($c), --freq-only" "$GARLIC" --vcf "$AG/$c.vcf" --pop "$AG/a.pop" --vcf-pass-only $AGB --freq-only --out "$AG/v${c}f"
+    done
+
+    # controls: an unsorted chromosome without a repeat, and the same POS on
+    # another chromosome, must both run
+    for c in unsorted_ok otherchr; do
+        # shellcheck disable=SC2086
+        expect_exit 0 "VCF control ($c)" "$GARLIC" --vcf "$AG/$c.vcf" --pop "$AG/a.pop" $AGB --freq-only --out "$AG/v${c}f"
+    done
+    # shellcheck disable=SC2086
+    expect_exit 0 "VCF control (unsorted_ok), full run" "$GARLIC" --vcf "$AG/unsorted_ok.vcf" --pop "$AG/a.pop" $AGB --out "$AG/vok"
+}
+
+# ---------------------------------------------------------------------------
 # 4j. Multiple populations
 # ---------------------------------------------------------------------------
 # Several populations in one run are analysed SEPARATELY: each gets allele
@@ -3058,6 +3152,7 @@ vcf_likelihoods
 threads
 freq_file_format
 half_calls
+allele_guards
 multi_population
 sex_chromosomes
 froh_denominator

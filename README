@@ -34,11 +34,18 @@ vcf (--vcf; plain, gzip, or BGZF as written by bgzip/bcftools):
 	`bcftools sort` produces.  Genotypes must be diploid, and under --phased
 	every call must use '|'.
 
+	A position on more than one record is an error, whatever the records
+	are: split multiallelic sites (`bcftools norm -m-`) would otherwise be
+	scored as several SNPs.  Rejoin them with `bcftools norm -m+any`, after
+	which the multiallelic site is skipped and counted like any other.
+
 	Genetic positions are not in a VCF, so --weighted and --cm still need
 	--map.
 
 tped/tfam (required unless --vcf is given): 
 	http://zzz.bwh.harvard.edu/plink/data.shtml#tr
+	A locus with more than two distinct alleles (the missing code aside) is
+	an error.
 
 pop (optional; with --vcf it is the only way to set population labels):
 	<sample id> <population> [sex]
@@ -365,6 +372,23 @@ readers because readFreqData re-orients on the ALLELE column. Verified by conver
 bundled chr21 TPED to a VCF with REF/ALT chosen alphabetically, which flips the dosage at
 4,390 of 8,599 loci: both paths call the same 171 ROH with a bit-identical raw LOD matrix.
 
+*** BEHAVIOUR CHANGE: a locus with more than two alleles is an error, from either reader. ***
+garlic scores a site as two alleles, a counted allele and its dosage, and a third used to
+reach it silently by two routes. A TPED line with three distinct alleles was read as the
+first allele against the rest, so at an A/C/G locus a C/G heterozygote became a homozygote.
+A VCF position on several records -- what splitting multiallelic sites with bcftools norm
+-m- produces -- was read as that many separate SNPs in one window: a b/c heterozygote scored
+two heterozygote LODs when the other ALT is written as 0, and none when it is written as '.'
+(two half calls). In a test that added a third allele at 300 chr21 loci without changing
+any genotype's zygosity, the TPED scored 1,162 of 4,384 heterozygotes there as homozygotes,
+and the two split VCFs called 198 and 196 ROH where the unsplit VCF calls 158. Both cases now
+stop the run with an error naming the site. Every VCF record counts towards a repeated
+position, indels and FILTERed records included, because the SNV left over from splitting
+A->C,AT is scored with the indel's carriers coded as REF or missing. The error suggests
+bcftools norm -m+any, after which garlic skips the multiallelic record and counts it in the
+log as before. A repeat on an unsorted chromosome is found too, at the end of the
+chromosome. --freq-only applies the same rules.
+
 --pop maps sample ID to population, and works with --tped as well. Rows are matched by
 sample ID, never by position; the column order is <id> <pop>, the opposite of a TFAM's, and
 a TFAM-ordered file is diagnosed as such. An optional third column carries PLINK sex coding.
@@ -557,13 +581,13 @@ None of these forms suits low-coverage sequence data (below roughly 4x). Each gi
 --tgls <string>: A tgls file with one per-genotype value per individual, in the row order of the TPED. See --gl-type for what the values mean. For PL and GL this is not the VCF convention.
 	Default: none
 
---tped <string>: A TPED file holding the map and the genotypes.
+--tped <string>: A TPED file holding the map and the genotypes. A locus with more than two alleles is an error.
 	Default: none
 
 --tped-missing <char>: The one-character missing-data code in a TPED.
 	Default: 0
 
---vcf <string>: A VCF file (plain, gzipped or BGZF) to read genotypes from instead of --tped. Biallelic SNVs with a GT field are used. Multiallelic sites, indels and symbolic ALTs are skipped, and the counts are reported. Sample names come from the #CHROM line, so --tfam is not accepted. Use --pop for population labels.
+--vcf <string>: A VCF file (plain, gzipped or BGZF) to read genotypes from instead of --tped. Biallelic SNVs with a GT field are used. Multiallelic sites, indels and symbolic ALTs are skipped, and the counts are reported. A position on more than one record, which is what splitting multiallelic sites produces, is an error. Sample names come from the #CHROM line, so --tfam is not accepted. Use --pop for population labels.
 Sites must be grouped by chromosome. Ploidy must be 2, except on a chromosome declared with --sex-system or --sex-chr, where a haploid call is read as hemizygous. With --phased every call must use '|'.
 	Default: none
 

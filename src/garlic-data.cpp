@@ -1453,6 +1453,148 @@ double selectOverlapFrac(double variantDensity, int winsize){
     return frac;
 }
 
+//--- guards against a locus carrying more than two alleles ----------------
+//
+//garlic scores a site as two alleles: one counted allele and a dosage of it.
+//Nothing downstream can represent a third, and the two ways a third can
+//arrive both used to pass silently:
+//
+//  - a TPED line with three distinct alleles.  The reader counted the first
+//    allele it saw against all the others, so the second and third became
+//    one allele and a C/G heterozygote at an A/C/G locus was stored as a
+//    homozygote.  On chr21 with 300 such loci, 1,162 of 4,384 heterozygotes
+//    were scored as homozygotes.
+//
+//  - one VCF position on several records, which is what splitting
+//    multiallelic sites (bcftools norm -m-) produces.  Each record was read
+//    as an independent SNP in the same window, so a b/c heterozygote scored
+//    two heterozygous LODs when the other ALT is written as 0, and none at
+//    all when it is written as '.' (two half calls).  The same 300 loci gave
+//    198 and 196 ROH where the unsplit VCF gives 158.
+//
+//Both are refused (a decision, not a default: skipping them would make a
+//split VCF and an unsplit one give the same calls, but a run would then
+//continue on input that is probably malformed).  The --freq-only readers
+//apply the same rules through the same helpers, so the two cannot drift.
+
+//A TPED locus whose third distinct non-missing allele has just been seen.
+static void tpedThirdAlleleError(const string &file, long long lineno,
+                                 const string &locus, const string &chr,
+                                 pos_t pos, char a1, char a2, char a3)
+{
+    stringstream ss;
+    ss << "ERROR: locus " << locus << " (" << chr << ":" << pos << ", line "
+       << lineno << " of " << file << ") has more than two alleles: "
+       << a1 << ", " << a2 << " and " << a3 << ".";
+    LOG.err(ss.str());
+    LOG.err("\tgarlic counts one allele at a locus against all the others, so a");
+    LOG.err("\tthird allele would be merged with the second and some heterozygotes");
+    LOG.err("\tscored as homozygotes. A multiallelic site written to a TPED, or a");
+    LOG.err("\tmerge of files whose strands disagree (A/C in one, T/G in the other),");
+    LOG.err("\tproduces this. Remove the locus or fix the merge, and try again.");
+}
+
+//Tracks the alleles seen at one TPED locus.  Returns false, having logged
+//the error, when a third distinct non-missing allele appears.
+struct TPEDAlleleGuard
+{
+    char missing, first, second;
+    explicit TPEDAlleleGuard(char m) : missing(m), first(m), second(m) {}
+    void reset() { first = second = missing; }
+    bool see(char a, const string &file, long long lineno, const string &locus,
+             const string &chr, pos_t pos)
+    {
+        if (a == missing || a == first || a == second) return true;
+        if (first  == missing) { first  = a; return true; }
+        if (second == missing) { second = a; return true; }
+        tpedThirdAlleleError(file, lineno, locus, chr, pos, first, second, a);
+        return false;
+    }
+};
+
+//One VCF position on more than one record.  Every data record counts,
+//whatever the site filters later decide: an A->C and an A->AT split from the
+//same A->C,AT record leave one SNV that garlic would keep, scored with the
+//indel's carriers coded as REF or missing.  So the check runs before them.
+//
+//Repeats are normally adjacent (a VCF is sorted by position within a
+//chromosome) and are reported at once with both records.  An unsorted
+//chromosome can separate them, so its positions are kept -- 8 bytes a record,
+//for one chromosome at a time -- and sorted at the chromosome's end.
+class VCFPositionGuard
+{
+public:
+    explicit VCFPositionGuard(const string &f)
+        : file(f), have(false), sorted(true), last(0), lastLine(0) {}
+
+    bool record(const string &c, pos_t pos, long long lineno, const string &id,
+                const string &ref, const string &alt)
+    {
+        if (have && c.compare(chr) != 0)
+        {
+            if (!close()) return false;
+        }
+        if (!have) { chr = c; have = true; sorted = true; }
+        else if (pos == last)
+        {
+            stringstream ss;
+            ss << "ERROR: position " << chr << ":" << pos << " is on more than one record"
+               << " of " << file << ": line " << lastLine << " (" << lastId << " "
+               << lastRef << ">" << lastAlt << ") and line " << lineno << " (" << id
+               << " " << ref << ">" << alt << ").";
+            LOG.err(ss.str());
+            explain();
+            return false;
+        }
+        else if (pos < last) sorted = false;
+
+        seen.push_back(pos);
+        last = pos; lastLine = lineno;
+        lastId = id; lastRef = ref; lastAlt = alt;
+        return true;
+    }
+
+    //At a chromosome change (from record) and once at the end of the file.
+    bool close()
+    {
+        bool ok = true;
+        if (have && !sorted)
+        {
+            sort(seen.begin(), seen.end());
+            vector<pos_t>::iterator d = adjacent_find(seen.begin(), seen.end());
+            if (d != seen.end())
+            {
+                stringstream ss;
+                ss << "ERROR: position " << chr << ":" << *d << " is on more than one record"
+                   << " of " << file << ". The records are not adjacent because the"
+                   << " chromosome is not sorted by position.";
+                LOG.err(ss.str());
+                explain();
+                ok = false;
+            }
+        }
+        seen.clear();
+        have = false;
+        return ok;
+    }
+
+private:
+    static void explain()
+    {
+        LOG.err("\tgarlic models a site as two alleles, and would score each record as");
+        LOG.err("\ta separate SNP. Records of every type count, indels and filtered sites");
+        LOG.err("\tincluded. Split multiallelic sites (bcftools norm -m-) produce this;");
+        LOG.err("\trejoin them with bcftools norm -m+any, after which garlic skips the");
+        LOG.err("\tmultiallelic record and counts it in the log.");
+    }
+
+    string file, chr, lastId, lastRef, lastAlt;
+    bool have, sorted;
+    pos_t last;
+    long long lastLine;
+    vector<pos_t> seen;
+};
+
 void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                                    vector< HapData * > **hapDataByChr,
                                    vector< MapData * > **mapDataByChr,
@@ -1488,6 +1630,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
     vector<char> allele;
     
     char alleleStr1, alleleStr2;
+    TPEDAlleleGuard alleles(TPED_MISSING);
 
     vector< double > freq;
     vector< geno_t * > hap;
@@ -1611,6 +1754,7 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
         data = new geno_t[numInd];
         if(PHASED) firstCopy = new bool[numInd];
         oneAllele = TPED_MISSING;
+        alleles.reset();
 
         for(int i = 0; i < numInd; i++){
             data[i] = 0;
@@ -1632,6 +1776,14 @@ void loadTPEDData(string tpedfile, int &numLoci, int &numInd,
                 throw 0;
             }
             alleleStr2 = *p++;
+
+            if (!alleles.see(alleleStr1, tpedfile, numLoci, locusName, chr, pos_t(ppos)) ||
+                !alleles.see(alleleStr2, tpedfile, numLoci, locusName, chr, pos_t(ppos)))
+            {
+                delete [] data;
+                if (PHASED) delete [] firstCopy;
+                throw 0;
+            }
 
             if(oneAllele == TPED_MISSING && alleleStr1 != TPED_MISSING) oneAllele = alleleStr1;
             if(oneAllele == TPED_MISSING && alleleStr2 != TPED_MISSING) oneAllele = alleleStr2;
@@ -1926,6 +2078,7 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
     vector<int> zygoOf;
     const vector<int> *zygo = NULL;
     long long lineno = 0, nwritten = 0;
+    VCFPositionGuard positions(vcffile);
     int numInd = 0;
     bool haveHeader = false;
 
@@ -2034,6 +2187,8 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
         p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd);                                p = tEnd;
         p = skipSpace(p, pEnd); tEnd = tokenEnd(p, pEnd); fmt.assign(p, tEnd - p);       p = tEnd;
 
+        if (!positions.record(chr, ppos, lineno, locusName, ref, alt)) throw 0;
+
         //The same site rules as loadVCFData, in the same order, so the two
         //readers keep the same set of sites.
         bool pass = (filt.compare("PASS") == 0 || filt.compare(".") == 0);
@@ -2120,6 +2275,8 @@ void freqOnlyVCF(string vcffile, string outfile, int nresample, bool PASS_ONLY,
         nwritten++;
     }
 
+    if (!positions.close()) throw 0;
+
     if (!haveHeader)
     {
         LOG.err("ERROR: no #CHROM header found in", vcffile, false);
@@ -2201,9 +2358,12 @@ void freqOnly(string filename, string outfile, int nresample, char TPED_MISSING,
         //hemizygous weighting, so it is the same allele the full path counts.
         vector<double> nallelesBy(npop, 0.0), totalBy(npop, 0.0);
         char firstOfPair = TPED_MISSING;
+        TPEDAlleleGuard alleles(TPED_MISSING);
         for(count = 0; count < ncols-4; count++){
             ss >> junk;
             char a = junk[0];
+            //The same rule as loadTPEDData, on the raw columns.
+            if (!alleles.see(a, filename, nloci, locusName, chr, pos_t(ppos))) throw 0;
             int who = count / 2;
             if (a != TPED_MISSING && oneAllele == TPED_MISSING) oneAllele = a;
 
@@ -4097,6 +4257,7 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
     string emptyChr = "_nochr";
     string prevChr  = emptyChr;
     int currChrLoci = 0;
+    VCFPositionGuard positions(vcffile);
 
     vector<double> geneticPos;
     vector<pos_t>  physicalPos;
@@ -4262,6 +4423,14 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
             LOG.err(" of", vcffile, false);
             LOG.err(" has fewer than", VCF_FIXED, false);
             LOG.err(" fixed fields.");
+            freeAccumulatedRows(hap, fc, gl);
+            throw 0;
+        }
+
+        //--- one record per position, checked before any filter (see
+        //VCFPositionGuard) ---
+        if (!positions.record(chr, ppos, lineno, locusName, ref, alt))
+        {
             freeAccumulatedRows(hap, fc, gl);
             throw 0;
         }
@@ -4567,6 +4736,12 @@ void loadVCFData(string vcffile, int &numLoci, int &numInd,
         {
                 freq.push_back(alleleFrequency(nalleles, total, nresample, r));
         }
+    }
+
+    if (!positions.close())
+    {
+        freeAccumulatedRows(hap, fc, gl);
+        throw 0;
     }
 
     if (!haveHeader)
